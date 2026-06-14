@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { groupService, chapterService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
@@ -6,7 +6,7 @@ import Badge, { statusLabel, statusVariant } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
-import { FileText, Plus, Upload, Eye, MessageSquare, CheckCircle, XCircle } from 'lucide-react'
+import { FileText, Upload, Eye, MessageSquare, CheckCircle } from 'lucide-react'
 
 const CHAPTER_LABELS = [
   'Chapter 1 — Introduction',
@@ -19,27 +19,107 @@ const CHAPTER_LABELS = [
 export default function Chapters() {
   const { user } = useAuth()
   const [chapters, setChapters] = useState([])
+  const [group, setGroup] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [showSubmit, setShowSubmit] = useState(false)
   const [showReview, setShowReview] = useState(false)
+  const [submitForm, setSubmitForm] = useState({ chapterNumber: 1, file: null })
   const [reviewForm, setReviewForm] = useState({ status: 'Approved', note: '' })
   const [saving, setSaving] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const fileRef = useRef()
 
   const isAdviser = user?.role === 'Adviser'
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
   const isStudent = user?.role === 'Student'
 
   useEffect(() => {
-    groupService.myGroup()
-      .then((group) => {
-        if (group?.id) return chapterService.listByGroup(group.id)
-        return []
+    if (isStudent) {
+      groupService.myGroup()
+        .then((g) => {
+          setGroup(g)
+          if (g?.id) return chapterService.listByGroup(g.id)
+          return []
+        })
+        .then((data) => setChapters(data ?? []))
+        .catch(() => setChapters([]))
+        .finally(() => setLoading(false))
+    } else {
+      groupService.list()
+        .then(async (groups) => {
+          const results = await Promise.all(
+            groups.map(g =>
+              chapterService.listByGroup(g.id)
+                .then(chs => chs.map(c => ({ ...c, groupName: g.groupName })))
+                .catch(() => [])
+            )
+          )
+          return results.flat()
+        })
+        .then(setChapters)
+        .catch(() => setChapters([]))
+        .finally(() => setLoading(false))
+    }
+  }, [isStudent])
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!submitForm.file || !group?.id) return
+    setSubmitError('')
+    setSaving(true)
+    try {
+      const fd = new FormData()
+      fd.append('ChapterNumber', submitForm.chapterNumber)
+      fd.append('File', submitForm.file)
+      const chapter = await chapterService.submit(group.id, fd)
+      setChapters(prev => {
+        const idx = prev.findIndex(c => c.chapterNumber === chapter.chapterNumber)
+        if (idx >= 0) {
+          const updated = [...prev]
+          updated[idx] = chapter
+          return updated
+        }
+        return [...prev, chapter].sort((a, b) => a.chapterNumber - b.chapterNumber)
       })
-      .then((data) => setChapters(data ?? []))
-      .catch(() => setChapters([]))
-      .finally(() => setLoading(false))
-  }, [])
+      setSubmitForm({ chapterNumber: 1, file: null })
+      if (fileRef.current) fileRef.current.value = ''
+      setShowSubmit(false)
+    } catch (err) {
+      setSubmitError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleReview(e) {
+    e.preventDefault()
+    if (!selected) return
+    setSaving(true)
+    try {
+      const groupId = selected.capstoneGroupId
+      await chapterService.updateStatus(groupId, selected.id, { status: reviewForm.status })
+      if (reviewForm.note.trim()) {
+        await chapterService.addRevisionNote(groupId, selected.id, { notes: reviewForm.note.trim() })
+      }
+      const refreshed = await chapterService.listByGroup(groupId)
+        .then(chs => chs.map(c => ({ ...c, groupName: selected.groupName })))
+      setChapters(prev => {
+        const others = prev.filter(c => c.capstoneGroupId !== groupId)
+        return [...others, ...refreshed].sort((a, b) => {
+          if (a.groupName !== b.groupName) return (a.groupName ?? '').localeCompare(b.groupName ?? '')
+          return a.chapterNumber - b.chapterNumber
+        })
+      })
+      setShowReview(false)
+      setSelected(null)
+      setReviewForm({ status: 'Approved', note: '' })
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const title = isAdviser ? 'Review Submissions' : isAdmin ? 'Chapter Submissions' : 'My Chapters'
 
@@ -49,23 +129,30 @@ export default function Chapters() {
     <div>
       <TopBar
         title={title}
-        subtitle={isStudent ? `${chapters.length} chapters` : `${chapters.filter(c => c.status === 'Submitted').length} awaiting review`}
+        subtitle={isStudent ? `${chapters.length} chapters` : `${chapters.filter(c => c.status === 'PendingReview').length} awaiting review`}
       />
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         {isStudent && (
           <div className="flex justify-end mb-6">
-            <button className="btn-primary" onClick={() => setShowSubmit(true)}>
+            <button className="btn-primary" onClick={() => { setSubmitError(''); setShowSubmit(true) }}>
               <Upload size={15} /> Submit Chapter
             </button>
           </div>
         )}
 
         {isStudent ? (
-          <div className="space-y-3">
-            {chapters.map((c) => (
-              <StudentChapterRow key={c.id} chapter={c} onView={() => setSelected(c)} />
-            ))}
-          </div>
+          chapters.length === 0 ? (
+            <EmptyState icon={FileText} title="No chapters yet" description="Submit your first chapter for adviser review." />
+          ) : (
+            <div className="space-y-3">
+              {chapters
+                .slice()
+                .sort((a, b) => a.chapterNumber - b.chapterNumber)
+                .map((c) => (
+                  <StudentChapterRow key={c.id} chapter={c} onView={() => setSelected(c)} />
+                ))}
+            </div>
+          )
         ) : chapters.length === 0 ? (
           <EmptyState icon={FileText} title="No chapter submissions" description="Chapter submissions from students will appear here." />
         ) : (
@@ -75,7 +162,7 @@ export default function Chapters() {
                 <tr>
                   <th>Chapter</th>
                   <th>Group</th>
-                  {(isAdviser || isAdmin) && <th>Student</th>}
+                  <th>Student</th>
                   <th>Submitted</th>
                   <th>Status</th>
                   <th></th>
@@ -86,10 +173,10 @@ export default function Chapters() {
                   <tr key={c.id}>
                     <td>
                       <p className="font-medium" style={{ color: 'var(--text-heading)' }}>Chapter {c.chapterNumber}</p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.title}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{CHAPTER_LABELS[c.chapterNumber - 1]}</p>
                     </td>
-                    <td style={{ color: 'var(--text-primary)' }}>{c.groupName}</td>
-                    {(isAdviser || isAdmin) && <td style={{ color: 'var(--text-secondary)' }}>{c.studentName ?? '—'}</td>}
+                    <td style={{ color: 'var(--text-primary)' }}>{c.groupName ?? '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{c.submittedBy?.fullName ?? '—'}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{c.submittedAt ? new Date(c.submittedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '—'}</td>
                     <td><Badge variant={statusVariant(c.status)} size="sm">{statusLabel(c.status)}</Badge></td>
                     <td>
@@ -97,7 +184,7 @@ export default function Chapters() {
                         <button className="btn-ghost text-xs" onClick={() => setSelected(c)}>
                           <Eye size={13} /> View
                         </button>
-                        {(isAdviser || isAdmin) && c.status === 'Submitted' && (
+                        {isAdviser && c.status === 'PendingReview' && (
                           <button className="btn-primary text-xs px-3 py-1.5" onClick={() => { setSelected(c); setShowReview(true) }}>
                             Review
                           </button>
@@ -120,34 +207,56 @@ export default function Chapters() {
         footer={
           <>
             <button className="btn-secondary" onClick={() => setShowSubmit(false)}>Cancel</button>
-            <button className="btn-primary" disabled={saving}>{saving ? 'Submitting...' : 'Submit'}</button>
+            <button className="btn-primary" onClick={handleSubmit} disabled={saving || !submitForm.file}>
+              {saving ? 'Submitting...' : 'Submit'}
+            </button>
           </>
         }
       >
         <div className="space-y-4">
+          {submitError && (
+            <div className="px-4 py-3 rounded-xl text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+              {submitError}
+            </div>
+          )}
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: '#374151' }}>Chapter</label>
-            <select className="form-input">
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Chapter</label>
+            <select
+              className="form-input"
+              value={submitForm.chapterNumber}
+              onChange={e => setSubmitForm(f => ({ ...f, chapterNumber: Number(e.target.value) }))}
+            >
               {CHAPTER_LABELS.map((l, i) => (
                 <option key={i} value={i + 1}>{l}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: '#374151' }}>Upload File</label>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              Upload File <span className="font-normal text-xs" style={{ color: 'var(--text-muted)' }}>(PDF, DOCX up to 50MB)</span>
+            </label>
             <div
-              className="border-2 border-dashed rounded-xl p-8 text-center transition-all"
-              style={{ borderColor: '#e8e1d0' }}
+              className="border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer"
+              style={{ borderColor: submitForm.file ? '#c9a84c' : 'var(--border-light)' }}
+              onClick={() => fileRef.current?.click()}
             >
               <Upload size={24} className="mx-auto mb-2" style={{ color: '#c9a84c' }} />
-              <p className="text-sm font-medium mb-1" style={{ color: '#374151' }}>Click to upload or drag and drop</p>
-              <p className="text-xs" style={{ color: '#9ca3af' }}>PDF, DOCX up to 50MB</p>
-              <input type="file" className="hidden" accept=".pdf,.docx" />
+              {submitForm.file ? (
+                <p className="text-sm font-medium" style={{ color: 'var(--text-heading)' }}>{submitForm.file.name}</p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Click to upload or drag and drop</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>PDF, DOCX up to 50MB</p>
+                </>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                accept=".pdf,.docx"
+                onChange={e => setSubmitForm(f => ({ ...f, file: e.target.files[0] ?? null }))}
+              />
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: '#374151' }}>Notes (optional)</label>
-            <textarea className="form-input resize-none" rows={3} placeholder="Any notes for your adviser..." />
           </div>
         </div>
       </Modal>
@@ -155,12 +264,12 @@ export default function Chapters() {
       {/* Review Modal */}
       <Modal
         open={showReview && !!selected}
-        onClose={() => { setShowReview(false); setSelected(null) }}
-        title={`Review: Chapter ${selected?.chapterNumber} — ${selected?.groupName}`}
+        onClose={() => { setShowReview(false); setSelected(null); setReviewForm({ status: 'Approved', note: '' }) }}
+        title={`Review: Chapter ${selected?.chapterNumber} — ${selected?.groupName ?? ''}`}
         footer={
           <>
             <button className="btn-secondary" onClick={() => { setShowReview(false); setSelected(null) }}>Cancel</button>
-            <button className="btn-primary" disabled={saving}>
+            <button className="btn-primary" onClick={handleReview} disabled={saving}>
               {saving ? 'Saving...' : 'Submit Review'}
             </button>
           </>
@@ -168,50 +277,98 @@ export default function Chapters() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: '#374151' }}>Decision</label>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Decision</label>
             <div className="flex gap-3">
               {[
-                { v: 'Approved', icon: CheckCircle, color: '#16a34a', bg: '#d1fae5' },
-                { v: 'NeedsRevision', icon: MessageSquare, color: '#d97706', bg: '#fef3c7' },
-                { v: 'Rejected', icon: XCircle, color: '#dc2626', bg: '#fee2e2' },
+                { v: 'Approved', label: 'Approve', icon: CheckCircle, color: '#16a34a', activeBg: 'rgba(34,197,94,0.12)' },
+                { v: 'UnderRevision', label: 'Needs Revision', icon: MessageSquare, color: '#d97706', activeBg: 'rgba(245,158,11,0.12)' },
               ].map((opt) => (
                 <button
                   key={opt.v}
                   type="button"
-                  onClick={() => setReviewForm({ ...reviewForm, status: opt.v })}
+                  onClick={() => setReviewForm(f => ({ ...f, status: opt.v }))}
                   className="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl border text-xs font-semibold transition-all"
                   style={
                     reviewForm.status === opt.v
-                      ? { background: opt.bg, borderColor: opt.color, color: opt.color }
-                      : { background: '#faf8f3', borderColor: '#e8e1d0', color: '#6b7280' }
+                      ? { background: opt.activeBg, borderColor: opt.color, color: opt.color }
+                      : { background: 'var(--bg-subtle)', borderColor: 'var(--border-light)', color: 'var(--text-muted)' }
                   }
                 >
                   <opt.icon size={16} />
-                  {opt.v === 'NeedsRevision' ? 'Needs Revision' : opt.v}
+                  {opt.label}
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: '#374151' }}>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
               {reviewForm.status === 'Approved' ? 'Feedback (optional)' : 'Revision Notes *'}
             </label>
             <textarea
               className="form-input resize-none"
               rows={4}
-              placeholder={reviewForm.status === 'NeedsRevision' ? 'Describe what needs to be revised...' : 'Add any comments or feedback...'}
+              placeholder={reviewForm.status === 'UnderRevision' ? 'Describe what needs to be revised...' : 'Add any comments or feedback...'}
               value={reviewForm.note}
-              onChange={(e) => setReviewForm({ ...reviewForm, note: e.target.value })}
+              onChange={(e) => setReviewForm(f => ({ ...f, note: e.target.value }))}
             />
           </div>
         </div>
+      </Modal>
+
+      {/* View Modal */}
+      <Modal
+        open={!!selected && !showReview}
+        onClose={() => setSelected(null)}
+        title={selected ? `Chapter ${selected.chapterNumber} — ${CHAPTER_LABELS[selected.chapterNumber - 1]}` : ''}
+      >
+        {selected && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Status</span>
+              <Badge variant={statusVariant(selected.status)} size="sm">{statusLabel(selected.status)}</Badge>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Submitted By</span>
+              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{selected.submittedBy?.fullName ?? '—'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Date</span>
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {selected.submittedAt ? new Date(selected.submittedAt).toLocaleDateString('en-PH', { dateStyle: 'long' }) : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Version</span>
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>v{selected.version}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>File</span>
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{selected.fileName}</span>
+            </div>
+            {selected.revisionNotes?.length > 0 && (
+              <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-light)' }}>
+                <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Revision Notes</p>
+                <div className="space-y-2">
+                  {selected.revisionNotes.map(rn => (
+                    <div key={rn.id} className="px-3 py-2.5 rounded-xl text-sm" style={{ background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)' }}>
+                      <p className="text-xs font-semibold mb-0.5" style={{ color: '#c9a84c' }}>
+                        {rn.createdBy?.fullName} • {new Date(rn.createdAt).toLocaleDateString()}
+                      </p>
+                      <p style={{ color: 'var(--text-primary)' }}>{rn.notes}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   )
 }
 
 function StudentChapterRow({ chapter, onView }) {
-  const isSubmitted = !!chapter.submittedAt
+  const latestNote = chapter.revisionNotes?.[chapter.revisionNotes.length - 1]
 
   return (
     <div
@@ -224,8 +381,8 @@ function StudentChapterRow({ chapter, onView }) {
       <div
         className="w-11 h-11 rounded-xl flex items-center justify-center font-display font-bold text-lg shrink-0"
         style={{
-          background: chapter.status === 'Approved' ? '#d1fae5' : chapter.status === 'NeedsRevision' ? '#fff7ed' : 'var(--bg-subtle)',
-          color: chapter.status === 'Approved' ? '#16a34a' : chapter.status === 'NeedsRevision' ? '#ea580c' : '#c9a84c',
+          background: chapter.status === 'Approved' ? 'rgba(34,197,94,0.12)' : chapter.status === 'UnderRevision' ? 'rgba(245,158,11,0.12)' : 'var(--bg-subtle)',
+          color: chapter.status === 'Approved' ? '#16a34a' : chapter.status === 'UnderRevision' ? '#ea580c' : '#c9a84c',
         }}
       >
         {chapter.chapterNumber}
@@ -233,7 +390,7 @@ function StudentChapterRow({ chapter, onView }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <p className="font-semibold" style={{ color: 'var(--text-heading)' }}>
-            Chapter {chapter.chapterNumber} — {chapter.title}
+            {CHAPTER_LABELS[chapter.chapterNumber - 1] ?? `Chapter ${chapter.chapterNumber}`}
           </p>
           <Badge variant={statusVariant(chapter.status)} size="sm">{statusLabel(chapter.status)}</Badge>
         </div>
@@ -242,10 +399,10 @@ function StudentChapterRow({ chapter, onView }) {
             Submitted {new Date(chapter.submittedAt).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}
           </p>
         )}
-        {chapter.adviserNote && (
+        {latestNote && (
           <div className="mt-3 px-3 py-2.5 rounded-xl text-sm" style={{ background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)', color: 'var(--text-primary)' }}>
             <p className="text-xs font-semibold mb-0.5" style={{ color: '#c9a84c' }}>Adviser Note:</p>
-            {chapter.adviserNote}
+            {latestNote.notes}
           </div>
         )}
       </div>

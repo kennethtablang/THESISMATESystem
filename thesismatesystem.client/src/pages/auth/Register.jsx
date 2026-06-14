@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { Eye, EyeOff, GraduationCap, ArrowRight, ArrowLeft } from 'lucide-react'
+import { Eye, EyeOff, ArrowRight, ArrowLeft } from 'lucide-react'
+import logo from '../../assets/ThesisMate-logo.png'
 
 export default function Register() {
   const { register } = useAuth()
   const navigate = useNavigate()
   const [form, setForm] = useState({
-    fullName: '',
+    firstName: '',
+    middleName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -42,12 +45,10 @@ export default function Register() {
     }
     setLoading(true)
     try {
-      const nameParts = form.fullName.trim().split(' ')
-      const firstName = nameParts[0] ?? ''
-      const lastName = nameParts.slice(1).join(' ') || firstName
       await register({
-        firstName,
-        lastName,
+        firstName: form.firstName.trim(),
+        middleName: form.middleName.trim() || undefined,
+        lastName: form.lastName.trim(),
         email: form.email,
         password: form.password,
         role: 'Student',
@@ -65,12 +66,7 @@ export default function Register() {
       <div className="w-full max-w-[480px] animate-slide-up">
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, #c9a84c 0%, #d4b565 100%)' }}
-          >
-            <GraduationCap size={20} style={{ color: '#0a1628' }} />
-          </div>
+          <img src={logo} alt="ThesisMate" className="w-10 h-10 rounded-xl object-contain" style={{ background: '#fff' }} />
           <div>
             <p className="font-display font-semibold text-lg" style={{ color: 'var(--text-heading)' }}>ThesisMate</p>
             <p style={{ color: 'var(--text-muted)', fontSize: '11px', letterSpacing: '0.06em' }}>PSU LINGAYEN</p>
@@ -101,15 +97,41 @@ export default function Register() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>First name</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Juan"
+                  value={form.firstName}
+                  onChange={(e) => set('firstName', e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Last name</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="dela Cruz"
+                  value={form.lastName}
+                  onChange={(e) => set('lastName', e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Full name</label>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                Middle name <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
+              </label>
               <input
                 type="text"
                 className="form-input"
-                placeholder="Juan dela Cruz"
-                value={form.fullName}
-                onChange={(e) => set('fullName', e.target.value)}
-                required
+                placeholder="Santos"
+                value={form.middleName}
+                onChange={(e) => set('middleName', e.target.value)}
               />
             </div>
 

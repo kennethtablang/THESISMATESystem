@@ -76,7 +76,7 @@ export default function ConsultationCalendar() {
   return (
     <>
       <TopBar title="Consultation Calendar" subtitle="View schedules and request a consultation slot" />
-      <div className="p-8 max-w-5xl">
+      <div className="p-4 sm:p-8 max-w-5xl">
         <div className="flex gap-2 mb-6">
           {['calendar', 'my-requests'].map(t => (
             <button key={t} onClick={() => setTab(t)}

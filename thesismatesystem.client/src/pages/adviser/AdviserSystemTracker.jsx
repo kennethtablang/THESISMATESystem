@@ -116,7 +116,7 @@ export default function AdviserSystemTracker() {
   return (
     <>
       <TopBar title="System Tracker" subtitle="Manage capstone system features and comments" />
-      <div className="p-8 max-w-5xl">
+      <div className="p-4 sm:p-8 max-w-5xl">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="page-title">System Feature Tracker</h2>

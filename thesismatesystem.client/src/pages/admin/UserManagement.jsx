@@ -54,7 +54,7 @@ export default function UserManagement() {
   return (
     <>
       <TopBar title="User Management" subtitle="Manage all system users" />
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="grid grid-cols-3 gap-4 mb-6">
           {[
             { label: 'Total Users', value: stats.total, color: '#c9a84c', icon: Users },

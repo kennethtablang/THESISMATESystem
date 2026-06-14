@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -17,6 +18,11 @@ namespace THESISMATESystem.Server
         public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+
+            // Persist data protection keys so email tokens survive server restarts
+            builder.Services.AddDataProtection()
+                .PersistKeysToFileSystem(new DirectoryInfo(
+                    Path.Combine(builder.Environment.ContentRootPath, "DataProtection-Keys")));
 
             // Database
             builder.Services.AddDbContext<AppDbContext>(options =>
@@ -75,7 +81,10 @@ namespace THESISMATESystem.Server
             builder.Services.AddScoped<ISystemFeatureService, SystemFeatureService>();
             builder.Services.AddScoped<IConsultationScheduleService, ConsultationScheduleService>();
 
-            builder.Services.AddControllers();
+            builder.Services.AddControllers()
+                .AddJsonOptions(o =>
+                    o.JsonSerializerOptions.Converters.Add(
+                        new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
             // Swagger / OpenAPI
             builder.Services.AddSwaggerGen(c =>

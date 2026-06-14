@@ -130,7 +130,7 @@ export default function DocumentUpload() {
   return (
     <>
       <TopBar title="Upload Documents" subtitle={`Group: ${group.groupName}`} />
-      <div className="p-8 max-w-4xl">
+      <div className="p-4 sm:p-8 max-w-4xl">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="page-title">Manuscripts & Documents</h2>

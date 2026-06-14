@@ -107,7 +107,7 @@ export default function StudentSystemTracker() {
   return (
     <>
       <TopBar title="System Tracker" subtitle="Monitor your capstone system features" />
-      <div className="p-8 max-w-4xl">
+      <div className="p-4 sm:p-8 max-w-4xl">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="page-title">System Feature Tracker</h2>

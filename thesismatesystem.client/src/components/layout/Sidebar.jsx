@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import clsx from 'clsx'
+import logo from '../../assets/ThesisMate-logo.png'
 import {
   LayoutDashboard,
   Users,
@@ -9,10 +10,8 @@ import {
   Calendar,
   Bell,
   BarChart3,
-  GraduationCap,
   LogOut,
   UserCircle,
-  ClipboardList,
   Star,
   ChevronRight,
   Upload,
@@ -100,9 +99,7 @@ export default function Sidebar({ onClose }) {
     <aside className="h-full flex flex-col" style={{ background: '#0a1628', boxShadow: '4px 0 24px rgba(0,0,0,0.18)' }}>
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
-        <div className="flex items-center justify-center w-9 h-9 rounded-xl" style={{ background: 'linear-gradient(135deg, #c9a84c 0%, #d4b565 100%)' }}>
-          <GraduationCap size={18} style={{ color: '#0a1628' }} />
-        </div>
+        <img src={logo} alt="ThesisMate" className="w-9 h-9 rounded-xl object-contain" style={{ background: '#fff' }} />
         <div>
           <p className="text-white font-display font-semibold text-base leading-none tracking-wide">ThesisMate</p>
           <p className="text-xs mt-0.5" style={{ color: '#c9a84c', fontSize: '10px', letterSpacing: '0.06em' }}>PSU LINGAYEN</p>

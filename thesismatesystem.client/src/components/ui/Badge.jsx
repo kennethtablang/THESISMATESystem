@@ -45,30 +45,36 @@ export default function Badge({ variant = 'pending', size = 'md', children, clas
 
 export function statusLabel(status) {
   const labels = {
+    PendingReview: 'Pending Review',
+    UnderRevision: 'Needs Revision',
+    Approved: 'Approved',
     Pending: 'Pending',
     Submitted: 'Submitted',
     UnderReview: 'Under Review',
-    Approved: 'Approved',
-    Rejected: 'Rejected',
     NeedsRevision: 'Needs Revision',
     Scheduled: 'Scheduled',
     Completed: 'Completed',
     Cancelled: 'Cancelled',
+    Active: 'Active',
+    Archived: 'Archived',
   }
   return labels[status] ?? status
 }
 
 export function statusVariant(status) {
   const map = {
+    PendingReview: 'pending',
+    UnderRevision: 'revision',
+    Approved: 'approved',
     Pending: 'pending',
     Submitted: 'submitted',
     UnderReview: 'under_review',
-    Approved: 'approved',
-    Rejected: 'rejected',
     NeedsRevision: 'revision',
     Scheduled: 'scheduled',
     Completed: 'completed',
     Cancelled: 'cancelled',
+    Active: 'active',
+    Archived: 'inactive',
   }
   return map[status] ?? 'pending'
 }

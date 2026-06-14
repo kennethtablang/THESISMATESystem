@@ -93,7 +93,7 @@ export default function ManuscriptReview() {
   return (
     <>
       <TopBar title="Manuscript Review" subtitle="Review and comment on student submissions" />
-      <div className="p-8 max-w-5xl">
+      <div className="p-4 sm:p-8 max-w-5xl">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="page-title">Student Manuscripts</h2>

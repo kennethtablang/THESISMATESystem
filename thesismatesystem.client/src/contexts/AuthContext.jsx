@@ -45,9 +45,10 @@ export function AuthProvider({ children }) {
   }, [])
 
   function normalizeUser(user) {
+    const fallback = [user.firstName, user.middleName, user.lastName].filter(Boolean).join(' ')
     return {
       ...user,
-      fullName: user.fullName ?? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
+      fullName: user.fullName ?? fallback,
     }
   }
 

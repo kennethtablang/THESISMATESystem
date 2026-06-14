@@ -35,7 +35,7 @@ namespace THESISMATESystem.Server.Controllers
             var success = await _auth.VerifyEmailAsync(dto.UserId, dto.Token);
             return success
                 ? Ok(new { message = "Email verified successfully. You can now log in." })
-                : BadRequest(new { message = "The verification link is invalid or has expired. Please register again." });
+                : BadRequest(new { message = "The verification link is invalid or has expired. Please request a new verification email." });
         }
 
         [HttpGet("profile")]

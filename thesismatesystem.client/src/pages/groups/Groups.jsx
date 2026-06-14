@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { groupService } from '../../services/api'
+import { groupService, authService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
-import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
@@ -16,7 +15,8 @@ export default function Groups() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ name: '', thesisTitle: '', section: '' })
+  const [form, setForm] = useState({ groupName: '', adviserId: '', academicYear: '' })
+  const [advisers, setAdvisers] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -29,15 +29,30 @@ export default function Groups() {
       .finally(() => setLoading(false))
   }, [])
 
+  function openCreateModal() {
+    setError('')
+    setForm({ groupName: '', adviserId: '', academicYear: '' })
+    setShowModal(true)
+    if (advisers.length === 0) {
+      authService.allUsers()
+        .then(users => setAdvisers(users.filter(u => u.role === 'Adviser')))
+        .catch(() => {})
+    }
+  }
+
   async function handleCreate(e) {
     e.preventDefault()
     setSaving(true)
     setError('')
     try {
-      const g = await groupService.create(form)
+      const g = await groupService.create({
+        groupName: form.groupName,
+        adviserId: form.adviserId,
+        academicYear: form.academicYear,
+        memberIds: [],
+      })
       setGroups((prev) => [g, ...prev])
       setShowModal(false)
-      setForm({ name: '', thesisTitle: '', section: '' })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -47,8 +62,8 @@ export default function Groups() {
 
   const filtered = groups.filter(
     (g) =>
-      g.name?.toLowerCase().includes(search.toLowerCase()) ||
-      g.thesisTitle?.toLowerCase().includes(search.toLowerCase())
+      (g.groupName ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (g.projectTitle ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
   if (loading) return <><TopBar title="Groups" /><PageLoader /></>
@@ -59,8 +74,7 @@ export default function Groups() {
         title={isAdmin ? 'Manage Groups' : user?.role === 'Adviser' ? 'My Advisees' : user?.role === 'Student' ? 'My Group' : 'Groups'}
         subtitle={`${groups.length} capstone group${groups.length !== 1 ? 's' : ''}`}
       />
-      <div className="p-8">
-        {/* Toolbar */}
+      <div className="p-4 sm:p-8">
         <div className="flex items-center justify-between gap-4 mb-6">
           <div className="relative flex-1 max-w-xs">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#9ca3af' }} />
@@ -73,7 +87,7 @@ export default function Groups() {
             />
           </div>
           {isAdmin && (
-            <button className="btn-primary" onClick={() => setShowModal(true)}>
+            <button className="btn-primary" onClick={openCreateModal}>
               <Plus size={15} /> New Group
             </button>
           )}
@@ -85,7 +99,7 @@ export default function Groups() {
             title="No groups found"
             description={search ? 'Try a different search term.' : 'No capstone groups have been created yet.'}
             action={isAdmin && (
-              <button className="btn-primary" onClick={() => setShowModal(true)}>
+              <button className="btn-primary" onClick={openCreateModal}>
                 <Plus size={15} /> Create Group
               </button>
             )}
@@ -120,34 +134,50 @@ export default function Groups() {
         )}
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group Name</label>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group Name *</label>
             <input
               type="text"
               className="form-input"
               placeholder="e.g. Group Alpha"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              value={form.groupName}
+              onChange={(e) => setForm(f => ({ ...f, groupName: e.target.value }))}
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Thesis Title</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Enter the thesis title"
-              value={form.thesisTitle}
-              onChange={(e) => setForm({ ...form, thesisTitle: e.target.value })}
-            />
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Adviser *</label>
+            {advisers.length > 0 ? (
+              <select
+                className="form-input"
+                value={form.adviserId}
+                onChange={e => setForm(f => ({ ...f, adviserId: e.target.value }))}
+                required
+              >
+                <option value="">Select an adviser</option>
+                {advisers.map(a => (
+                  <option key={a.id} value={a.id}>{a.fullName}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Adviser ID"
+                value={form.adviserId}
+                onChange={(e) => setForm(f => ({ ...f, adviserId: e.target.value }))}
+                required
+              />
+            )}
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Section</label>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Academic Year *</label>
             <input
               type="text"
               className="form-input"
-              placeholder="e.g. BSIT 4-A"
-              value={form.section}
-              onChange={(e) => setForm({ ...form, section: e.target.value })}
+              placeholder="e.g. 2024-2025"
+              value={form.academicYear}
+              onChange={(e) => setForm(f => ({ ...f, academicYear: e.target.value }))}
+              required
             />
           </div>
         </div>
@@ -157,7 +187,7 @@ export default function Groups() {
 }
 
 function GroupCard({ group, onClick }) {
-  const progress = group.progress ?? Math.floor(Math.random() * 80) + 10
+  const progress = group.milestoneProgress?.completionPercentage ?? 0
 
   return (
     <div
@@ -178,25 +208,25 @@ function GroupCard({ group, onClick }) {
           className="w-11 h-11 rounded-xl flex items-center justify-center font-display font-semibold text-lg"
           style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}
         >
-          {(group.name ?? 'G')[0]}
+          {(group.groupName ?? 'G')[0]}
         </div>
         <ChevronRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity mt-0.5" style={{ color: 'var(--text-muted)' }} />
       </div>
 
-      <h3 className="font-semibold mb-0.5" style={{ color: 'var(--text-heading)' }}>{group.name ?? 'Unnamed Group'}</h3>
+      <h3 className="font-semibold mb-0.5" style={{ color: 'var(--text-heading)' }}>{group.groupName ?? 'Unnamed Group'}</h3>
       <p className="text-xs mb-3 line-clamp-2" style={{ color: 'var(--text-muted)', lineHeight: '1.5' }}>
-        {group.thesisTitle ?? 'No thesis title set'}
+        {group.projectTitle ?? 'No thesis title set'}
       </p>
 
       <div className="flex items-center gap-3 mb-3">
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
           <Users size={13} />
-          <span>{group.memberCount ?? group.members?.length ?? 0} members</span>
+          <span>{group.members?.length ?? 0} members</span>
         </div>
-        {group.section && (
+        {group.academicYear && (
           <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
             <BookOpen size={13} />
-            <span>{group.section}</span>
+            <span>{group.academicYear}</span>
           </div>
         )}
       </div>
@@ -219,4 +249,3 @@ function GroupCard({ group, onClick }) {
     </div>
   )
 }
-

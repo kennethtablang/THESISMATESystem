@@ -1,5 +1,6 @@
 import { useSearchParams, Link } from 'react-router-dom'
-import { GraduationCap, Mail, ArrowLeft } from 'lucide-react'
+import { Mail, ArrowLeft } from 'lucide-react'
+import logo from '../../assets/ThesisMate-logo.png'
 
 export default function CheckEmail() {
   const [params] = useSearchParams()
@@ -10,12 +11,7 @@ export default function CheckEmail() {
       <div className="w-full max-w-[480px] animate-slide-up">
         {/* Logo */}
         <div className="flex items-center gap-3 mb-8">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, #c9a84c 0%, #d4b565 100%)' }}
-          >
-            <GraduationCap size={20} style={{ color: '#0a1628' }} />
-          </div>
+          <img src={logo} alt="ThesisMate" className="w-10 h-10 rounded-xl object-contain" style={{ background: '#fff' }} />
           <div>
             <p className="font-display font-semibold text-lg" style={{ color: 'var(--text-heading)' }}>ThesisMate</p>
             <p style={{ color: 'var(--text-muted)', fontSize: '11px', letterSpacing: '0.06em' }}>PSU LINGAYEN</p>

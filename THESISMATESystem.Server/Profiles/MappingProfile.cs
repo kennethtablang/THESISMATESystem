@@ -12,7 +12,10 @@ namespace THESISMATESystem.Server.Profiles
                 .ForMember(d => d.Role, o => o.Ignore());
 
             CreateMap<ApplicationUser, UserSummaryDto>()
-                .ForMember(d => d.FullName, o => o.MapFrom(s => $"{s.FirstName} {s.LastName}"));
+                .ForMember(d => d.FullName, o => o.MapFrom(s =>
+                    string.IsNullOrWhiteSpace(s.MiddleName)
+                        ? $"{s.FirstName} {s.LastName}".Trim()
+                        : $"{s.FirstName} {s.MiddleName} {s.LastName}".Trim()));
 
             CreateMap<CapstoneGroup, CapstoneGroupResponseDto>()
                 .ForMember(d => d.Members, o => o.MapFrom(s => s.Members.Select(m => m.User)))

@@ -75,6 +75,8 @@ export const authService = {
   register: (data) => api.post('/auth/register', data),
   verifyEmail: (userId, token) => api.post('/auth/verify-email', { userId, token }),
   profile: () => api.get('/auth/profile'),
+  updateProfile: (data) => api.put('/auth/profile', data),
+  changePassword: (data) => api.post('/auth/change-password', data),
   allUsers: () => api.get('/auth/users'),
   updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
   deactivate: (id) => api.patch(`/auth/users/${id}/deactivate`),
@@ -108,11 +110,12 @@ export const groupService = {
 
 export const chapterService = {
   listByGroup: (groupId) => api.get(`/groups/${groupId}/chapters`),
-  get: (groupId, id) => api.get(`/groups/${groupId}/chapters/${id}`),
+  get: (id) => api.get(`/groups/0/chapters/submissions/${id}`),
   submit: (groupId, formData) => requestMultipart('POST', `/groups/${groupId}/chapters`, formData),
-  review: (groupId, id, data) => api.put(`/groups/${groupId}/chapters/${id}/review`, data),
-  addRevision: (groupId, chapterId, data) =>
-    api.post(`/groups/${groupId}/chapters/${chapterId}/revisions`, data),
+  updateStatus: (groupId, id, data) => api.patch(`/groups/${groupId}/chapters/submissions/${id}/status`, data),
+  addRevisionNote: (groupId, chapterId, data) =>
+    api.post(`/groups/${groupId}/chapters/submissions/${chapterId}/revision-notes`, data),
+  download: (id) => `${BASE_URL}/groups/0/chapters/submissions/${id}/download`,
 }
 
 export const consultationService = {

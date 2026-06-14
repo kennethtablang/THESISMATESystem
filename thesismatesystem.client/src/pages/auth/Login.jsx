@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { Eye, EyeOff, GraduationCap, BookOpen, ArrowRight, Sparkles } from 'lucide-react'
+import { Eye, EyeOff, BookOpen, ArrowRight } from 'lucide-react'
+import logo from '../../assets/ThesisMate-logo.png'
 
 export default function Login() {
   const { login } = useAuth()
@@ -49,12 +50,7 @@ export default function Login() {
         {/* Logo */}
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-1">
-            <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg, #c9a84c 0%, #d4b565 100%)' }}
-            >
-              <GraduationCap size={22} style={{ color: '#0a1628' }} />
-            </div>
+            <img src={logo} alt="ThesisMate" className="w-11 h-11 rounded-xl object-contain" style={{ background: '#fff' }} />
             <div>
               <p className="text-white font-display text-xl font-semibold">ThesisMate</p>
               <p style={{ color: '#c9a84c', fontSize: '11px', letterSpacing: '0.1em' }}>PSU LINGAYEN</p>
@@ -65,7 +61,6 @@ export default function Login() {
         {/* Center quote */}
         <div className="relative z-10">
           <div className="mb-6">
-            <Sparkles size={20} style={{ color: '#c9a84c', opacity: 0.7 }} className="mb-4" />
             <blockquote
               className="font-display text-3xl font-medium leading-snug"
               style={{ color: '#e2d5b8', letterSpacing: '-0.5px' }}
@@ -77,18 +72,6 @@ export default function Login() {
             </p>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 mt-8">
-            {[
-              { label: 'Active Groups', value: '42' },
-              { label: 'Defenses Rated', value: '128' },
-              { label: 'Chapters Approved', value: '310' },
-            ].map((stat) => (
-              <div key={stat.label} className="rounded-xl p-3 text-center" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <p className="font-display text-2xl font-semibold" style={{ color: '#c9a84c' }}>{stat.value}</p>
-                <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>{stat.label}</p>
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* Bottom */}
@@ -110,12 +93,7 @@ export default function Login() {
         <div className="w-full max-w-[400px] animate-slide-up">
           {/* Mobile logo */}
           <div className="flex items-center gap-2 mb-8 lg:hidden">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg, #c9a84c 0%, #d4b565 100%)' }}
-            >
-              <GraduationCap size={16} style={{ color: '#0a1628' }} />
-            </div>
+            <img src={logo} alt="ThesisMate" className="w-8 h-8 rounded-lg object-contain" style={{ background: '#fff' }} />
             <span className="font-display text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>ThesisMate</span>
           </div>
 
