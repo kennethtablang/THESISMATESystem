@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="thesismatesystem.client/thesismatesystem.client.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="THESISMATESystem.Server/THESISMATESystem.Server.csproj" />
+</Solution>

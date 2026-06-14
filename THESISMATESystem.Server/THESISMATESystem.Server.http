@@ -1,0 +1,6 @@
+@THESISMATESystem.Server_HostAddress = http://localhost:5147
+
+GET {{THESISMATESystem.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

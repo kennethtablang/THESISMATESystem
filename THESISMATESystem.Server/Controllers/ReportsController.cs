@@ -1,0 +1,57 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using THESISMATESystem.Server.Interfaces;
+
+namespace THESISMATESystem.Server.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize(Roles = "Coordinator,Adviser")]
+    public class ReportsController : ControllerBase
+    {
+        private readonly IReportService _reports;
+
+        public ReportsController(IReportService reports) => _reports = reports;
+
+        [HttpGet("group/{groupId:int}/progress")]
+        public async Task<IActionResult> GroupProgress(int groupId)
+        {
+            try
+            {
+                var bytes = await _reports.GenerateGroupProgressReportAsync(groupId);
+                return File(bytes, "text/plain", $"group_{groupId}_progress.txt");
+            }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
+        [HttpGet("milestone-completion")]
+        public async Task<IActionResult> MilestoneCompletion([FromQuery] string academicYear)
+        {
+            var bytes = await _reports.GenerateMilestoneCompletionReportAsync(academicYear);
+            return File(bytes, "text/plain", $"milestone_completion_{academicYear}.txt");
+        }
+
+        [HttpGet("defense/{scheduleId:int}/outcome")]
+        public async Task<IActionResult> DefenseOutcome(int scheduleId)
+        {
+            try
+            {
+                var bytes = await _reports.GenerateDefenseOutcomeReportAsync(scheduleId);
+                return File(bytes, "text/plain", $"defense_{scheduleId}_outcome.txt");
+            }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
+        [HttpGet("all-groups")]
+        [Authorize(Roles = "Coordinator")]
+        public async Task<IActionResult> AllGroups(
+            [FromQuery] string? adviserId,
+            [FromQuery] string? academicYear,
+            [FromQuery] DateTime? from,
+            [FromQuery] DateTime? to)
+        {
+            var bytes = await _reports.GenerateAllGroupsReportAsync(adviserId, academicYear, from, to);
+            return File(bytes, "text/plain", "all_groups_report.txt");
+        }
+    }
+}

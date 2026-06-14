@@ -1,0 +1,73 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using THESISMATESystem.Server.DTOs.Request;
+using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Interfaces;
+
+namespace THESISMATESystem.Server.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize]
+    public class GroupsController : ControllerBase
+    {
+        private readonly IGroupService _groups;
+
+        public GroupsController(IGroupService groups) => _groups = groups;
+
+        [HttpGet]
+        [Authorize(Roles = "Admin,SuperAdmin,Adviser")]
+        public async Task<IActionResult> GetAll([FromQuery] GroupStatus? status)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role = User.FindFirstValue(ClaimTypes.Role)!;
+
+            var result = role == "Adviser"
+                ? await _groups.GetGroupsByAdviserAsync(userId)
+                : await _groups.GetAllGroupsAsync(status);
+
+            return Ok(result);
+        }
+
+        [HttpGet("my-group")]
+        [Authorize(Roles = "Student")]
+        public async Task<IActionResult> GetMyGroup()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var group = await _groups.GetGroupByStudentAsync(userId);
+            return group is null ? NotFound() : Ok(group);
+        }
+
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var group = await _groups.GetGroupByIdAsync(id);
+            return group is null ? NotFound() : Ok(group);
+        }
+
+        [HttpPost]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> Create(CreateGroupRequestDto dto)
+        {
+            var group = await _groups.CreateGroupAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
+        }
+
+        [HttpPut("{id:int}")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> Update(int id, UpdateGroupRequestDto dto)
+        {
+            try { return Ok(await _groups.UpdateGroupAsync(id, dto)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
+        [HttpPatch("{id:int}/archive")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> Archive(int id)
+        {
+            var success = await _groups.ArchiveGroupAsync(id);
+            return success ? Ok() : NotFound();
+        }
+    }
+}
