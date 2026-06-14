@@ -1,4 +1,5 @@
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 
 namespace THESISMATESystem.Server.Models
 {
@@ -13,7 +14,7 @@ namespace THESISMATESystem.Server.Models
         public string FileName { get; set; } = string.Empty;
         public string FilePath { get; set; } = string.Empty;
         public ChapterStatus Status { get; set; } = ChapterStatus.PendingReview;
-        public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
+        public DateTime SubmittedAt { get; set; } = PhilippineTime.Now;
 
         public string SubmittedById { get; set; } = string.Empty;
         public ApplicationUser SubmittedBy { get; set; } = null!;

@@ -1,3 +1,5 @@
+using THESISMATESystem.Server.Helpers;
+
 namespace THESISMATESystem.Server.Models
 {
     public class DocumentSubmission
@@ -16,7 +18,7 @@ namespace THESISMATESystem.Server.Models
         public long FileSize { get; set; }
         public string MimeType { get; set; } = string.Empty;
         public int Version { get; set; } = 1;
-        public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
+        public DateTime SubmittedAt { get; set; } = PhilippineTime.Now;
 
         public ICollection<DocumentComment> Comments { get; set; } = [];
     }

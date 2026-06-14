@@ -1,3 +1,5 @@
+using THESISMATESystem.Server.Helpers;
+
 namespace THESISMATESystem.Server.Models
 {
     public class DefenseRating
@@ -15,7 +17,7 @@ namespace THESISMATESystem.Server.Models
         public decimal Score { get; set; }
         public string? Comments { get; set; }
         public bool IsFinalized { get; set; } = false;
-        public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
+        public DateTime SubmittedAt { get; set; } = PhilippineTime.Now;
         public DateTime? FinalizedAt { get; set; }
     }
 }

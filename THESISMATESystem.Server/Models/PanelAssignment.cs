@@ -1,3 +1,5 @@
+using THESISMATESystem.Server.Helpers;
+
 namespace THESISMATESystem.Server.Models
 {
     public class PanelAssignment
@@ -9,6 +11,6 @@ namespace THESISMATESystem.Server.Models
         public string PanelistId { get; set; } = string.Empty;
         public ApplicationUser Panelist { get; set; } = null!;
 
-        public DateTime AssignedAt { get; set; } = DateTime.UtcNow;
+        public DateTime AssignedAt { get; set; } = PhilippineTime.Now;
     }
 }

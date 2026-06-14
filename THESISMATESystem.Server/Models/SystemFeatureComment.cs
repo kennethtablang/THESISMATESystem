@@ -1,3 +1,5 @@
+using THESISMATESystem.Server.Helpers;
+
 namespace THESISMATESystem.Server.Models
 {
     public class SystemFeatureComment
@@ -10,6 +12,6 @@ namespace THESISMATESystem.Server.Models
         public ApplicationUser Author { get; set; } = null!;
 
         public string Content { get; set; } = string.Empty;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
     }
 }

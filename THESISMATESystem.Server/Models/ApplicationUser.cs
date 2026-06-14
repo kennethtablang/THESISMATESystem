@@ -1,13 +1,15 @@
 using Microsoft.AspNetCore.Identity;
+using THESISMATESystem.Server.Helpers;
 
 namespace THESISMATESystem.Server.Models
 {
     public class ApplicationUser : IdentityUser
     {
         public string FirstName { get; set; } = string.Empty;
+        public string? MiddleName { get; set; }
         public string LastName { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
 
         public ICollection<GroupMember> GroupMemberships { get; set; } = [];
         public ICollection<CapstoneGroup> AdvisedGroups { get; set; } = [];

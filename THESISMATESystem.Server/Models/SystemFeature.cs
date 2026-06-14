@@ -1,4 +1,5 @@
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 
 namespace THESISMATESystem.Server.Models
 {
@@ -13,7 +14,7 @@ namespace THESISMATESystem.Server.Models
         public FeatureType FeatureType { get; set; }
         public SystemFeatureStatus Status { get; set; } = SystemFeatureStatus.NotStarted;
         public int SortOrder { get; set; }
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
         public DateTime? UpdatedAt { get; set; }
 
         public ICollection<SystemFeatureComment> Comments { get; set; } = [];

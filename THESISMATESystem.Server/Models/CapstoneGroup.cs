@@ -1,4 +1,5 @@
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 
 namespace THESISMATESystem.Server.Models
 {
@@ -10,7 +11,7 @@ namespace THESISMATESystem.Server.Models
         public bool TitleApproved { get; set; } = false;
         public string AcademicYear { get; set; } = string.Empty;
         public GroupStatus Status { get; set; } = GroupStatus.Active;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
 
         public string AdviserId { get; set; } = string.Empty;
         public ApplicationUser Adviser { get; set; } = null!;

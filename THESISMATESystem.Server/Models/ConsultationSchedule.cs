@@ -1,4 +1,5 @@
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 
 namespace THESISMATESystem.Server.Models
 {
@@ -16,7 +17,7 @@ namespace THESISMATESystem.Server.Models
         public DateTime ScheduledEndAt { get; set; }
         public int MaxGroups { get; set; } = 5;
         public ConsultationScheduleStatus Status { get; set; } = ConsultationScheduleStatus.Open;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
 
         public ICollection<ConsultationRequest> Requests { get; set; } = [];
     }

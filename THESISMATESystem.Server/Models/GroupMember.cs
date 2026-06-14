@@ -1,3 +1,5 @@
+using THESISMATESystem.Server.Helpers;
+
 namespace THESISMATESystem.Server.Models
 {
     public class GroupMember
@@ -9,6 +11,6 @@ namespace THESISMATESystem.Server.Models
         public string UserId { get; set; } = string.Empty;
         public ApplicationUser User { get; set; } = null!;
 
-        public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
+        public DateTime JoinedAt { get; set; } = PhilippineTime.Now;
     }
 }

@@ -1,3 +1,5 @@
+using THESISMATESystem.Server.Helpers;
+
 namespace THESISMATESystem.Server.Models
 {
     public class AuditLog
@@ -12,7 +14,7 @@ namespace THESISMATESystem.Server.Models
         public string? OldValues { get; set; }
         public string? NewValues { get; set; }
         public bool Success { get; set; } = true;
-        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        public DateTime Timestamp { get; set; } = PhilippineTime.Now;
         public string? IpAddress { get; set; }
     }
 }

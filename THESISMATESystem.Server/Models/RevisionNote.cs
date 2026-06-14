@@ -1,3 +1,5 @@
+using THESISMATESystem.Server.Helpers;
+
 namespace THESISMATESystem.Server.Models
 {
     public class RevisionNote
@@ -7,7 +9,7 @@ namespace THESISMATESystem.Server.Models
         public ChapterSubmission ChapterSubmission { get; set; } = null!;
 
         public string Notes { get; set; } = string.Empty;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
 
         public string CreatedById { get; set; } = string.Empty;
         public ApplicationUser CreatedBy { get; set; } = null!;

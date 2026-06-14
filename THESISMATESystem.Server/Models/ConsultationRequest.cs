@@ -1,4 +1,5 @@
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 
 namespace THESISMATESystem.Server.Models
 {
@@ -17,7 +18,7 @@ namespace THESISMATESystem.Server.Models
         public ConsultationRequestStatus Status { get; set; } = ConsultationRequestStatus.Pending;
         public string? Notes { get; set; }
         public string? ResponseNotes { get; set; }
-        public DateTime RequestedAt { get; set; } = DateTime.UtcNow;
+        public DateTime RequestedAt { get; set; } = PhilippineTime.Now;
         public DateTime? RespondedAt { get; set; }
     }
 }

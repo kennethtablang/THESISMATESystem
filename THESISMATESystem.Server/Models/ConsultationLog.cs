@@ -1,4 +1,5 @@
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 
 namespace THESISMATESystem.Server.Models
 {
@@ -15,7 +16,7 @@ namespace THESISMATESystem.Server.Models
         public ConsultationMode Mode { get; set; }
         public string DiscussionContent { get; set; } = string.Empty;
         public string Outcome { get; set; } = string.Empty;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
 
         public string AdviserId { get; set; } = string.Empty;
         public ApplicationUser Adviser { get; set; } = null!;
