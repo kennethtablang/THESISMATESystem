@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Text;
 using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 
 namespace THESISMATESystem.Server.Services
@@ -46,7 +47,7 @@ namespace THESISMATESystem.Server.Services
                     : $"  Chapter {ch}: {latest.Status} (v{latest.Version}, submitted {latest.SubmittedAt:yyyy-MM-dd})");
             }
 
-            sb.AppendLine($"\nGenerated: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+            sb.AppendLine($"\nGenerated: {PhilippineTime.Now:yyyy-MM-dd HH:mm} PHT");
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
@@ -77,7 +78,7 @@ namespace THESISMATESystem.Server.Services
                 sb.AppendLine($"{g.GroupName,-30} {approvedCount + "/5",-20} {defenseStatus,-15} {g.Status}");
             }
 
-            sb.AppendLine($"\nGenerated: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+            sb.AppendLine($"\nGenerated: {PhilippineTime.Now:yyyy-MM-dd HH:mm} PHT");
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
@@ -119,7 +120,7 @@ namespace THESISMATESystem.Server.Services
             var total = ratingsByCriterion.Sum(g => g.Average(r => r.Score) * g.Key.Weight / 100);
             sb.AppendLine();
             sb.AppendLine($"TOTAL WEIGHTED SCORE: {total:F2}");
-            sb.AppendLine($"\nGenerated: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+            sb.AppendLine($"\nGenerated: {PhilippineTime.Now:yyyy-MM-dd HH:mm} PHT");
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
@@ -153,7 +154,7 @@ namespace THESISMATESystem.Server.Services
                 sb.AppendLine($"{g.GroupName} | {g.AcademicYear} | Adviser: {g.Adviser.FirstName} {g.Adviser.LastName} | Chapters: {approvedCount}/5 | {g.Status}");
             }
 
-            sb.AppendLine($"\nGenerated: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+            sb.AppendLine($"\nGenerated: {PhilippineTime.Now:yyyy-MM-dd HH:mm} PHT");
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
     }

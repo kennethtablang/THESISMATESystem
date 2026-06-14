@@ -1,5 +1,6 @@
 using AutoMapper;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -21,6 +22,7 @@ namespace THESISMATESystem.Server.Services
         private readonly IMapper _mapper;
         private readonly AppDbContext _db;
         private readonly IEmailService _email;
+        private readonly ILogger<AuthService> _logger;
 
         public AuthService(
             UserManager<ApplicationUser> userManager,
@@ -28,7 +30,8 @@ namespace THESISMATESystem.Server.Services
             IConfiguration config,
             IMapper mapper,
             AppDbContext db,
-            IEmailService email)
+            IEmailService email,
+            ILogger<AuthService> logger)
         {
             _userManager = userManager;
             _signInManager = signInManager;
@@ -36,6 +39,7 @@ namespace THESISMATESystem.Server.Services
             _mapper = mapper;
             _db = db;
             _email = email;
+            _logger = logger;
         }
 
         public async Task<AuthResponseDto> LoginAsync(LoginRequestDto dto)
@@ -77,6 +81,7 @@ namespace THESISMATESystem.Server.Services
             var user = new ApplicationUser
             {
                 FirstName = dto.FirstName,
+                MiddleName = string.IsNullOrWhiteSpace(dto.MiddleName) ? null : dto.MiddleName.Trim(),
                 LastName = dto.LastName,
                 Email = dto.Email,
                 UserName = dto.Email,
@@ -91,11 +96,22 @@ namespace THESISMATESystem.Server.Services
             await _userManager.AddToRoleAsync(user, "Student");
 
             var confirmToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            var encodedToken = Uri.EscapeDataString(confirmToken);
+            // Base64Url-encode so the token survives email links intact (no +/= chars that break URLs)
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(confirmToken));
             var clientUrl = _config["ClientBaseUrl"] ?? "https://localhost:62535";
             var verifyUrl = $"{clientUrl}/verify-email?userId={user.Id}&token={encodedToken}";
 
-            await _email.SendEmailAsync(user.Email!, "Verify your ThesisMate account", BuildVerificationEmail(user.FirstName, verifyUrl));
+            try
+            {
+                await _email.SendEmailAsync(user.Email!, "Verify your ThesisMate account", BuildVerificationEmail(user.FirstName, verifyUrl));
+            }
+            catch (Exception ex)
+            {
+                // Roll back the user so the same email can be used to register again
+                await _userManager.DeleteAsync(user);
+                _logger.LogError(ex, "Failed to send verification email to {Email}", user.Email);
+                throw new InvalidOperationException("Failed to send the verification email. Please check your email address and try again later.");
+            }
 
             return new RegisterResponseDto
             {
@@ -109,7 +125,19 @@ namespace THESISMATESystem.Server.Services
             var user = await _userManager.FindByIdAsync(userId);
             if (user is null) return false;
 
-            var result = await _userManager.ConfirmEmailAsync(user, token);
+            if (user.EmailConfirmed) return true;
+
+            string decodedToken;
+            try
+            {
+                decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(token));
+            }
+            catch
+            {
+                return false;
+            }
+
+            var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
             return result.Succeeded;
         }
 
@@ -187,6 +215,7 @@ namespace THESISMATESystem.Server.Services
                 ?? throw new KeyNotFoundException("User not found.");
 
             if (dto.FirstName is not null) user.FirstName = dto.FirstName;
+            if (dto.MiddleName is not null) user.MiddleName = string.IsNullOrWhiteSpace(dto.MiddleName) ? null : dto.MiddleName.Trim();
             if (dto.LastName is not null) user.LastName = dto.LastName;
             if (dto.PhoneNumber is not null) user.PhoneNumber = dto.PhoneNumber;
             if (dto.IsActive.HasValue) user.IsActive = dto.IsActive.Value;

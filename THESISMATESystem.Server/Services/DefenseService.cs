@@ -4,6 +4,7 @@ using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 using THESISMATESystem.Server.Models;
 
@@ -111,7 +112,7 @@ namespace THESISMATESystem.Server.Services
                 rescheduled = true;
             }
             if (dto.Venue is not null) schedule.Venue = dto.Venue;
-            schedule.UpdatedAt = DateTime.UtcNow;
+            schedule.UpdatedAt = PhilippineTime.Now;
 
             if (dto.PanelistIds is not null)
             {
@@ -142,7 +143,7 @@ namespace THESISMATESystem.Server.Services
             if (schedule is null) return false;
 
             schedule.Status = DefenseStatus.Cancelled;
-            schedule.UpdatedAt = DateTime.UtcNow;
+            schedule.UpdatedAt = PhilippineTime.Now;
             await _db.SaveChangesAsync();
 
             await _notifications.SendToGroupMembersAsync(
@@ -160,7 +161,7 @@ namespace THESISMATESystem.Server.Services
             if (schedule is null) return false;
 
             schedule.IsRatingOpen = isOpen;
-            schedule.UpdatedAt = DateTime.UtcNow;
+            schedule.UpdatedAt = PhilippineTime.Now;
             await _db.SaveChangesAsync();
             return true;
         }
@@ -185,7 +186,7 @@ namespace THESISMATESystem.Server.Services
             {
                 existing.Score = dto.Score;
                 existing.Comments = dto.Comments;
-                existing.SubmittedAt = DateTime.UtcNow;
+                existing.SubmittedAt = PhilippineTime.Now;
             }
             else
             {
@@ -243,7 +244,7 @@ namespace THESISMATESystem.Server.Services
             foreach (var r in ratings)
             {
                 r.IsFinalized = true;
-                r.FinalizedAt = DateTime.UtcNow;
+                r.FinalizedAt = PhilippineTime.Now;
             }
 
             var schedule = await _db.DefenseSchedules.FindAsync(scheduleId);

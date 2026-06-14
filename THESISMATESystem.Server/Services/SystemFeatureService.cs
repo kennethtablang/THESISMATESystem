@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 using THESISMATESystem.Server.Models;
 
@@ -72,7 +73,7 @@ namespace THESISMATESystem.Server.Services
             if (dto.Description is not null) feature.Description = dto.Description;
             if (dto.Status.HasValue) feature.Status = dto.Status.Value;
             if (dto.SortOrder.HasValue) feature.SortOrder = dto.SortOrder.Value;
-            feature.UpdatedAt = DateTime.UtcNow;
+            feature.UpdatedAt = PhilippineTime.Now;
 
             await _db.SaveChangesAsync();
             return MapToDto(feature);

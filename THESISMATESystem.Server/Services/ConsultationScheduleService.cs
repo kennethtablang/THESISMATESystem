@@ -3,6 +3,7 @@ using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 using THESISMATESystem.Server.Models;
 
@@ -173,7 +174,7 @@ namespace THESISMATESystem.Server.Services
 
             request.Status = dto.Status;
             request.ResponseNotes = dto.ResponseNotes;
-            request.RespondedAt = DateTime.UtcNow;
+            request.RespondedAt = PhilippineTime.Now;
 
             // Auto-close schedule if full after approval
             if (dto.Status == ConsultationRequestStatus.Approved)
