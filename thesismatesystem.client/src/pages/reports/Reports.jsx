@@ -1,9 +1,23 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import TopBar from '../../components/layout/TopBar'
-import { BarChart3, Users, Calendar, TrendingUp } from 'lucide-react'
-import { groupService, defenseService } from '../../services/api'
+import { BarChart3, Users, Calendar, TrendingUp, FileDown } from 'lucide-react'
+import { groupService, defenseService, reportService } from '../../services/api'
 import { PageLoader } from '../../components/ui/Spinner'
+
+function PdfButton({ onClick, downloading }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={downloading}
+      className="btn-ghost text-xs flex items-center gap-1 px-2 py-1"
+      title="Download PDF"
+    >
+      <FileDown size={13} style={{ color: downloading ? 'var(--text-muted)' : '#c9a84c' }} />
+      {downloading ? 'Generating…' : 'PDF'}
+    </button>
+  )
+}
 
 export default function Reports() {
   const { user } = useAuth()
@@ -11,6 +25,13 @@ export default function Reports() {
   const [defenses, setDefenses] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
+  const [downloading, setDownloading] = useState({})
+
+  async function handlePdf(key, fn) {
+    setDownloading(prev => ({ ...prev, [key]: true }))
+    try { await fn() } catch (err) { alert(err.message || 'Failed to generate PDF') }
+    finally { setDownloading(prev => ({ ...prev, [key]: false })) }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -66,6 +87,14 @@ export default function Reports() {
               </button>
             ))}
           </div>
+          <button
+            onClick={() => handlePdf('allGroups', () => reportService.allGroups())}
+            disabled={downloading.allGroups}
+            className="btn-primary flex items-center gap-2 text-sm"
+          >
+            <FileDown size={15} />
+            {downloading.allGroups ? 'Generating…' : 'Export All Groups PDF'}
+          </button>
         </div>
 
         {activeTab === 'overview' && (
@@ -134,12 +163,12 @@ export default function Reports() {
                       <th>Members</th>
                       <th>Progress</th>
                       <th>Status</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
                     {groups.map((g) => {
                       const progress = g.milestoneProgress?.completionPercentage ?? 0
-                      const status = g.status ?? 'Active'
                       const isComplete = progress === 100
                       const isOnTrack = progress >= 50
                       return (
@@ -175,6 +204,12 @@ export default function Reports() {
                               {isComplete ? 'Completed' : isOnTrack ? 'On Track' : 'In Progress'}
                             </span>
                           </td>
+                          <td>
+                            <PdfButton
+                              downloading={downloading[`group_${g.id}`]}
+                              onClick={() => handlePdf(`group_${g.id}`, () => reportService.groupProgress(g.id))}
+                            />
+                          </td>
                         </tr>
                       )
                     })}
@@ -202,6 +237,7 @@ export default function Reports() {
                       <th>Date</th>
                       <th>Status</th>
                       <th>Score</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -211,10 +247,10 @@ export default function Reports() {
                         <tr key={d.id}>
                           <td className="font-semibold" style={{ color: 'var(--text-heading)' }}>{d.groupName ?? '—'}</td>
                           <td className="hidden sm:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                            <span className="truncate block max-w-[200px]">{d.thesisTitle ?? '—'}</span>
+                            <span className="truncate block max-w-[200px]">{d.thesisTitle ?? d.projectTitle ?? '—'}</span>
                           </td>
                           <td style={{ color: 'var(--text-secondary)' }}>
-                            {d.scheduledAt ? new Date(d.scheduledAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                            {d.scheduledDateTime ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                           </td>
                           <td>
                             <span
@@ -232,6 +268,14 @@ export default function Reports() {
                               ? <span className="font-semibold" style={{ color: d.consolidatedRating.averageScore >= 85 ? '#16a34a' : '#d97706' }}>{d.consolidatedRating.averageScore.toFixed(1)}</span>
                               : <span style={{ color: 'var(--text-muted)' }}>—</span>
                             }
+                          </td>
+                          <td>
+                            {isCompleted && (
+                              <PdfButton
+                                downloading={downloading[`defense_${d.id}`]}
+                                onClick={() => handlePdf(`defense_${d.id}`, () => reportService.defenseOutcome(d.id))}
+                              />
+                            )}
                           </td>
                         </tr>
                       )

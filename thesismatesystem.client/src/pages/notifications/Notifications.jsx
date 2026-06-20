@@ -6,11 +6,35 @@ import { PageLoader } from '../../components/ui/Spinner'
 import { Bell, CheckCheck, FileText, Calendar, MessageSquare, Users, AlertCircle } from 'lucide-react'
 
 const iconMap = {
-  chapter: FileText,
-  defense: Calendar,
-  consultation: MessageSquare,
-  group: Users,
-  alert: AlertCircle,
+  ChapterSubmitted: FileText,
+  ChapterStatusUpdated: FileText,
+  RevisionNoteAdded: FileText,
+  DocumentUploaded: FileText,
+  DocumentCommented: MessageSquare,
+  ConsultationLogged: MessageSquare,
+  ConsultationRequested: MessageSquare,
+  ConsultationRequestResponded: MessageSquare,
+  DefenseScheduled: Calendar,
+  DefenseRescheduled: Calendar,
+  DefenceCancelled: Calendar,
+  RatingSubmitted: AlertCircle,
+  ClassroomAnnouncement: Users,
+}
+
+const typeLabels = {
+  ChapterSubmitted: 'Chapter Submitted',
+  ChapterStatusUpdated: 'Chapter Status Updated',
+  RevisionNoteAdded: 'Revision Note Added',
+  DocumentUploaded: 'Document Uploaded',
+  DocumentCommented: 'Document Comment',
+  ConsultationLogged: 'Consultation Logged',
+  ConsultationRequested: 'Consultation Requested',
+  ConsultationRequestResponded: 'Request Responded',
+  DefenseScheduled: 'Defense Scheduled',
+  DefenseRescheduled: 'Defense Rescheduled',
+  DefenceCancelled: 'Defense Cancelled',
+  RatingSubmitted: 'Rating Submitted',
+  ClassroomAnnouncement: 'Classroom Announcement',
 }
 
 export default function Notifications() {
@@ -85,10 +109,10 @@ export default function Notifications() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-semibold" style={{ color: isRead ? 'var(--text-primary)' : 'var(--text-heading)' }}>
-                        {n.title}
+                        {typeLabels[n.type] ?? n.type}
                       </p>
                       <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
-                        {formatTime(n.time ?? n.createdAt)}
+                        {formatTime(n.createdAt)}
                       </span>
                     </div>
                     <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)', lineHeight: '1.5' }}>

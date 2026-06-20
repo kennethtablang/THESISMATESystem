@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Cpu, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react'
+import { Cpu, MessageSquare, ChevronDown, ChevronUp, BarChart2, List } from 'lucide-react'
 import TopBar from '../../components/layout/TopBar'
+import GanttChart from '../../components/ui/GanttChart'
 import { systemFeatureService, groupService } from '../../services/api'
 
 const statusColors = {
@@ -84,6 +85,7 @@ export default function StudentSystemTracker() {
   const [group, setGroup] = useState(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('All')
+  const [view, setView] = useState('list')
 
   useEffect(() => {
     groupService.myGroup().then(g => {
@@ -113,44 +115,60 @@ export default function StudentSystemTracker() {
             <h2 className="page-title">System Feature Tracker</h2>
             <p className="page-subtitle">{group?.groupName} — Descriptive-Developmental Progress</p>
           </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          {[
-            { label: 'Total', value: features.length, color: '#c9a84c' },
-            { label: 'Functional', value: functional.length, color: '#3b82f6' },
-            { label: 'Non-Functional', value: nonFunctional.length, color: '#8b5cf6' },
-            { label: 'Completed', value: features.filter(f => f.status === 'Completed').length, color: '#16a34a' },
-          ].map(stat => (
-            <div key={stat.label} className="stat-card">
-              <p className="text-2xl font-bold font-display" style={{ color: stat.color }}>{stat.value}</p>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{stat.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Filter */}
-        <div className="flex gap-2 mb-5">
-          {['All', 'Functional', 'NonFunctional'].map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
-              style={{ background: filter === f ? '#c9a84c' : 'var(--bg-subtle)', color: filter === f ? '#0a1628' : 'var(--text-secondary)' }}>
-              {f === 'NonFunctional' ? 'Non-Functional' : f}
+          <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--bg-subtle)' }}>
+            <button onClick={() => setView('list')} className="px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 transition-all"
+              style={{ background: view === 'list' ? 'var(--bg-card)' : 'transparent', color: view === 'list' ? 'var(--text-heading)' : 'var(--text-muted)' }}>
+              <List size={14} /> List
             </button>
-          ))}
+            <button onClick={() => setView('gantt')} className="px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 transition-all"
+              style={{ background: view === 'gantt' ? 'var(--bg-card)' : 'transparent', color: view === 'gantt' ? 'var(--text-heading)' : 'var(--text-muted)' }}>
+              <BarChart2 size={14} /> Gantt
+            </button>
+          </div>
         </div>
 
-        {displayed.length === 0 ? (
-          <div className="card text-center py-12">
-            <Cpu size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-            <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>No features added yet</p>
-            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Your adviser will add system features to track</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {displayed.map(f => <FeatureCard key={f.id} feature={f} />)}
-          </div>
+        {view === 'list' && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+              {[
+                { label: 'Total', value: features.length, color: '#c9a84c' },
+                { label: 'Functional', value: functional.length, color: '#3b82f6' },
+                { label: 'Non-Functional', value: nonFunctional.length, color: '#8b5cf6' },
+                { label: 'Completed', value: features.filter(f => f.status === 'Completed').length, color: '#16a34a' },
+              ].map(stat => (
+                <div key={stat.label} className="stat-card">
+                  <p className="text-2xl font-bold font-display" style={{ color: stat.color }}>{stat.value}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{stat.label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2 mb-5">
+              {['All', 'Functional', 'NonFunctional'].map(f => (
+                <button key={f} onClick={() => setFilter(f)}
+                  className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
+                  style={{ background: filter === f ? '#c9a84c' : 'var(--bg-subtle)', color: filter === f ? '#0a1628' : 'var(--text-secondary)' }}>
+                  {f === 'NonFunctional' ? 'Non-Functional' : f}
+                </button>
+              ))}
+            </div>
+
+            {displayed.length === 0 ? (
+              <div className="card text-center py-12">
+                <Cpu size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+                <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>No features added yet</p>
+                <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Your adviser will add system features to track</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {displayed.map(f => <FeatureCard key={f.id} feature={f} />)}
+              </div>
+            )}
+          </>
+        )}
+
+        {view === 'gantt' && (
+          <GanttChart features={features} canEdit={false} />
         )}
       </div>
     </>
