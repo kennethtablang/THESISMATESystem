@@ -10,7 +10,6 @@ import {
   Calendar,
   Bell,
   BarChart3,
-  LogOut,
   UserCircle,
   Star,
   ChevronRight,
@@ -19,6 +18,8 @@ import {
   CalendarClock,
   ShieldCheck,
   BookOpen,
+  School,
+  Megaphone,
 } from 'lucide-react'
 
 const navByRole = {
@@ -48,12 +49,14 @@ const navByRole = {
   ],
   FacultyIC: [
     { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
+    { label: 'Classroom', icon: School, to: '/classroom' },
     { label: 'Consultation Manager', icon: CalendarClock, to: '/consultation-manager' },
-    { label: 'Presentations', icon: Calendar, to: '/defenses' },
-    { label: 'Calendar', icon: CalendarClock, to: '/calendar' },
+    { label: 'Defense Schedules', icon: Calendar, to: '/defenses' },
+    { label: 'Reports', icon: BarChart3, to: '/reports' },
   ],
   Student: [
     { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
+    { label: 'My Class', icon: Megaphone, to: '/my-class' },
     { label: 'My Group', icon: Users, to: '/groups' },
     { label: 'Upload Documents', icon: Upload, to: '/documents' },
     { label: 'System Tracker', icon: Cpu, to: '/system-features' },
@@ -77,7 +80,7 @@ const roleColors = {
 }
 
 export default function Sidebar({ onClose }) {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const role = user?.role ?? 'Student'
   const navItems = navByRole[role] ?? navByRole.Student
@@ -85,11 +88,6 @@ export default function Sidebar({ onClose }) {
   const initials = user?.fullName
     ? user.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
     : 'TM'
-
-  function handleLogout() {
-    logout()
-    navigate('/login')
-  }
 
   function handleNav() {
     onClose?.()
@@ -166,16 +164,6 @@ export default function Sidebar({ onClose }) {
           </div>
           <ChevronRight size={14} className="text-slate-600 group-hover:text-slate-400 transition-colors shrink-0" />
         </div>
-        <button
-          onClick={handleLogout}
-          className="mt-1.5 w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150"
-          style={{ color: '#64748b' }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.color = '#f87171' }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b' }}
-        >
-          <LogOut size={15} strokeWidth={1.75} />
-          <span>Sign out</span>
-        </button>
       </div>
     </aside>
   )
