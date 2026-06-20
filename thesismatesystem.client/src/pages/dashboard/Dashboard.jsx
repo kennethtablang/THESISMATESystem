@@ -7,6 +7,7 @@ import {
   Users, FileText, Calendar, AlertCircle, ArrowRight, Plus,
   BarChart3, GraduationCap, MessageSquare, Upload, Cpu,
   CalendarClock, ShieldCheck, CheckCircle2, Star, BookOpen,
+  TrendingUp, Clock, ChevronRight,
 } from 'lucide-react'
 import {
   groupService, chapterService, consultationService,
@@ -15,31 +16,150 @@ import {
 
 // ─── Shared UI ───────────────────────────────────────────────────────────────
 
-function StatCard({ icon: Icon, label, value, sub, color, onClick }) {
+function WelcomeBanner({ badge, badgeColor, name, sub, gradient, extra }) {
+  const today = new Date()
+  const day   = today.getDate()
+  const month = today.toLocaleDateString('en-PH', { month: 'short' })
+  const weekday = today.toLocaleDateString('en-PH', { weekday: 'long' })
+
   return (
     <div
-      className="stat-card cursor-pointer group"
-      onClick={onClick}
-      onMouseEnter={e => {
-        e.currentTarget.style.transform = 'translateY(-2px)'
-        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12), 0 12px 32px rgba(0,0,0,0.08)'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.transform = 'translateY(0)'
-        e.currentTarget.style.boxShadow = ''
-      }}
+      className="rounded-2xl mb-6 overflow-hidden relative"
+      style={{ background: gradient }}
     >
-      <div className="flex items-start justify-between mb-4">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: color.bg }}>
-          <Icon size={18} style={{ color: color.icon }} strokeWidth={1.75} />
+      {/* Gold accent top bar */}
+      <div style={{ height: '3px', background: 'linear-gradient(90deg, #c9a84c 0%, rgba(201,168,76,0.15) 100%)' }} />
+
+      {/* Dot grid pattern */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)',
+          backgroundSize: '28px 28px',
+        }}
+      />
+
+      {/* Glow orb */}
+      <div
+        className="absolute -right-20 -bottom-20 w-72 h-72 rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(201,168,76,0.1) 0%, transparent 65%)' }}
+      />
+
+      {/* Content */}
+      <div className="relative z-10 px-6 pt-6 pb-7 sm:px-8 sm:pt-7">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            {/* Role badge */}
+            <div
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg mb-4"
+              style={{
+                background: `rgba(${badgeColor}, 0.15)`,
+                border: `1px solid rgba(${badgeColor}, 0.25)`,
+              }}
+            >
+              <div className="w-1.5 h-1.5 rounded-full" style={{ background: `rgb(${badgeColor})` }} />
+              <span
+                className="text-xs font-semibold uppercase tracking-widest"
+                style={{ color: `rgb(${badgeColor})` }}
+              >
+                {badge}
+              </span>
+            </div>
+
+            <h2
+              className="font-display font-bold text-white truncate"
+              style={{ fontSize: 'clamp(1.4rem, 3vw, 1.9rem)', letterSpacing: '-0.5px', lineHeight: 1.2 }}
+            >
+              {name}
+            </h2>
+            <p className="mt-1.5 text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              {sub}
+            </p>
+          </div>
+
+          {/* Calendar widget */}
+          <div
+            className="hidden sm:flex flex-col items-center shrink-0 px-4 py-3 rounded-xl"
+            style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 72 }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              {month}
+            </p>
+            <p
+              className="font-display font-bold text-white"
+              style={{ fontSize: '2.2rem', letterSpacing: '-2px', lineHeight: 1.05 }}
+            >
+              {day}
+            </p>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>
+              {weekday.slice(0, 3)}
+            </p>
+          </div>
         </div>
-        <ArrowRight size={15} className="opacity-0 group-hover:opacity-100 transition-opacity mt-1" style={{ color: 'var(--text-muted)' }} />
+
+        {extra && <div className="mt-5">{extra}</div>}
       </div>
-      <p className="text-3xl font-display font-semibold mb-1" style={{ color: 'var(--text-heading)', letterSpacing: '-1px' }}>
-        {value}
-      </p>
-      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{label}</p>
-      {sub && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
+    </div>
+  )
+}
+
+function StatCard({ icon: Icon, label, value, sub, color, onClick }) {
+  return (
+    <button
+      type="button"
+      className="stat-card w-full text-left group relative overflow-hidden"
+      onClick={onClick}
+    >
+      {/* Left accent stripe */}
+      <div
+        className="absolute inset-y-0 left-0 w-[3px] rounded-l-2xl"
+        style={{ background: color.icon }}
+      />
+
+      <div className="pl-2">
+        <div className="flex items-start justify-between mb-4">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center"
+            style={{ background: color.bg }}
+          >
+            <Icon size={18} style={{ color: color.icon }} strokeWidth={1.75} />
+          </div>
+          <ChevronRight
+            size={15}
+            className="opacity-0 group-hover:opacity-60 transition-opacity mt-0.5 shrink-0"
+            style={{ color: 'var(--text-muted)' }}
+          />
+        </div>
+
+        <p
+          className="font-display font-bold leading-none mb-2"
+          style={{ color: 'var(--text-heading)', fontSize: '2rem', letterSpacing: '-1.5px' }}
+        >
+          {value}
+        </p>
+        <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>
+          {label}
+        </p>
+        {sub && (
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            {sub}
+          </p>
+        )}
+      </div>
+    </button>
+  )
+}
+
+function SectionHeader({ title, action }) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2.5">
+        <div className="w-[3px] h-5 rounded-full" style={{ background: '#c9a84c' }} />
+        <h3 className="font-semibold" style={{ color: 'var(--text-heading)', fontSize: '15px' }}>
+          {title}
+        </h3>
+      </div>
+      {action}
     </div>
   )
 }
@@ -47,8 +167,12 @@ function StatCard({ icon: Icon, label, value, sub, color, onClick }) {
 function Card({ children, className = '' }) {
   return (
     <div
-      className={`rounded-2xl ${className}`}
-      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+      className={`rounded-2xl overflow-hidden ${className}`}
+      style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-light)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.03)',
+      }}
     >
       {children}
     </div>
@@ -57,27 +181,14 @@ function Card({ children, className = '' }) {
 
 function CardHeader({ title, action }) {
   return (
-    <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b" style={{ borderColor: 'var(--border-main)' }}>
-      <p className="font-semibold" style={{ color: 'var(--text-heading)' }}>{title}</p>
-      {action}
-    </div>
-  )
-}
-
-function WelcomeBanner({ gradient, border, glow, name, role, sub, extra }) {
-  return (
     <div
-      className="rounded-2xl p-6 mb-6 relative overflow-hidden"
-      style={{ background: gradient, border: `1px solid ${border}` }}
+      className="flex items-center justify-between px-6 py-4 border-b"
+      style={{ borderColor: 'var(--border-light)' }}
     >
-      <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full opacity-10"
-        style={{ background: `radial-gradient(circle, ${glow} 0%, transparent 70%)` }} />
-      <div className="relative z-10">
-        <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.5)' }}>{role}</p>
-        <h2 className="font-display text-2xl font-semibold text-white" style={{ letterSpacing: '-0.5px' }}>{name}</h2>
-        <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{sub}</p>
-        {extra}
-      </div>
+      <p className="font-semibold text-sm" style={{ color: 'var(--text-heading)' }}>
+        {title}
+      </p>
+      {action}
     </div>
   )
 }
@@ -85,46 +196,122 @@ function WelcomeBanner({ gradient, border, glow, name, role, sub, extra }) {
 function QuickActions({ items }) {
   const navigate = useNavigate()
   return (
-    <div className="p-4 space-y-2">
-      {items.map(a => (
+    <div className="p-4 grid grid-cols-1 gap-2">
+      {items.map((a) => (
         <button
           key={a.label}
+          type="button"
           onClick={() => navigate(a.to)}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl text-left group transition-all duration-150"
           style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-light)' }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-main)'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-light)'}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = 'rgba(201,168,76,0.4)'
+            e.currentTarget.style.background = 'rgba(201,168,76,0.06)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border-light)'
+            e.currentTarget.style.background = 'var(--bg-subtle)'
+          }}
         >
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(201,168,76,0.12)' }}>
-            <a.icon size={14} style={{ color: '#c9a84c' }} />
+          <div
+            className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.18)' }}
+          >
+            <a.icon size={15} style={{ color: '#c9a84c' }} />
           </div>
-          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{a.label}</span>
-          <ArrowRight size={13} className="ml-auto" style={{ color: 'var(--text-muted)' }} />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+              {a.label}
+            </p>
+            {a.desc && (
+              <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                {a.desc}
+              </p>
+            )}
+          </div>
+          <ArrowRight
+            size={14}
+            className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ color: '#c9a84c' }}
+          />
         </button>
       ))}
     </div>
   )
 }
 
+function EmptyCard({ icon: Icon, message, hint }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+      <div
+        className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
+        style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-main)' }}
+      >
+        <Icon size={20} style={{ color: 'var(--text-muted)' }} strokeWidth={1.5} />
+      </div>
+      <p className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+        {message}
+      </p>
+      {hint && (
+        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+          {hint}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function DashboardLoader() {
   return (
-    <div className="p-4 sm:p-8 flex items-center justify-center h-48">
-      <div className="flex gap-1">
-        {[0, 1, 2].map(i => (
-          <span key={i} className="w-2 h-2 rounded-full animate-bounce"
-            style={{ background: '#c9a84c', animationDelay: `${i * 0.15}s` }} />
+    <div className="p-6 sm:p-8">
+      {/* Banner skeleton */}
+      <div className="h-32 rounded-2xl mb-6 animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }} />
+      {/* Stat cards skeleton */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-28 rounded-2xl animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }} />
         ))}
+      </div>
+      {/* Content skeleton */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="h-64 rounded-2xl animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }} />
+        <div className="h-64 rounded-2xl animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }} />
       </div>
     </div>
   )
 }
 
-function EmptyCard({ icon: Icon, message, hint }) {
+function ProgressBanner({ approved, total, needsRevision }) {
+  const progress = total > 0 ? Math.round((approved / total) * 100) : 0
   return (
-    <div className="px-5 py-10 text-center">
-      <Icon size={32} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-      <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{message}</p>
-      {hint && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
+    <div
+      className="rounded-xl p-4"
+      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)' }}
+    >
+      <div className="flex items-center justify-between mb-2.5">
+        <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          Chapter Progress
+        </span>
+        <span className="text-sm font-bold" style={{ color: '#c9a84c' }}>
+          {progress}%
+        </span>
+      </div>
+      <div className="h-2 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }}>
+        <div
+          className="h-2 rounded-full transition-all duration-700"
+          style={{ width: `${progress}%`, background: 'linear-gradient(90deg, #c9a84c, #d4b565)' }}
+        />
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+          {approved} of {total} chapters approved
+        </span>
+        {needsRevision > 0 && (
+          <span className="text-xs font-medium" style={{ color: '#f59e0b' }}>
+            {needsRevision} needs revision
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -141,12 +328,12 @@ function StudentDashboard({ user }) {
 
   useEffect(() => {
     groupService.myGroup()
-      .then(g => {
+      .then((g) => {
         setGroup(g)
         return Promise.all([
           chapterService.listByGroup(g.id).catch(() => []),
           consultationService.byGroup(g.id).catch(() => []),
-          defenseService.mySchedules().catch(() => []),
+          defenseService.byGroup(g.id).catch(() => []),
         ])
       })
       .then(([ch, co, de]) => {
@@ -160,92 +347,153 @@ function StudentDashboard({ user }) {
 
   if (loading) return <DashboardLoader />
 
-  const approved = chapters.filter(c => c.status === 'Approved').length
-  const needsRevision = chapters.filter(c => c.status === 'NeedsRevision').length
-  const progress = chapters.length > 0 ? Math.round(approved / chapters.length * 100) : 0
-  const nextDefense = defenses.find(d => d.status !== 'Cancelled')
+  const approved     = chapters.filter((c) => c.status === 'Approved').length
+  const needsRevision = chapters.filter((c) => c.status === 'UnderRevision').length
+  const nextDefense  = defenses.find((d) => d.status !== 'Cancelled')
   const nextDefenseDate = nextDefense
-    ? new Date(nextDefense.scheduledDate ?? nextDefense.dateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+    ? new Date(nextDefense.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
     : '—'
 
   return (
-    <div className="p-4 sm:p-8 animate-slide-up">
+    <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
-        gradient="linear-gradient(135deg, #0a1628 0%, #1e3350 100%)"
-        border="#27416a"
-        glow="#c9a84c"
-        role="Welcome back,"
+        gradient="linear-gradient(135deg, #060e1f 0%, #0a1628 50%, #0f1e38 100%)"
+        badge="Student"
+        badgeColor="201,168,76"
         name={user?.firstName ?? user?.fullName?.split(' ')[0] ?? 'Student'}
-        sub={group
-          ? `${group.groupName ?? group.name} — Keep progressing on your capstone.`
-          : 'You are not yet assigned to a group.'
+        sub={
+          group
+            ? `${group.groupName ?? group.name} — Keep progressing on your capstone.`
+            : 'You are not yet assigned to a capstone group.'
         }
-        extra={chapters.length > 0 && (
-          <div className="mt-4 flex items-center gap-2">
-            <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }}>
-              <div className="h-1.5 rounded-full" style={{ width: `${progress}%`, background: 'linear-gradient(90deg, #c9a84c, #d4b565)' }} />
-            </div>
-            <span className="text-xs font-medium" style={{ color: '#c9a84c' }}>
-              {approved}/{chapters.length} chapters approved
-            </span>
-          </div>
-        )}
+        extra={
+          chapters.length > 0 && (
+            <ProgressBanner approved={approved} total={chapters.length} needsRevision={needsRevision} />
+          )
+        }
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={FileText} label="Chapters Submitted" value={chapters.length} sub={approved > 0 ? `${approved} approved` : 'None yet'} color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }} onClick={() => navigate('/chapters')} />
-        <StatCard icon={AlertCircle} label="Needs Revision" value={needsRevision} sub={needsRevision > 0 ? 'Requires attention' : 'None pending'} color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }} onClick={() => navigate('/chapters')} />
-        <StatCard icon={MessageSquare} label="Consultations" value={consultations.length} sub="logged this semester" color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }} onClick={() => navigate('/consultations')} />
-        <StatCard icon={Calendar} label="Next Defense" value={nextDefenseDate} sub={nextDefense ? 'Scheduled' : 'Not yet set'} color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/defenses')} />
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        <StatCard
+          icon={FileText}
+          label="Chapters Submitted"
+          value={chapters.length}
+          sub={approved > 0 ? `${approved} approved` : 'None approved yet'}
+          color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
+          onClick={() => navigate('/documents')}
+        />
+        <StatCard
+          icon={AlertCircle}
+          label="Needs Revision"
+          value={needsRevision}
+          sub={needsRevision > 0 ? 'Requires attention' : 'All clear'}
+          color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }}
+          onClick={() => navigate('/documents')}
+        />
+        <StatCard
+          icon={MessageSquare}
+          label="Consultations"
+          value={consultations.length}
+          sub="logged this semester"
+          color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
+          onClick={() => navigate('/consultations')}
+        />
+        <StatCard
+          icon={Calendar}
+          label="Next Defense"
+          value={nextDefenseDate}
+          sub={nextDefense ? 'Scheduled' : 'Not yet set'}
+          color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
+          onClick={() => navigate('/defenses')}
+        />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2">
+          <SectionHeader
             title="Chapter Submissions"
-            action={<button className="btn-ghost text-xs" onClick={() => navigate('/chapters')}>View all</button>}
+            action={
+              <button className="btn-ghost text-xs" onClick={() => navigate('/documents')}>
+                View all
+              </button>
+            }
           />
-          {chapters.length === 0 ? (
-            <EmptyCard icon={FileText} message="No chapters submitted yet" hint="Upload your first chapter to get started" />
-          ) : (
-            <div className="divide-y" style={{ borderColor: 'var(--border-light)' }}>
-              {chapters.map(c => (
-                <div key={c.id} className="flex items-center justify-between px-5 py-3">
-                  <div className="flex items-center gap-3">
+          <Card>
+            {chapters.length === 0 ? (
+              <EmptyCard icon={FileText} message="No chapters submitted yet" hint="Upload your first chapter to get started" />
+            ) : (
+              <div>
+                {chapters.map((c, idx) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center gap-4 px-5 py-4 transition-colors duration-100"
+                    style={{
+                      borderBottom: idx < chapters.length - 1 ? '1px solid var(--border-light)' : 'none',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    {/* Chapter number badge */}
                     <div
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
                       style={{
-                        background: c.status === 'Approved' ? 'rgba(34,197,94,0.12)' : c.status === 'NeedsRevision' ? 'rgba(245,158,11,0.12)' : 'var(--bg-subtle)',
-                        color: c.status === 'Approved' ? '#16a34a' : c.status === 'NeedsRevision' ? '#f59e0b' : 'var(--text-muted)',
+                        background:
+                          c.status === 'Approved'
+                            ? 'rgba(34,197,94,0.12)'
+                            : c.status === 'UnderRevision'
+                            ? 'rgba(245,158,11,0.12)'
+                            : 'var(--bg-subtle)',
+                        color:
+                          c.status === 'Approved'
+                            ? '#16a34a'
+                            : c.status === 'UnderRevision'
+                            ? '#f59e0b'
+                            : 'var(--text-muted)',
+                        border:
+                          c.status === 'Approved'
+                            ? '1px solid rgba(34,197,94,0.2)'
+                            : c.status === 'UnderRevision'
+                            ? '1px solid rgba(245,158,11,0.2)'
+                            : '1px solid var(--border-main)',
                       }}
                     >
                       {c.chapterNumber ?? '—'}
                     </div>
-                    <div>
-                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
                         {c.title ?? c.chapterTitle ?? `Chapter ${c.chapterNumber}`}
                       </p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {c.submittedAt ? new Date(c.submittedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '—'}
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        {c.submittedAt
+                          ? new Date(c.submittedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+                          : '—'}
                       </p>
                     </div>
-                  </div>
-                  <Badge variant={statusVariant(c.status)} size="sm">{statusLabel(c.status)}</Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
 
-        <Card>
-          <CardHeader title="Quick Actions" />
-          <QuickActions items={[
-            { icon: Upload, label: 'Upload a document', to: '/documents' },
-            { icon: Cpu, label: 'View system tracker', to: '/system-features' },
-            { icon: CalendarClock, label: 'Consultation calendar', to: '/calendar' },
-            { icon: Calendar, label: 'Defense schedule', to: '/defenses' },
-          ]} />
-        </Card>
+                    <Badge variant={statusVariant(c.status)} size="sm">
+                      {statusLabel(c.status)}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <div>
+          <SectionHeader title="Quick Actions" />
+          <Card>
+            <QuickActions
+              items={[
+                { icon: Upload,        label: 'Upload a document',   desc: 'Submit chapter or file', to: '/documents' },
+                { icon: Cpu,           label: 'System tracker',      desc: 'Monitor feature progress', to: '/system-features' },
+                { icon: CalendarClock, label: 'Consultation calendar', desc: 'View your schedule',   to: '/calendar' },
+                { icon: Calendar,      label: 'Defense schedule',    desc: 'Your upcoming defenses', to: '/defenses' },
+              ]}
+            />
+          </Card>
+        </div>
       </div>
     </div>
   )
@@ -271,106 +519,173 @@ function AdviserDashboard({ user }) {
       setConsultations(co)
       setDefenses(de)
       const chaptersByGroup = await Promise.all(
-        gs.map(g =>
-          chapterService.listByGroup(g.id)
-            .then(ch => ch.map(c => ({ ...c, groupName: g.groupName ?? g.name })))
+        gs.map((g) =>
+          chapterService
+            .listByGroup(g.id)
+            .then((ch) => ch.map((c) => ({ ...c, groupName: g.groupName ?? g.name })))
             .catch(() => [])
         )
       )
-      const pending = chaptersByGroup.flat().filter(c => c.status === 'Pending' || c.status === 'NeedsRevision')
+      const pending = chaptersByGroup.flat().filter(
+        (c) => c.status === 'PendingReview' || c.status === 'UnderRevision'
+      )
       setPendingChapters(pending)
     }).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <DashboardLoader />
 
-  const upcomingDefenses = defenses.filter(d => d.status !== 'Cancelled' && d.status !== 'Completed')
+  const upcomingDefenses = defenses.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
 
   return (
-    <div className="p-4 sm:p-8 animate-slide-up">
+    <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
-        gradient="linear-gradient(135deg, #064e3b 0%, #065f46 100%)"
-        border="#047857"
-        glow="#34d399"
-        role="Good day,"
+        gradient="linear-gradient(135deg, #042e1f 0%, #064e3b 50%, #065f46 100%)"
+        badge="Adviser"
+        badgeColor="52,211,153"
         name={user?.fullName ?? 'Adviser'}
-        sub={pendingChapters.length > 0
-          ? `${pendingChapters.length} chapter${pendingChapters.length !== 1 ? 's' : ''} awaiting your review.`
-          : 'No pending chapter reviews at this time.'}
+        sub={
+          pendingChapters.length > 0
+            ? `${pendingChapters.length} chapter${pendingChapters.length !== 1 ? 's' : ''} awaiting your review.`
+            : 'No pending chapter reviews at this time.'
+        }
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={Users} label="Active Advisees" value={groups.length} sub={groups.length === 1 ? 'group' : 'groups'} color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }} onClick={() => navigate('/groups')} />
-        <StatCard icon={FileText} label="Pending Reviews" value={pendingChapters.length} sub="awaiting response" color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }} onClick={() => navigate('/documents')} />
-        <StatCard icon={MessageSquare} label="Consultations" value={consultations.length} sub="total logged" color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }} onClick={() => navigate('/consultations')} />
-        <StatCard icon={Calendar} label="Upcoming Defenses" value={upcomingDefenses.length} sub="scheduled" color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/defenses')} />
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        <StatCard
+          icon={Users}
+          label="Active Advisees"
+          value={groups.length}
+          sub={groups.length === 1 ? '1 group' : `${groups.length} groups`}
+          color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
+          onClick={() => navigate('/groups')}
+        />
+        <StatCard
+          icon={FileText}
+          label="Pending Reviews"
+          value={pendingChapters.length}
+          sub="awaiting response"
+          color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }}
+          onClick={() => navigate('/documents')}
+        />
+        <StatCard
+          icon={MessageSquare}
+          label="Consultations"
+          value={consultations.length}
+          sub="total logged"
+          color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
+          onClick={() => navigate('/consultations')}
+        />
+        <StatCard
+          icon={Calendar}
+          label="Upcoming Defenses"
+          value={upcomingDefenses.length}
+          sub="scheduled"
+          color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
+          onClick={() => navigate('/defenses')}
+        />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader
-            title="Pending Reviews"
-            action={<button className="btn-ghost text-xs" onClick={() => navigate('/documents')}>View manuscripts</button>}
-          />
-          {pendingChapters.length === 0 ? (
-            <EmptyCard icon={CheckCircle2} message="No pending reviews" hint="All submitted chapters have been reviewed" />
-          ) : (
-            <div className="divide-y" style={{ borderColor: 'var(--border-light)' }}>
-              {pendingChapters.slice(0, 5).map((c, i) => (
-                <div key={c.id ?? i} className="flex items-center justify-between px-5 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0"
-                      style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
-                      {c.chapterNumber ?? '?'}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                        {c.title ?? c.chapterTitle ?? `Chapter ${c.chapterNumber}`}
-                      </p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.groupName}</p>
-                    </div>
-                  </div>
-                  <Badge variant={statusVariant(c.status)} size="sm">{statusLabel(c.status)}</Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card>
-          <CardHeader
-            title="My Advisees"
-            action={<button className="btn-ghost text-xs" onClick={() => navigate('/groups')}>View all</button>}
-          />
-          {groups.length === 0 ? (
-            <EmptyCard icon={Users} message="No groups assigned yet" />
-          ) : (
-            <div className="divide-y" style={{ borderColor: 'var(--border-light)' }}>
-              {groups.map(g => {
-                const prog = g.milestoneProgress?.completionPercentage ?? 0
-                return (
-                  <div key={g.id} className="px-5 py-3.5">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{g.groupName ?? g.name}</p>
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {g.memberCount ?? g.members?.length ?? 0} members
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
-                        <div className="h-1.5 rounded-full" style={{
-                          width: `${prog}%`,
-                          background: prog >= 70 ? '#16a34a' : prog >= 40 ? '#c9a84c' : 'var(--border-main)',
-                        }} />
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 space-y-6">
+          <div>
+            <SectionHeader
+              title="Pending Reviews"
+              action={
+                <button className="btn-ghost text-xs" onClick={() => navigate('/documents')}>
+                  View manuscripts
+                </button>
+              }
+            />
+            <Card>
+              {pendingChapters.length === 0 ? (
+                <EmptyCard icon={CheckCircle2} message="No pending reviews" hint="All submitted chapters have been reviewed" />
+              ) : (
+                <div>
+                  {pendingChapters.slice(0, 6).map((c, i) => (
+                    <div
+                      key={c.id ?? i}
+                      className="flex items-center gap-4 px-5 py-4 transition-colors duration-100"
+                      style={{ borderBottom: i < Math.min(pendingChapters.length, 6) - 1 ? '1px solid var(--border-light)' : 'none' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
+                        style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}
+                      >
+                        {c.chapterNumber ?? '?'}
                       </div>
-                      <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{prog}%</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                          {c.title ?? c.chapterTitle ?? `Chapter ${c.chapterNumber}`}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                          {c.groupName}
+                        </p>
+                      </div>
+                      <Badge variant={statusVariant(c.status)} size="sm">
+                        {statusLabel(c.status)}
+                      </Badge>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </Card>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+
+        <div>
+          <SectionHeader
+            title="My Advisees"
+            action={
+              <button className="btn-ghost text-xs" onClick={() => navigate('/groups')}>
+                View all
+              </button>
+            }
+          />
+          <Card>
+            {groups.length === 0 ? (
+              <EmptyCard icon={Users} message="No groups assigned yet" />
+            ) : (
+              <div>
+                {groups.map((g, idx) => {
+                  const prog = g.milestoneProgress?.completionPercentage ?? 0
+                  return (
+                    <div
+                      key={g.id}
+                      className="px-5 py-4 transition-colors duration-100"
+                      style={{ borderBottom: idx < groups.length - 1 ? '1px solid var(--border-light)' : 'none' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                          {g.groupName ?? g.name}
+                        </p>
+                        <span className="text-xs font-bold" style={{ color: prog >= 70 ? '#16a34a' : prog >= 40 ? '#c9a84c' : 'var(--text-muted)' }}>
+                          {prog}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
+                        <div
+                          className="h-1.5 rounded-full transition-all duration-500"
+                          style={{
+                            width: `${prog}%`,
+                            background: prog >= 70 ? '#16a34a' : prog >= 40 ? '#c9a84c' : 'var(--border-main)',
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                        {g.memberCount ?? g.members?.length ?? 0} members
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
     </div>
   )
@@ -396,37 +711,36 @@ function AdminDashboard({ user }) {
 
   if (loading) return <DashboardLoader />
 
-  const activeDefenses = defenses.filter(d => d.status !== 'Cancelled' && d.status !== 'Completed')
+  const activeDefenses = defenses.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
 
   return (
-    <div className="p-4 sm:p-8 animate-slide-up">
+    <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
-        gradient="linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)"
-        border="#4338ca"
-        glow="#818cf8"
-        role="System overview,"
+        gradient="linear-gradient(135deg, #1a1035 0%, #1e1b4b 50%, #2d2a6e 100%)"
+        badge="Administrator"
+        badgeColor="165,180,252"
         name={user?.fullName ?? 'Admin'}
         sub={`${groups.length} capstone group${groups.length !== 1 ? 's' : ''} · ${activeDefenses.length} defense${activeDefenses.length !== 1 ? 's' : ''} scheduled`}
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={Users} label="Total Groups" value={groups.length} sub="registered" color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }} onClick={() => navigate('/groups')} />
-        <StatCard icon={GraduationCap} label="Scheduled Defenses" value={activeDefenses.length} sub="upcoming" color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }} onClick={() => navigate('/defenses')} />
-        <StatCard icon={ShieldCheck} label="User Management" value="Users" sub="manage accounts" color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }} onClick={() => navigate('/users')} />
-        <StatCard icon={BarChart3} label="Reports" value="View" sub="system reports" color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/reports')} />
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        <StatCard icon={Users}       label="Total Groups"        value={groups.length}        sub="registered"      color={{ bg: 'rgba(59,130,246,0.12)',  icon: '#3b82f6' }} onClick={() => navigate('/groups')} />
+        <StatCard icon={GraduationCap} label="Scheduled Defenses" value={activeDefenses.length} sub="upcoming"       color={{ bg: 'rgba(34,197,94,0.12)',   icon: '#16a34a' }} onClick={() => navigate('/defenses')} />
+        <StatCard icon={ShieldCheck}  label="User Management"    value="Users"                sub="manage accounts" color={{ bg: 'rgba(245,158,11,0.12)',  icon: '#f59e0b' }} onClick={() => navigate('/users')} />
+        <StatCard icon={BarChart3}    label="Reports"            value="View"                 sub="system reports"  color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/reports')} />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2">
+          <SectionHeader
+            title="Defense Schedules"
+            action={
+              <button className="btn-primary text-xs px-3 py-1.5 gap-1" onClick={() => navigate('/defenses')}>
+                <Plus size={13} /> Schedule
+              </button>
+            }
+          />
           <Card>
-            <CardHeader
-              title="Defense Schedules"
-              action={
-                <button className="btn-primary text-xs px-3 py-1.5" onClick={() => navigate('/defenses')}>
-                  <Plus size={13} /> Schedule
-                </button>
-              }
-            />
             {defenses.length === 0 ? (
               <EmptyCard icon={Calendar} message="No defenses scheduled" hint="Create a defense schedule to get started" />
             ) : (
@@ -435,21 +749,27 @@ function AdminDashboard({ user }) {
                   <tr>
                     <th>Group</th>
                     <th>Date &amp; Time</th>
-                    <th>Venue</th>
+                    <th className="hidden md:table-cell">Venue</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {defenses.slice(0, 8).map(d => (
+                  {defenses.slice(0, 8).map((d) => (
                     <tr key={d.id}>
-                      <td className="font-medium">{d.groupName ?? '—'}</td>
+                      <td className="font-semibold">{d.groupName ?? '—'}</td>
                       <td>
-                        {d.scheduledDate ?? d.dateTime
-                          ? new Date(d.scheduledDate ?? d.dateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        {d.scheduledDateTime
+                          ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', {
+                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                            })
                           : '—'}
                       </td>
-                      <td>{d.venue ?? '—'}</td>
-                      <td><Badge variant={statusVariant(d.status)} size="sm">{statusLabel(d.status)}</Badge></td>
+                      <td className="hidden md:table-cell">{d.venue ?? '—'}</td>
+                      <td>
+                        <Badge variant={statusVariant(d.status)} size="sm">
+                          {statusLabel(d.status)}
+                        </Badge>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -458,15 +778,19 @@ function AdminDashboard({ user }) {
           </Card>
         </div>
 
-        <Card>
-          <CardHeader title="Quick Actions" />
-          <QuickActions items={[
-            { icon: Plus, label: 'Create new group', to: '/groups' },
-            { icon: Calendar, label: 'Schedule defense', to: '/defenses' },
-            { icon: Users, label: 'Manage users', to: '/users' },
-            { icon: BarChart3, label: 'Generate report', to: '/reports' },
-          ]} />
-        </Card>
+        <div>
+          <SectionHeader title="Quick Actions" />
+          <Card>
+            <QuickActions
+              items={[
+                { icon: Plus,     label: 'Create new group',  desc: 'Add a capstone group',   to: '/groups' },
+                { icon: Calendar, label: 'Schedule defense',  desc: 'Set date, time, venue',   to: '/defenses' },
+                { icon: Users,    label: 'Manage users',      desc: 'Roles & accounts',        to: '/users' },
+                { icon: BarChart3, label: 'Generate report',  desc: 'Export system data',      to: '/reports' },
+              ]}
+            />
+          </Card>
+        </div>
       </div>
     </div>
   )
@@ -492,30 +816,55 @@ function FacultyICDashboard({ user }) {
 
   if (loading) return <DashboardLoader />
 
-  const activeDefenses = defenses.filter(d => d.status !== 'Cancelled' && d.status !== 'Completed')
+  const activeDefenses = defenses.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
 
   return (
-    <div className="p-4 sm:p-8 animate-slide-up">
+    <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
-        gradient="linear-gradient(135deg, #083344 0%, #0e4a5f 100%)"
-        border="#0e7490"
-        glow="#22d3ee"
-        role="Faculty in Charge,"
+        gradient="linear-gradient(135deg, #032736 0%, #0c3a4f 50%, #0e4a63 100%)"
+        badge="Faculty in Charge"
+        badgeColor="34,211,238"
         name={user?.fullName ?? 'FacultyIC'}
         sub="Manage consultation schedules and group presentations."
       />
-      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
-        <StatCard icon={CalendarClock} label="Consultation Slots" value={schedules.length} sub="created" color={{ bg: 'rgba(6,182,212,0.12)', icon: '#0891b2' }} onClick={() => navigate('/consultation-manager')} />
-        <StatCard icon={Calendar} label="Scheduled Defenses" value={activeDefenses.length} sub="upcoming" color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }} onClick={() => navigate('/defenses')} />
-        <StatCard icon={Users} label="Groups" value={defenses.length} sub="with defense records" color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }} onClick={() => navigate('/consultation-manager')} />
+
+      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+        <StatCard
+          icon={CalendarClock}
+          label="Consultation Slots"
+          value={schedules.length}
+          sub="created"
+          color={{ bg: 'rgba(6,182,212,0.12)', icon: '#0891b2' }}
+          onClick={() => navigate('/consultation-manager')}
+        />
+        <StatCard
+          icon={Calendar}
+          label="Scheduled Defenses"
+          value={activeDefenses.length}
+          sub="upcoming"
+          color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
+          onClick={() => navigate('/defenses')}
+        />
+        <StatCard
+          icon={Users}
+          label="Groups"
+          value={defenses.length}
+          sub="with defense records"
+          color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }}
+          onClick={() => navigate('/consultation-manager')}
+        />
       </div>
+
+      <SectionHeader title="Quick Actions" />
       <Card>
-        <CardHeader title="Quick Actions" />
-        <QuickActions items={[
-          { icon: Plus, label: 'Create consultation slot', to: '/consultation-manager' },
-          { icon: Calendar, label: 'Manage presentations', to: '/defenses' },
-          { icon: CalendarClock, label: 'View calendar', to: '/calendar' },
-        ]} />
+        <QuickActions
+          items={[
+            { icon: Plus,          label: 'Create consultation slot', desc: 'Open a new schedule slot', to: '/consultation-manager' },
+            { icon: Calendar,      label: 'Manage presentations',     desc: 'Defense schedules',        to: '/defenses' },
+            { icon: CalendarClock, label: 'View calendar',            desc: 'All scheduled events',    to: '/calendar' },
+            { icon: BookOpen,      label: 'Classroom',                desc: 'Manage your classroom',   to: '/classroom' },
+          ]}
+        />
       </Card>
     </div>
   )
@@ -529,64 +878,86 @@ function PanelDashboard({ user }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    defenseService.list().catch(() => []).then(setDefenses).finally(() => setLoading(false))
+    defenseService.mySchedules().catch(() => []).then(setDefenses).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <DashboardLoader />
 
-  const completed = defenses.filter(d => d.status === 'Completed').length
+  const completed = defenses.filter((d) => d.status === 'Completed').length
 
   return (
-    <div className="p-4 sm:p-8 animate-slide-up">
+    <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
-        gradient="linear-gradient(135deg, #4c1d95 0%, #6d28d9 100%)"
-        border="#7c3aed"
-        glow="#a78bfa"
-        role="Welcome,"
+        gradient="linear-gradient(135deg, #2e1065 0%, #4c1d95 50%, #5b21b6 100%)"
+        badge="Panelist"
+        badgeColor="167,139,250"
         name={user?.fullName ?? 'Panelist'}
         sub="Ratings open when activated by the Faculty in Charge."
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
-        <StatCard icon={Calendar} label="Assigned Defenses" value={defenses.length} sub="total" color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/defenses')} />
-        <StatCard icon={CheckCircle2} label="Completed" value={completed} sub="defenses reviewed" color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }} />
-        <StatCard icon={Star} label="Pending Rating" value={defenses.length - completed} sub="awaiting evaluation" color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }} />
+      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+        <StatCard
+          icon={Calendar}
+          label="Assigned Defenses"
+          value={defenses.length}
+          sub="total"
+          color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
+          onClick={() => navigate('/defenses')}
+        />
+        <StatCard
+          icon={CheckCircle2}
+          label="Completed"
+          value={completed}
+          sub="defenses reviewed"
+          color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
+        />
+        <StatCard
+          icon={Star}
+          label="Pending Rating"
+          value={defenses.length - completed}
+          sub="awaiting evaluation"
+          color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }}
+        />
       </div>
 
+      <SectionHeader title="Assigned Defenses" />
       <Card>
-        <CardHeader title="Assigned Defenses" />
         {defenses.length === 0 ? (
-          <EmptyCard icon={Calendar} message="No defenses assigned yet" hint="Assignments will appear here once scheduled by the Faculty in Charge" />
+          <EmptyCard
+            icon={Calendar}
+            message="No defenses assigned yet"
+            hint="Assignments will appear here once scheduled by the Faculty in Charge"
+          />
         ) : (
           <table className="data-table">
             <thead>
               <tr>
                 <th>Group</th>
-                <th className="hidden sm:table-cell">Thesis Title</th>
+                <th className="hidden sm:table-cell">Title</th>
                 <th>Date</th>
                 <th>Rating</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {defenses.map(d => (
+              {defenses.map((d) => (
                 <tr key={d.id}>
                   <td className="font-semibold">{d.groupName ?? '—'}</td>
                   <td className="hidden sm:table-cell" style={{ maxWidth: '200px' }}>
                     <p className="truncate text-sm">{d.projectTitle ?? d.thesisTitle ?? '—'}</p>
                   </td>
                   <td>
-                    {d.scheduledDate ?? d.dateTime
-                      ? new Date(d.scheduledDate ?? d.dateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+                    {d.scheduledDateTime
+                      ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
                       : '—'}
                   </td>
                   <td>
-                    {d.ratingOpen
+                    {d.isRatingOpen
                       ? <Badge variant="approved" size="sm">Open</Badge>
                       : <Badge variant="secondary" size="sm">Locked</Badge>}
                   </td>
                   <td>
-                    {d.ratingOpen
+                    {d.isRatingOpen
                       ? <button className="btn-primary text-xs px-3 py-1.5" onClick={() => navigate('/defenses')}>Rate</button>
                       : <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Locked</span>}
                   </td>
@@ -614,45 +985,32 @@ function SuperAdminDashboard({ user }) {
   if (loading) return <DashboardLoader />
 
   return (
-    <div className="p-4 sm:p-8 animate-slide-up">
+    <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
-        gradient="linear-gradient(135deg, #18181b 0%, #27272a 100%)"
-        border="#3f3f46"
-        glow="#a1a1aa"
-        role="Super Administrator,"
+        gradient="linear-gradient(135deg, #111111 0%, #1c1c1c 50%, #252525 100%)"
+        badge="Super Administrator"
+        badgeColor="148,163,184"
         name={user?.fullName ?? 'SuperAdmin'}
         sub="Full system access — manage all users, roles, and data."
       />
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={Users} label="Total Users" value="—" sub="manage via users page" color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }} onClick={() => navigate('/users')} />
-        <StatCard icon={GraduationCap} label="Total Groups" value={groups.length} sub="all statuses" color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }} onClick={() => navigate('/groups')} />
-        <StatCard icon={ShieldCheck} label="User Management" value="Admin" sub="manage accounts" color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }} onClick={() => navigate('/users')} />
-        <StatCard icon={BarChart3} label="Reports" value="View" sub="system-wide" color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/reports')} />
+
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        <StatCard icon={Users}        label="Total Users"       value="—"           sub="manage via users page" color={{ bg: 'rgba(59,130,246,0.12)',  icon: '#3b82f6' }} onClick={() => navigate('/users')} />
+        <StatCard icon={GraduationCap} label="Total Groups"     value={groups.length} sub="all statuses"        color={{ bg: 'rgba(34,197,94,0.12)',   icon: '#16a34a' }} onClick={() => navigate('/groups')} />
+        <StatCard icon={ShieldCheck}  label="User Management"  value="Admin"       sub="manage accounts"       color={{ bg: 'rgba(245,158,11,0.12)',  icon: '#f59e0b' }} onClick={() => navigate('/users')} />
+        <StatCard icon={BarChart3}    label="Reports"          value="View"        sub="system-wide"           color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/reports')} />
       </div>
+
+      <SectionHeader title="Quick Actions" />
       <Card>
-        <CardHeader title="Quick Actions" />
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {[
-            { icon: Users, label: 'Manage users', to: '/users' },
-            { icon: GraduationCap, label: 'Manage groups', to: '/groups' },
-            { icon: Calendar, label: 'Defense schedules', to: '/defenses' },
-            { icon: BarChart3, label: 'Generate report', to: '/reports' },
-          ].map(a => (
-            <button
-              key={a.label}
-              onClick={() => navigate(a.to)}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150"
-              style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-light)' }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-main)'}
-              onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-light)'}
-            >
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(201,168,76,0.12)' }}>
-                <a.icon size={14} style={{ color: '#c9a84c' }} />
-              </div>
-              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{a.label}</span>
-            </button>
-          ))}
-        </div>
+        <QuickActions
+          items={[
+            { icon: Users,        label: 'Manage users',       desc: 'Roles, accounts, access',    to: '/users' },
+            { icon: GraduationCap, label: 'Manage groups',     desc: 'Capstone group registry',    to: '/groups' },
+            { icon: Calendar,     label: 'Defense schedules',  desc: 'All scheduled defenses',     to: '/defenses' },
+            { icon: BarChart3,    label: 'Generate report',    desc: 'Export system-wide data',    to: '/reports' },
+          ]}
+        />
       </Card>
     </div>
   )
@@ -671,12 +1029,12 @@ export default function Dashboard() {
   }
 
   const dashboards = {
-    Student: StudentDashboard,
-    Adviser: AdviserDashboard,
-    Admin: AdminDashboard,
+    Student:    StudentDashboard,
+    Adviser:    AdviserDashboard,
+    Admin:      AdminDashboard,
     SuperAdmin: SuperAdminDashboard,
-    FacultyIC: FacultyICDashboard,
-    Panel: PanelDashboard,
+    FacultyIC:  FacultyICDashboard,
+    Panel:      PanelDashboard,
   }
 
   const RoleDashboard = dashboards[user?.role] ?? StudentDashboard
@@ -685,7 +1043,9 @@ export default function Dashboard() {
     <div>
       <TopBar
         title={`${greeting()}, ${user?.fullName?.split(' ')[0] ?? 'there'}`}
-        subtitle={new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        subtitle={new Date().toLocaleDateString('en-PH', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        })}
       />
       <RoleDashboard user={user} />
     </div>

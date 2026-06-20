@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { defenseService } from '../../services/api'
+import { defenseService, groupService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
 import Badge, { statusVariant } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
@@ -13,10 +13,13 @@ export default function Defenses() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [defenses, setDefenses] = useState([])
+  const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
   const [togglingId, setTogglingId] = useState(null)
+  const [createError, setCreateError] = useState('')
+  const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ groupId: '', date: '', time: '', venue: '' })
 
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
@@ -24,15 +27,59 @@ export default function Defenses() {
   const isPanel = user?.role === 'Panel'
 
   useEffect(() => {
-    const load = isPanel
-      ? defenseService.mySchedules()
-      : defenseService.list()
+    async function load() {
+      try {
+        let defs = []
+        if (isAdmin || isFacultyIC) {
+          defs = await defenseService.list()
+        } else if (isPanel) {
+          defs = await defenseService.mySchedules()
+        } else if (user?.role === 'Adviser') {
+          const grps = await groupService.list().catch(() => [])
+          const nested = await Promise.all(grps.map(g => defenseService.byGroup(g.id).catch(() => [])))
+          defs = nested.flat()
+        } else {
+          // Student
+          const grp = await groupService.myGroup().catch(() => null)
+          if (grp) defs = await defenseService.byGroup(grp.id).catch(() => [])
+        }
+        setDefenses(defs ?? [])
+        if (isAdmin) {
+          const grps = await groupService.list().catch(() => [])
+          setGroups(grps)
+        }
+      } catch {
+        setDefenses([])
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [isAdmin, isFacultyIC, isPanel, user?.role])
 
-    load
-      .then(setDefenses)
-      .catch(() => setDefenses([]))
-      .finally(() => setLoading(false))
-  }, [isPanel])
+  async function handleCreate(e) {
+    e.preventDefault()
+    if (!form.groupId || !form.date || !form.venue) {
+      setCreateError('Group, date, and venue are required.')
+      return
+    }
+    setCreating(true)
+    setCreateError('')
+    try {
+      const created = await defenseService.create({
+        capstoneGroupId: parseInt(form.groupId),
+        scheduledDateTime: `${form.date}T${form.time || '00:00'}:00`,
+        venue: form.venue,
+      })
+      setDefenses((prev) => [...prev, created])
+      setShowCreate(false)
+      setForm({ groupId: '', date: '', time: '', venue: '' })
+    } catch (err) {
+      setCreateError(err.message || 'Failed to schedule defense.')
+    } finally {
+      setCreating(false)
+    }
+  }
 
   async function toggleRating(defense, e) {
     e.stopPropagation()
@@ -215,20 +262,28 @@ export default function Defenses() {
       {/* Create Modal (Admin only) */}
       <Modal
         open={showCreate}
-        onClose={() => setShowCreate(false)}
+        onClose={() => { setShowCreate(false); setCreateError('') }}
         title="Schedule Defense"
         footer={
           <>
-            <button className="btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button>
-            <button className="btn-primary">Schedule</button>
+            <button className="btn-secondary" onClick={() => { setShowCreate(false); setCreateError('') }}>Cancel</button>
+            <button className="btn-primary" onClick={handleCreate} disabled={creating}>{creating ? 'Scheduling...' : 'Schedule'}</button>
           </>
         }
       >
         <div className="space-y-4">
+          {createError && (
+            <div className="px-4 py-3 rounded-xl text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+              {createError}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group</label>
-            <select className="form-input">
+            <select className="form-input" value={form.groupId} onChange={(e) => setForm({ ...form, groupId: e.target.value })}>
               <option value="">Select a group</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.groupName ?? g.name}</option>
+              ))}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
