@@ -54,6 +54,9 @@ export function AuthProvider({ children }) {
 
   async function login(email, password) {
     const res = await authService.login({ email, password })
+    if (res.twoFactorRequired) {
+      return { twoFactorRequired: true, tempUserId: res.tempUserId }
+    }
     const user = normalizeUser(res.user)
     localStorage.setItem('tm_token', res.token)
     localStorage.setItem('tm_user', JSON.stringify(user))
@@ -72,6 +75,13 @@ export function AuthProvider({ children }) {
     dispatch({ type: 'LOGOUT' })
   }
 
+  function setAuth(token, user) {
+    const normalized = normalizeUser(user)
+    localStorage.setItem('tm_token', token)
+    localStorage.setItem('tm_user', JSON.stringify(normalized))
+    dispatch({ type: 'LOGIN', user: normalized, token })
+  }
+
   function updateUser(payload) {
     const updated = { ...state.user, ...payload }
     localStorage.setItem('tm_user', JSON.stringify(updated))
@@ -85,6 +95,7 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    setAuth,
     updateUser,
     isRole: (role) => state.user?.role === role,
     hasRole: (...roles) => roles.includes(state.user?.role),

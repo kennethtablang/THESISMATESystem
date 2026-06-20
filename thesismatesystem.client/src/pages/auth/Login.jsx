@@ -171,33 +171,34 @@ export default function Login() {
           </div>
 
           {/* Progress preview card */}
-          <div className="mt-7 rounded-2xl p-4" style={{
+          <div className="mt-5 rounded-xl p-3" style={{
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
             animation: 'auth-fade-up 0.5s 0.5s ease both',
           }}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#c9a84c' }} />
-                <span className="text-xs font-semibold text-white">Group Alpha · AY 2024–2025</span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-1 h-1 rounded-full" style={{ background: '#c9a84c' }} />
+                <span style={{ fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>Group Alpha · AY 2024–2025</span>
               </div>
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>Active</span>
+              <span style={{ fontSize: '9.5px', padding: '1px 7px', borderRadius: '9999px', background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>Active</span>
             </div>
-            <div className="space-y-2 mb-3">
+            <div className="space-y-1.5 mb-2">
               {PREVIEW.map((item) => (
                 <div key={item.label} className="flex items-center justify-between gap-2">
-                  <span className="text-xs truncate" style={{
-                    color: item.state === 'done' ? 'rgba(255,255,255,0.55)' : item.state === 'review' ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.22)',
+                  <span className="truncate" style={{
+                    fontSize: '10px',
+                    color: item.state === 'done' ? 'rgba(255,255,255,0.5)' : item.state === 'review' ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.2)',
                   }}>{item.label}</span>
-                  {item.state === 'done'    && <span className="text-xs shrink-0" style={{ color: '#22c55e' }}>✓</span>}
-                  {item.state === 'review'  && <span className="text-xs shrink-0" style={{ color: '#c9a84c' }}>In Review</span>}
-                  {item.state === 'pending' && <span className="text-xs shrink-0" style={{ color: 'rgba(255,255,255,0.18)' }}>Pending</span>}
+                  {item.state === 'done'    && <span className="shrink-0" style={{ fontSize: '10px', color: '#22c55e' }}>✓</span>}
+                  {item.state === 'review'  && <span className="shrink-0" style={{ fontSize: '9.5px', color: '#c9a84c' }}>In Review</span>}
+                  {item.state === 'pending' && <span className="shrink-0" style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.18)' }}>Pending</span>}
                 </div>
               ))}
             </div>
-            <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
+            <div className="h-0.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
               <div className="h-full rounded-full" style={{ width: '45%', background: 'linear-gradient(90deg, #c9a84c, #d4b565)' }} />
             </div>
-            <p className="text-xs mt-1.5" style={{ color: 'rgba(255,255,255,0.25)' }}>45% complete · 3 chapters remaining</p>
+            <p style={{ fontSize: '9.5px', marginTop: '5px', color: 'rgba(255,255,255,0.22)' }}>45% complete · 3 chapters remaining</p>
           </div>
 
           <div className="flex-1" />
