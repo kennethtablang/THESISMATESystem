@@ -15,5 +15,11 @@ namespace THESISMATESystem.Server.Interfaces
         Task<UserResponseDto> UpdateUserAsync(string userId, UpdateUserRequestDto dto);
         Task<bool> DeactivateUserAsync(string userId);
         Task<IEnumerable<UserResponseDto>> GetAllUsersAsync();
+        // 2FA
+        Task<bool> GetTwoFactorStatusAsync(string userId);
+        Task EnableTwoFactorSendCodeAsync(string userId);
+        Task<bool> VerifyAndEnableTwoFactorAsync(string userId, string code);
+        Task DisableTwoFactorAsync(string userId, string password);
+        Task<AuthResponseDto> TwoFactorLoginAsync(string userId, string code);
     }
 }
