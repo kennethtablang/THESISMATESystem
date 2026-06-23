@@ -286,3 +286,84 @@
     --tw-ring-color: rgba(201, 168, 76, 0.4);
   }
 }
+
+/* ── Auth page animations ─────────────────────────── */
+@keyframes auth-orb-drift {
+  0%,  100% { transform: translate(0, 0) scale(1); }
+  33%        { transform: translate(22px, -28px) scale(1.06); }
+  66%        { transform: translate(-16px, 14px) scale(0.95); }
+}
+
+@keyframes auth-orb-drift-alt {
+  0%,  100% { transform: translate(0, 0) scale(1); }
+  40%        { transform: translate(-24px, 20px) scale(1.08); }
+  70%        { transform: translate(18px, -12px) scale(0.93); }
+}
+
+@keyframes auth-particle-rise {
+  0%   { opacity: 0; transform: translateY(0) scale(1); }
+  10%  { opacity: 0.7; }
+  85%  { opacity: 0.3; }
+  100% { opacity: 0; transform: translateY(-200px) scale(0.25); }
+}
+
+@keyframes auth-fade-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes auth-fade-right {
+  from { opacity: 0; transform: translateX(-14px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes auth-error-shake {
+  0%,  100% { transform: translateX(0); }
+  18%        { transform: translateX(-6px); }
+  36%        { transform: translateX(6px); }
+  54%        { transform: translateX(-4px); }
+  72%        { transform: translateX(4px); }
+}
+
+@keyframes auth-shimmer-slide {
+  from { transform: translateX(-200%) skewX(-15deg); }
+  to   { transform: translateX(400%) skewX(-15deg); }
+}
+
+@keyframes auth-dot-pulse {
+  0%,  100% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0.7); }
+  50%        { box-shadow: 0 0 0 5px rgba(201, 168, 76, 0); }
+}
+
+.auth-error-shake {
+  animation: auth-error-shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.auth-btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-btn-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+  transform: translateX(-200%) skewX(-15deg);
+  pointer-events: none;
+}
+
+.auth-btn-shimmer:hover:not(:disabled)::after {
+  animation: auth-shimmer-slide 0.65s ease forwards;
+}
+
+@keyframes auth-bubble-float {
+  0%   { transform: translateY(0) translateX(0);         opacity: 0;    }
+  8%   { opacity: 0.75; }
+  30%  { transform: translateY(-28vh) translateX(8px);   }
+  55%  { transform: translateY(-55vh) translateX(-6px);  opacity: 0.55; }
+  80%  { transform: translateY(-82vh) translateX(7px);   opacity: 0.25; }
+  100% { transform: translateY(-108vh) translateX(0);    opacity: 0;    }
+}

@@ -31,7 +31,13 @@ async function request(method, path, body) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
-    throw new Error(err.message || `Request failed: ${res.status}`)
+    // ASP.NET Core validation errors use { title, errors } instead of { message }
+    const message =
+      err.message ||
+      (err.errors && Object.values(err.errors).flat().join(' ')) ||
+      err.title ||
+      `Request failed: ${res.status}`
+    throw new Error(message)
   }
 
   if (res.status === 204) return null
@@ -54,7 +60,12 @@ async function requestMultipart(method, path, formData) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
-    throw new Error(err.message || `Request failed: ${res.status}`)
+    const message =
+      err.message ||
+      (err.errors && Object.values(err.errors).flat().join(' ')) ||
+      err.title ||
+      `Request failed: ${res.status}`
+    throw new Error(message)
   }
 
   if (res.status === 204) return null
@@ -77,6 +88,13 @@ export const authService = {
   profile: () => api.get('/auth/profile'),
   updateProfile: (data) => api.put('/auth/profile', data),
   changePassword: (data) => api.post('/auth/change-password', data),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (data) => api.post('/auth/reset-password', data),
+  twoFactorStatus: () => api.get('/auth/2fa/status'),
+  twoFactorEnable: () => api.post('/auth/2fa/enable'),
+  twoFactorVerifySetup: (code) => api.post('/auth/2fa/verify-setup', { code }),
+  twoFactorDisable: (password) => api.post('/auth/2fa/disable', { password }),
+  twoFactorLogin: (userId, code) => api.post('/auth/2fa/login', { userId, code }),
   allUsers: () => api.get('/auth/users'),
   updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
   deactivate: (id) => api.patch(`/auth/users/${id}/deactivate`),
@@ -133,11 +151,29 @@ export const notificationService = {
   markAllRead: () => api.patch('/notifications/read-all'),
 }
 
+async function downloadPdf(path, filename) {
+  const token = localStorage.getItem('tm_token')
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error(`Failed to generate report: ${res.statusText}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export const reportService = {
-  summary: () => api.get('/reports/summary'),
-  groupProgress: (groupId) => api.get(`/reports/groups/${groupId}`),
-  defenseResults: (defenseId) => api.get(`/reports/defenses/${defenseId}`),
-  export: (type) => api.get(`/reports/export?type=${type}`),
+  groupProgress: (groupId) => downloadPdf(`/reports/group/${groupId}/progress`, `group_${groupId}_progress.pdf`),
+  milestoneCompletion: (academicYear) => downloadPdf(`/reports/milestone-completion?academicYear=${encodeURIComponent(academicYear)}`, `milestone_${academicYear}.pdf`),
+  defenseOutcome: (scheduleId) => downloadPdf(`/reports/defense/${scheduleId}/outcome`, `defense_${scheduleId}_outcome.pdf`),
+  allGroups: (params = {}) => {
+    const q = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v))).toString()
+    return downloadPdf(`/reports/all-groups${q ? '?' + q : ''}`, 'all_groups_report.pdf')
+  },
 }
 
 export const documentService = {
@@ -156,9 +192,23 @@ export const systemFeatureService = {
   get: (id) => api.get(`/system-features/${id}`),
   create: (data) => api.post('/system-features', data),
   update: (id, data) => api.put(`/system-features/${id}`, data),
+  updateDates: (id, data) => api.patch(`/system-features/${id}/dates`, data),
   delete: (id) => api.delete(`/system-features/${id}`),
   addComment: (id, data) => api.post(`/system-features/${id}/comments`, data),
   comments: (id) => api.get(`/system-features/${id}/comments`),
+}
+
+export const classroomService = {
+  create: (data) => api.post('/classrooms', data),
+  myClassrooms: () => api.get('/classrooms/my'),
+  join: (data) => api.post('/classrooms/join', data),
+  myClass: () => api.get('/classrooms/my-class'),
+  enrollments: (id) => api.get(`/classrooms/${id}/enrollments`),
+  postAnnouncement: (id, data) => api.post(`/classrooms/${id}/announcements`, data),
+  announcements: (id) => api.get(`/classrooms/${id}/announcements`),
+  myAnnouncements: () => api.get('/classrooms/announcements/my'),
+  assignGroup: (data) => api.post('/classrooms/assign-group', data),
+  regenerateCode: (id) => api.post(`/classrooms/${id}/regenerate-code`),
 }
 
 export const consultationScheduleService = {

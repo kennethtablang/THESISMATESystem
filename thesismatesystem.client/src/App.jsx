@@ -5,6 +5,9 @@ import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
 import CheckEmail from './pages/auth/CheckEmail'
 import VerifyEmail from './pages/auth/VerifyEmail'
+import ForgotPassword from './pages/auth/ForgotPassword'
+import ResetPassword from './pages/auth/ResetPassword'
+import TwoFactorVerify from './pages/auth/TwoFactorVerify'
 
 // Dashboard (handles all roles internally)
 import Dashboard from './pages/dashboard/Dashboard'
@@ -29,9 +32,16 @@ import AdviserSystemTracker from './pages/adviser/AdviserSystemTracker'
 
 // FacultyIC pages
 import ConsultationManager from './pages/facultyic/ConsultationManager'
+import ClassroomManager from './pages/facultyic/ClassroomManager'
+
+// Student pages (additional)
+import JoinClass from './pages/student/JoinClass'
 
 // Admin pages
 import UserManagement from './pages/admin/UserManagement'
+
+// Panel pages
+import Ratings from './pages/ratings/Ratings'
 
 
 function DocumentsPage() {
@@ -40,6 +50,14 @@ function DocumentsPage() {
   if (role === 'Student') return <DocumentUpload />
   if (['Adviser', 'Admin', 'SuperAdmin'].includes(role)) return <ManuscriptReview />
   return <Navigate to="/dashboard" replace />
+}
+
+function CalendarPage() {
+  const { user } = useAuth()
+  if (['FacultyIC', 'Admin', 'SuperAdmin'].includes(user?.role)) {
+    return <Navigate to="/consultation-manager" replace />
+  }
+  return <ConsultationCalendar />
 }
 
 function SystemFeaturesPage() {
@@ -94,6 +112,9 @@ export default function App() {
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
         <Route path="/check-email" element={<CheckEmail />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/2fa-verify" element={<TwoFactorVerify />} />
 
         <Route
           path="/"
@@ -109,7 +130,17 @@ export default function App() {
           {/* New role-specific features */}
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="system-features" element={<SystemFeaturesPage />} />
-          <Route path="calendar" element={<ConsultationCalendar />} />
+          <Route path="calendar" element={<CalendarPage />} />
+          <Route path="classroom" element={
+            <RoleGuard roles={['FacultyIC']}>
+              <ClassroomManager />
+            </RoleGuard>
+          } />
+          <Route path="my-class" element={
+            <RoleGuard roles={['Student']}>
+              <JoinClass />
+            </RoleGuard>
+          } />
           <Route path="consultation-manager" element={
             <RoleGuard roles={['FacultyIC', 'Admin', 'SuperAdmin']}>
               <ConsultationManager />
@@ -127,7 +158,11 @@ export default function App() {
           <Route path="chapters" element={<Chapters />} />
           <Route path="consultations" element={<Consultations />} />
           <Route path="defenses" element={<Defenses />} />
-          <Route path="ratings" element={<Defenses />} />
+          <Route path="ratings" element={
+            <RoleGuard roles={['Panel']}>
+              <Ratings />
+            </RoleGuard>
+          } />
           <Route path="notifications" element={<Notifications />} />
           <Route path="reports" element={<Reports />} />
           <Route path="profile" element={<Profile />} />
