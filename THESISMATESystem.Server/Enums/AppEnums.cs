@@ -44,7 +44,8 @@ namespace THESISMATESystem.Server.Enums
         DocumentUploaded,
         DocumentCommented,
         ConsultationRequested,
-        ConsultationRequestResponded
+        ConsultationRequestResponded,
+        ClassroomAnnouncement
     }
 
     public enum GroupStatus
