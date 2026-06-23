@@ -23,5 +23,6 @@ namespace THESISMATESystem.Server.Models
         public ICollection<SystemFeatureComment> SystemFeatureComments { get; set; } = [];
         public ICollection<ConsultationSchedule> ConsultationSchedules { get; set; } = [];
         public ICollection<ConsultationRequest> ConsultationRequests { get; set; } = [];
+        public ICollection<ClassroomEnrollment> ClassroomEnrollments { get; set; } = [];
     }
 }

@@ -14,6 +14,10 @@ namespace THESISMATESystem.Server.Models
         public FeatureType FeatureType { get; set; }
         public SystemFeatureStatus Status { get; set; } = SystemFeatureStatus.NotStarted;
         public int SortOrder { get; set; }
+        public DateTime? PlannedStartDate { get; set; }
+        public DateTime? PlannedEndDate { get; set; }
+        public DateTime? ActualStartDate { get; set; }
+        public DateTime? ActualEndDate { get; set; }
         public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
         public DateTime? UpdatedAt { get; set; }
 
