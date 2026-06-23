@@ -44,22 +44,54 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<AuthResponseDto> LoginAsync(LoginRequestDto dto)
         {
-            var user = await _userManager.FindByEmailAsync(dto.Email)
-                ?? throw new UnauthorizedAccessException("Invalid credentials.");
+            var user = await _userManager.FindByEmailAsync(dto.Email);
+
+            if (user is null)
+            {
+                await WriteAuditAsync(null, "Login", "User", dto.Email, success: false);
+                throw new UnauthorizedAccessException("Invalid credentials.");
+            }
 
             if (!user.IsActive)
+            {
+                await WriteAuditAsync(user.Id, "Login", "User", dto.Email, success: false);
                 throw new UnauthorizedAccessException("Account is deactivated.");
+            }
 
             if (!user.EmailConfirmed)
+            {
+                await WriteAuditAsync(user.Id, "Login", "User", dto.Email, success: false);
                 throw new UnauthorizedAccessException("Please verify your email address before logging in. Check your inbox for the verification link.");
+            }
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, dto.Password, lockoutOnFailure: true);
             if (!result.Succeeded)
+            {
+                await WriteAuditAsync(user.Id, "Login", "User", dto.Email, success: false);
                 throw new UnauthorizedAccessException("Invalid credentials.");
+            }
+
+            // 2FA check
+            if (await _userManager.GetTwoFactorEnabledAsync(user))
+            {
+                var code = await _userManager.GenerateTwoFactorTokenAsync(user, TokenOptions.DefaultEmailProvider);
+                try
+                {
+                    await _email.SendEmailAsync(user.Email!, "Your ThesisMate login code", Build2FAEmail(user.FirstName, code));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send 2FA code to {Email}", user.Email);
+                    throw new InvalidOperationException("Failed to send your login code. Please try again.");
+                }
+                return new AuthResponseDto { TwoFactorRequired = true, TempUserId = user.Id };
+            }
 
             var roles = await _userManager.GetRolesAsync(user);
             var role = roles.FirstOrDefault() ?? string.Empty;
             var token = GenerateJwt(user, role);
+
+            await WriteAuditAsync(user.Id, "Login", "User", dto.Email, success: true);
 
             var userDto = _mapper.Map<UserResponseDto>(user);
             userDto.Role = role;
@@ -67,7 +99,7 @@ namespace THESISMATESystem.Server.Services
             return new AuthResponseDto
             {
                 Token = token,
-                RefreshToken = string.Empty, // extend with refresh token if needed
+                RefreshToken = string.Empty,
                 Expires = DateTime.UtcNow.AddHours(8),
                 User = userDto
             };
@@ -170,6 +202,60 @@ namespace THESISMATESystem.Server.Services
             """;
 
 
+        private static string BuildPasswordResetEmail(string firstName, string resetUrl) => $"""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"></head>
+            <body style="font-family:Inter,system-ui,sans-serif;background:#f4f0e6;margin:0;padding:40px 20px;">
+              <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+                <div style="background:linear-gradient(135deg,#0a1628 0%,#1e3350 100%);padding:32px 40px;text-align:center;">
+                  <p style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.5px;margin:0 0 4px;">ThesisMate</p>
+                  <p style="color:#c9a84c;margin:0;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;">PSU Lingayen</p>
+                </div>
+                <div style="padding:40px;">
+                  <h2 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 12px;letter-spacing:-0.4px;">Reset your password</h2>
+                  <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 24px;">Hi {firstName}, we received a request to reset your password. Click the button below to set a new one.</p>
+                  <div style="text-align:center;margin:32px 0;">
+                    <a href="{resetUrl}" style="display:inline-block;background:linear-gradient(135deg,#c9a84c,#d4b565);color:#0a1628;font-weight:700;font-size:15px;text-decoration:none;padding:14px 36px;border-radius:12px;">Reset Password</a>
+                  </div>
+                  <p style="color:#6b7280;font-size:13px;line-height:1.6;margin:0 0 6px;">If the button doesn't work, copy and paste this link into your browser:</p>
+                  <p style="word-break:break-all;color:#c9a84c;font-size:12px;margin:0 0 24px;">{resetUrl}</p>
+                  <p style="color:#9ca3af;font-size:12px;margin:0;">This link expires in 24 hours. If you did not request a password reset, you can safely ignore this email.</p>
+                </div>
+                <div style="background:#f9f7f2;padding:20px 40px;text-align:center;border-top:1px solid #e8e1d0;">
+                  <p style="color:#9ca3af;font-size:12px;margin:0;">Pangasinan State University — Lingayen Campus</p>
+                </div>
+              </div>
+            </body>
+            </html>
+            """;
+
+        private static string Build2FAEmail(string firstName, string code) => $"""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"></head>
+            <body style="font-family:Inter,system-ui,sans-serif;background:#f4f0e6;margin:0;padding:40px 20px;">
+              <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+                <div style="background:linear-gradient(135deg,#0a1628 0%,#1e3350 100%);padding:32px 40px;text-align:center;">
+                  <p style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.5px;margin:0 0 4px;">ThesisMate</p>
+                  <p style="color:#c9a84c;margin:0;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;">PSU Lingayen</p>
+                </div>
+                <div style="padding:40px;text-align:center;">
+                  <h2 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 12px;letter-spacing:-0.4px;">Your login code</h2>
+                  <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 32px;">Hi {firstName}, use the code below to complete your sign-in. This code expires in 10 minutes.</p>
+                  <div style="background:#f4f0e6;border-radius:16px;padding:24px 40px;display:inline-block;margin:0 auto 32px;">
+                    <p style="font-size:40px;font-weight:800;letter-spacing:0.2em;color:#0a1628;margin:0;font-family:monospace;">{code}</p>
+                  </div>
+                  <p style="color:#9ca3af;font-size:12px;margin:0;">Never share this code with anyone. ThesisMate will never ask for it.</p>
+                </div>
+                <div style="background:#f9f7f2;padding:20px 40px;text-align:center;border-top:1px solid #e8e1d0;">
+                  <p style="color:#9ca3af;font-size:12px;margin:0;">Pangasinan State University — Lingayen Campus</p>
+                </div>
+              </div>
+            </body>
+            </html>
+            """;
+
         public async Task<bool> ChangePasswordAsync(string userId, ChangePasswordRequestDto dto)
         {
             var user = await _userManager.FindByIdAsync(userId)
@@ -184,8 +270,20 @@ namespace THESISMATESystem.Server.Services
             var user = await _userManager.FindByEmailAsync(email);
             if (user is null) return true; // don't reveal if email exists
 
-            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-            // TODO: send email with reset link containing token
+            var rawToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(rawToken));
+            var clientUrl = _config["ClientBaseUrl"] ?? "https://localhost:62535";
+            var resetUrl = $"{clientUrl}/reset-password?email={Uri.EscapeDataString(email)}&token={encodedToken}";
+
+            try
+            {
+                await _email.SendEmailAsync(email, "Reset your ThesisMate password", BuildPasswordResetEmail(user.FirstName, resetUrl));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send password reset email to {Email}", email);
+            }
+
             return true;
         }
 
@@ -194,8 +292,88 @@ namespace THESISMATESystem.Server.Services
             var user = await _userManager.FindByEmailAsync(dto.Email)
                 ?? throw new KeyNotFoundException("User not found.");
 
-            var result = await _userManager.ResetPasswordAsync(user, dto.Token, dto.NewPassword);
+            string decodedToken;
+            try
+            {
+                decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(dto.Token));
+            }
+            catch
+            {
+                return false;
+            }
+
+            var result = await _userManager.ResetPasswordAsync(user, decodedToken, dto.NewPassword);
             return result.Succeeded;
+        }
+
+        public async Task<bool> GetTwoFactorStatusAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new KeyNotFoundException("User not found.");
+            return await _userManager.GetTwoFactorEnabledAsync(user);
+        }
+
+        public async Task EnableTwoFactorSendCodeAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new KeyNotFoundException("User not found.");
+
+            var code = await _userManager.GenerateTwoFactorTokenAsync(user, TokenOptions.DefaultEmailProvider);
+            await _email.SendEmailAsync(user.Email!, "Enable 2FA — Your ThesisMate verification code", Build2FAEmail(user.FirstName, code));
+        }
+
+        public async Task<bool> VerifyAndEnableTwoFactorAsync(string userId, string code)
+        {
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new KeyNotFoundException("User not found.");
+
+            var valid = await _userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultEmailProvider, code);
+            if (!valid) return false;
+
+            await _userManager.SetTwoFactorEnabledAsync(user, true);
+            return true;
+        }
+
+        public async Task DisableTwoFactorAsync(string userId, string password)
+        {
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new KeyNotFoundException("User not found.");
+
+            var passwordValid = await _userManager.CheckPasswordAsync(user, password);
+            if (!passwordValid)
+                throw new UnauthorizedAccessException("Incorrect password.");
+
+            await _userManager.SetTwoFactorEnabledAsync(user, false);
+        }
+
+        public async Task<AuthResponseDto> TwoFactorLoginAsync(string userId, string code)
+        {
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new UnauthorizedAccessException("Invalid session. Please log in again.");
+
+            var valid = await _userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultEmailProvider, code);
+            if (!valid)
+            {
+                await WriteAuditAsync(user.Id, "Login2FA", "User", user.Email, success: false);
+                throw new UnauthorizedAccessException("Invalid or expired code. Please try again.");
+            }
+
+            var roles = await _userManager.GetRolesAsync(user);
+            var role = roles.FirstOrDefault() ?? string.Empty;
+            var token = GenerateJwt(user, role);
+
+            await WriteAuditAsync(user.Id, "Login2FA", "User", user.Email, success: true);
+
+            var userDto = _mapper.Map<UserResponseDto>(user);
+            userDto.Role = role;
+
+            return new AuthResponseDto
+            {
+                Token = token,
+                RefreshToken = string.Empty,
+                Expires = DateTime.UtcNow.AddHours(8),
+                User = userDto
+            };
         }
 
         public async Task<UserResponseDto?> GetProfileAsync(string userId)
@@ -235,6 +413,7 @@ namespace THESISMATESystem.Server.Services
 
             user.IsActive = false;
             await _userManager.UpdateAsync(user);
+            await WriteAuditAsync(userId, "DeactivateAccount", "User", userId, success: true);
             return true;
         }
 
@@ -252,6 +431,26 @@ namespace THESISMATESystem.Server.Services
             }
 
             return dtos;
+        }
+
+        private async Task WriteAuditAsync(string? userId, string action, string entityName, string? entityId, bool success)
+        {
+            try
+            {
+                _db.AuditLogs.Add(new AuditLog
+                {
+                    UserId = userId,
+                    Action = action,
+                    EntityName = entityName,
+                    EntityId = entityId,
+                    Success = success
+                });
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to write audit log for action {Action}", action);
+            }
         }
 
         private string GenerateJwt(ApplicationUser user, string role)

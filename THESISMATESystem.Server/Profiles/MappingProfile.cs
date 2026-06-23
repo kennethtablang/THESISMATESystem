@@ -40,6 +40,14 @@ namespace THESISMATESystem.Server.Profiles
                 .ForMember(d => d.WeightedScore, o => o.MapFrom(s => s.Score * s.DefenseCriterion.Weight / 100));
 
             CreateMap<Notification, NotificationResponseDto>();
+
+            CreateMap<Classroom, ClassroomResponseDto>()
+                .ForMember(d => d.FacultyIC, o => o.MapFrom(s => s.FacultyIC))
+                .ForMember(d => d.EnrollmentCount, o => o.MapFrom(s => s.Enrollments.Count));
+
+            CreateMap<ClassroomAnnouncement, AnnouncementResponseDto>()
+                .ForMember(d => d.PostedBy, o => o.MapFrom(s => s.PostedBy))
+                .ForMember(d => d.TargetGroupName, o => o.MapFrom(s => s.TargetGroup != null ? s.TargetGroup.GroupName : null));
         }
     }
 }

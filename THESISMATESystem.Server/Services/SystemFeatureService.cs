@@ -73,6 +73,10 @@ namespace THESISMATESystem.Server.Services
             if (dto.Description is not null) feature.Description = dto.Description;
             if (dto.Status.HasValue) feature.Status = dto.Status.Value;
             if (dto.SortOrder.HasValue) feature.SortOrder = dto.SortOrder.Value;
+            if (dto.PlannedStartDate.HasValue) feature.PlannedStartDate = dto.PlannedStartDate;
+            if (dto.PlannedEndDate.HasValue) feature.PlannedEndDate = dto.PlannedEndDate;
+            if (dto.ActualStartDate.HasValue) feature.ActualStartDate = dto.ActualStartDate;
+            if (dto.ActualEndDate.HasValue) feature.ActualEndDate = dto.ActualEndDate;
             feature.UpdatedAt = PhilippineTime.Now;
 
             await _db.SaveChangesAsync();
@@ -153,6 +157,10 @@ namespace THESISMATESystem.Server.Services
             Status = f.Status,
             StatusLabel = f.Status.ToString(),
             SortOrder = f.SortOrder,
+            PlannedStartDate = f.PlannedStartDate,
+            PlannedEndDate = f.PlannedEndDate,
+            ActualStartDate = f.ActualStartDate,
+            ActualEndDate = f.ActualEndDate,
             CreatedAt = f.CreatedAt,
             UpdatedAt = f.UpdatedAt,
             CommentCount = f.Comments.Count
