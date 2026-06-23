@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using QuestPDF.Infrastructure;
 using System.Text;
 using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.Interfaces;
@@ -17,6 +18,8 @@ namespace THESISMATESystem.Server
     {
         public static async Task Main(string[] args)
         {
+            QuestPDF.Settings.License = LicenseType.Community;
+
             var builder = WebApplication.CreateBuilder(args);
 
             // Persist data protection keys so email tokens survive server restarts
@@ -80,6 +83,7 @@ namespace THESISMATESystem.Server
             builder.Services.AddScoped<IDocumentService, DocumentService>();
             builder.Services.AddScoped<ISystemFeatureService, SystemFeatureService>();
             builder.Services.AddScoped<IConsultationScheduleService, ConsultationScheduleService>();
+            builder.Services.AddScoped<IClassroomService, ClassroomService>();
 
             builder.Services.AddControllers()
                 .AddJsonOptions(o =>
