@@ -26,6 +26,9 @@ namespace THESISMATESystem.Server.Data
         public DbSet<SystemFeatureComment> SystemFeatureComments => Set<SystemFeatureComment>();
         public DbSet<ConsultationSchedule> ConsultationSchedules => Set<ConsultationSchedule>();
         public DbSet<ConsultationRequest> ConsultationRequests => Set<ConsultationRequest>();
+        public DbSet<Classroom> Classrooms => Set<Classroom>();
+        public DbSet<ClassroomEnrollment> ClassroomEnrollments => Set<ClassroomEnrollment>();
+        public DbSet<ClassroomAnnouncement> ClassroomAnnouncements => Set<ClassroomAnnouncement>();
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -103,7 +106,8 @@ namespace THESISMATESystem.Server.Data
                 .HasOne(al => al.User)
                 .WithMany(u => u.AuditLogs)
                 .HasForeignKey(al => al.UserId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
 
             builder.Entity<Notification>()
                 .HasOne(n => n.User)
@@ -171,6 +175,51 @@ namespace THESISMATESystem.Server.Data
             builder.Entity<ConsultationRequest>()
                 .HasIndex(cr => new { cr.ConsultationScheduleId, cr.CapstoneGroupId })
                 .IsUnique();
+
+            // Classroom
+            builder.Entity<Classroom>()
+                .HasOne(c => c.FacultyIC)
+                .WithMany()
+                .HasForeignKey(c => c.FacultyICId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<Classroom>()
+                .HasIndex(c => c.JoinCode)
+                .IsUnique();
+
+            builder.Entity<ClassroomEnrollment>()
+                .HasIndex(ce => new { ce.ClassroomId, ce.StudentId })
+                .IsUnique();
+
+            builder.Entity<ClassroomEnrollment>()
+                .HasOne(ce => ce.Student)
+                .WithMany(u => u.ClassroomEnrollments)
+                .HasForeignKey(ce => ce.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<ClassroomEnrollment>()
+                .HasOne(ce => ce.Classroom)
+                .WithMany(c => c.Enrollments)
+                .HasForeignKey(ce => ce.ClassroomId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<ClassroomAnnouncement>()
+                .HasOne(a => a.PostedBy)
+                .WithMany()
+                .HasForeignKey(a => a.PostedById)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<ClassroomAnnouncement>()
+                .HasOne(a => a.Classroom)
+                .WithMany(c => c.Announcements)
+                .HasForeignKey(a => a.ClassroomId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<ClassroomAnnouncement>()
+                .HasOne(a => a.TargetGroup)
+                .WithMany()
+                .HasForeignKey(a => a.TargetGroupId)
+                .OnDelete(DeleteBehavior.SetNull);
         }
     }
 }
