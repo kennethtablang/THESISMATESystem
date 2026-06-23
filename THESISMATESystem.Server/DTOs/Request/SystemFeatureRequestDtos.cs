@@ -17,6 +17,10 @@ namespace THESISMATESystem.Server.DTOs.Request
         public string? Description { get; set; }
         public SystemFeatureStatus? Status { get; set; }
         public int? SortOrder { get; set; }
+        public DateTime? PlannedStartDate { get; set; }
+        public DateTime? PlannedEndDate { get; set; }
+        public DateTime? ActualStartDate { get; set; }
+        public DateTime? ActualEndDate { get; set; }
     }
 
     public class AddSystemFeatureCommentRequestDto

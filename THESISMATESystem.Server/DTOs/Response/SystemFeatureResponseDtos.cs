@@ -14,6 +14,10 @@ namespace THESISMATESystem.Server.DTOs.Response
         public SystemFeatureStatus Status { get; set; }
         public string StatusLabel { get; set; } = string.Empty;
         public int SortOrder { get; set; }
+        public DateTime? PlannedStartDate { get; set; }
+        public DateTime? PlannedEndDate { get; set; }
+        public DateTime? ActualStartDate { get; set; }
+        public DateTime? ActualEndDate { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
         public int CommentCount { get; set; }

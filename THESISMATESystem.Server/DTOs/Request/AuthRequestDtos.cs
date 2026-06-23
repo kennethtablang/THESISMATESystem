@@ -36,4 +36,25 @@ namespace THESISMATESystem.Server.DTOs.Request
         [Required] public string UserId { get; set; } = string.Empty;
         [Required] public string Token { get; set; } = string.Empty;
     }
+
+    public class TwoFactorLoginRequestDto
+    {
+        [Required] public string UserId { get; set; } = string.Empty;
+        [Required] public string Code { get; set; } = string.Empty;
+    }
+
+    public class TwoFactorVerifySetupRequestDto
+    {
+        [Required] public string Code { get; set; } = string.Empty;
+    }
+
+    public class TwoFactorDisableRequestDto
+    {
+        [Required] public string Password { get; set; } = string.Empty;
+    }
+
+    public class ForgotPasswordRequestDto
+    {
+        [Required] public string Email { get; set; } = string.Empty;
+    }
 }

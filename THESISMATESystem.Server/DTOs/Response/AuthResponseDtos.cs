@@ -12,6 +12,8 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string RefreshToken { get; set; } = string.Empty;
         public DateTime Expires { get; set; }
         public UserResponseDto User { get; set; } = null!;
+        public bool TwoFactorRequired { get; set; } = false;
+        public string? TempUserId { get; set; }
     }
 
     public class UserResponseDto
