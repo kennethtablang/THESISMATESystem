@@ -60,6 +60,14 @@ namespace THESISMATESystem.Server.Controllers
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
+        [HttpPatch("{id:int}/dates")]
+        [Authorize(Roles = "Adviser,Admin,SuperAdmin")]
+        public async Task<IActionResult> UpdateDates(int id, [FromBody] UpdateSystemFeatureRequestDto dto)
+        {
+            try { return Ok(await _features.UpdateFeatureAsync(id, dto)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
         [HttpGet("{id:int}/comments")]
         public async Task<IActionResult> GetComments(int id)
             => Ok(await _features.GetCommentsAsync(id));

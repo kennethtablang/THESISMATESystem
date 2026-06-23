@@ -6,7 +6,7 @@ namespace THESISMATESystem.Server.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Coordinator,Adviser")]
+    [Authorize(Roles = "Admin,SuperAdmin,Adviser,FacultyIC")]
     public class ReportsController : ControllerBase
     {
         private readonly IReportService _reports;
@@ -19,7 +19,7 @@ namespace THESISMATESystem.Server.Controllers
             try
             {
                 var bytes = await _reports.GenerateGroupProgressReportAsync(groupId);
-                return File(bytes, "text/plain", $"group_{groupId}_progress.txt");
+                return File(bytes, "application/pdf", $"group_{groupId}_progress.pdf");
             }
             catch (KeyNotFoundException) { return NotFound(); }
         }
@@ -28,7 +28,7 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> MilestoneCompletion([FromQuery] string academicYear)
         {
             var bytes = await _reports.GenerateMilestoneCompletionReportAsync(academicYear);
-            return File(bytes, "text/plain", $"milestone_completion_{academicYear}.txt");
+            return File(bytes, "application/pdf", $"milestone_completion_{academicYear}.pdf");
         }
 
         [HttpGet("defense/{scheduleId:int}/outcome")]
@@ -37,13 +37,13 @@ namespace THESISMATESystem.Server.Controllers
             try
             {
                 var bytes = await _reports.GenerateDefenseOutcomeReportAsync(scheduleId);
-                return File(bytes, "text/plain", $"defense_{scheduleId}_outcome.txt");
+                return File(bytes, "application/pdf", $"defense_{scheduleId}_outcome.pdf");
             }
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
         [HttpGet("all-groups")]
-        [Authorize(Roles = "Coordinator")]
+        [Authorize(Roles = "Admin,SuperAdmin,FacultyIC")]
         public async Task<IActionResult> AllGroups(
             [FromQuery] string? adviserId,
             [FromQuery] string? academicYear,
@@ -51,7 +51,7 @@ namespace THESISMATESystem.Server.Controllers
             [FromQuery] DateTime? to)
         {
             var bytes = await _reports.GenerateAllGroupsReportAsync(adviserId, academicYear, from, to);
-            return File(bytes, "text/plain", "all_groups_report.txt");
+            return File(bytes, "application/pdf", "all_groups_report.pdf");
         }
     }
 }

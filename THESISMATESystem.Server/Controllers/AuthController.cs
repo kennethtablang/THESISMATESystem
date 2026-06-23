@@ -65,17 +65,74 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("forgot-password")]
-        public async Task<IActionResult> ForgotPassword([FromBody] string email)
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequestDto dto)
         {
-            await _auth.ForgotPasswordAsync(email);
-            return Ok(new { message = "If that email is registered, a reset link has been sent." });
+            try
+            {
+                await _auth.ForgotPasswordAsync(dto.Email.Trim());
+                return Ok(new { message = "If that email is registered, a reset link has been sent." });
+            }
+            catch (Exception)
+            {
+                return Ok(new { message = "If that email is registered, a reset link has been sent." });
+            }
         }
 
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword(ResetPasswordRequestDto dto)
         {
             var success = await _auth.ResetPasswordAsync(dto);
-            return success ? Ok() : BadRequest(new { message = "Password reset failed." });
+            return success ? Ok() : BadRequest(new { message = "The reset link is invalid or has expired. Please request a new one." });
+        }
+
+        [HttpGet("2fa/status")]
+        [Authorize]
+        public async Task<IActionResult> GetTwoFactorStatus()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            return Ok(new { enabled = await _auth.GetTwoFactorStatusAsync(userId) });
+        }
+
+        [HttpPost("2fa/enable")]
+        [Authorize]
+        public async Task<IActionResult> EnableTwoFactor()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try
+            {
+                await _auth.EnableTwoFactorSendCodeAsync(userId);
+                return Ok(new { message = "Verification code sent to your email." });
+            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpPost("2fa/verify-setup")]
+        [Authorize]
+        public async Task<IActionResult> VerifyTwoFactorSetup([FromBody] TwoFactorVerifySetupRequestDto dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var success = await _auth.VerifyAndEnableTwoFactorAsync(userId, dto.Code);
+            return success ? Ok(new { message = "Two-factor authentication enabled." }) : BadRequest(new { message = "Invalid or expired code." });
+        }
+
+        [HttpPost("2fa/disable")]
+        [Authorize]
+        public async Task<IActionResult> DisableTwoFactor([FromBody] TwoFactorDisableRequestDto dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try
+            {
+                await _auth.DisableTwoFactorAsync(userId, dto.Password);
+                return Ok(new { message = "Two-factor authentication disabled." });
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+        }
+
+        [HttpPost("2fa/login")]
+        public async Task<IActionResult> TwoFactorLogin([FromBody] TwoFactorLoginRequestDto dto)
+        {
+            try { return Ok(await _auth.TwoFactorLoginAsync(dto.UserId, dto.Code)); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
         }
 
         [HttpGet("users")]
