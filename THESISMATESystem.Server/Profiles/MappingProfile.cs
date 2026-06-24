@@ -19,7 +19,8 @@ namespace THESISMATESystem.Server.Profiles
 
             CreateMap<CapstoneGroup, CapstoneGroupResponseDto>()
                 .ForMember(d => d.Members, o => o.MapFrom(s => s.Members.Select(m => m.User)))
-                .ForMember(d => d.MilestoneProgress, o => o.Ignore());
+                .ForMember(d => d.MilestoneProgress, o => o.Ignore())
+                .ForMember(d => d.SystemLogoUrl, o => o.Ignore());
 
             CreateMap<ChapterSubmission, ChapterSubmissionResponseDto>();
 
@@ -30,6 +31,7 @@ namespace THESISMATESystem.Server.Profiles
 
             CreateMap<DefenseSchedule, DefenseScheduleResponseDto>()
                 .ForMember(d => d.GroupName, o => o.MapFrom(s => s.CapstoneGroup.GroupName))
+                .ForMember(d => d.AcademicYear, o => o.MapFrom(s => s.CapstoneGroup.AcademicYear))
                 .ForMember(d => d.Panelists, o => o.MapFrom(s => s.PanelAssignments.Select(pa => pa.Panelist)))
                 .ForMember(d => d.ConsolidatedRating, o => o.Ignore());
 
