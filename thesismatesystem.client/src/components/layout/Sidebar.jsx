@@ -14,7 +14,7 @@ const roleConfig = {
   Adviser:    { color: '#34d399', label: 'Adviser' },
   FacultyIC:  { color: '#60a5fa', label: 'Faculty IC' },
   Student:    { color: '#38bdf8', label: 'Student' },
-  Panel:      { color: '#a78bfa', label: 'Panelist' },
+  Panel:      { color: '#a78bfa', label: 'Panel Member' },
 }
 
 // ── Nav definitions ───────────────────────────────────────────────────
