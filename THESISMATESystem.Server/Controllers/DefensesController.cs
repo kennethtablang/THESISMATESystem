@@ -20,7 +20,7 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> GetAll() => Ok(await _defenses.GetAllSchedulesAsync());
 
         [HttpGet("my-schedules")]
-        [Authorize(Roles = "Panel")]
+        [Authorize(Roles = "Panel,Adviser,FacultyIC")]
         public async Task<IActionResult> GetMySchedules()
         {
             var panelistId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

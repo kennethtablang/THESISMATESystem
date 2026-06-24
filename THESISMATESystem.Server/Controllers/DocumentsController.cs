@@ -27,6 +27,11 @@ namespace THESISMATESystem.Server.Controllers
             return Ok(await _documents.GetDocumentsByAdviserAsync(adviserId));
         }
 
+        [HttpGet("all")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> GetAll()
+            => Ok(await _documents.GetAllDocumentsAsync());
+
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {

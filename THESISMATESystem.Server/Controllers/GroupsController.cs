@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.IO;
 using System.Security.Claims;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.Enums;
@@ -77,6 +78,35 @@ namespace THESISMATESystem.Server.Controllers
         {
             var success = await _groups.ArchiveGroupAsync(id);
             return success ? Ok() : NotFound();
+        }
+
+        [HttpPost("{id:int}/logo")]
+        [Authorize(Roles = "Student,Admin,SuperAdmin")]
+        public async Task<IActionResult> UploadLogo(int id, IFormFile file)
+        {
+            if (file is null || file.Length == 0)
+                return BadRequest(new { message = "No file provided." });
+
+            var allowed = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (!allowed.Contains(ext))
+                return BadRequest(new { message = "Only image files are allowed (jpg, png, gif, webp)." });
+
+            var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var callerRole = User.FindFirstValue(ClaimTypes.Role)!;
+
+            try { return Ok(await _groups.UploadLogoAsync(id, file, callerId, callerRole)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+        }
+
+        [HttpGet("{id:int}/logo")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetLogo(int id)
+        {
+            var result = await _groups.GetLogoAsync(id);
+            if (result is null) return NotFound();
+            return File(result.Value.bytes, result.Value.contentType);
         }
     }
 }
