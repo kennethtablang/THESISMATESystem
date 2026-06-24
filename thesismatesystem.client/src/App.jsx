@@ -36,9 +36,16 @@ import ClassroomManager from './pages/facultyic/ClassroomManager'
 
 // Student pages (additional)
 import JoinClass from './pages/student/JoinClass'
+import ManuscriptEditor from './pages/student/ManuscriptEditor'
+
+// Adviser/monitor pages
+import ManuscriptViewer from './pages/adviser/ManuscriptViewer'
 
 // Admin pages
 import UserManagement from './pages/admin/UserManagement'
+
+// Monitoring
+import MonitoringDashboard from './pages/monitoring/MonitoringDashboard'
 
 // Panel pages
 import Ratings from './pages/ratings/Ratings'
@@ -58,6 +65,14 @@ function CalendarPage() {
     return <Navigate to="/consultation-manager" replace />
   }
   return <ConsultationCalendar />
+}
+
+function ManuscriptPage() {
+  const { user } = useAuth()
+  const role = user?.role
+  if (role === 'Student') return <ManuscriptEditor />
+  if (['Adviser', 'Panel', 'FacultyIC', 'Admin', 'SuperAdmin'].includes(role)) return <ManuscriptViewer />
+  return <Navigate to="/dashboard" replace />
 }
 
 function SystemFeaturesPage() {
@@ -151,6 +166,10 @@ export default function App() {
               <UserManagement />
             </RoleGuard>
           } />
+
+          <Route path="manuscript" element={<ManuscriptPage />} />
+
+          <Route path="monitoring" element={<MonitoringDashboard />} />
 
           {/* Shared routes */}
           <Route path="groups" element={<Groups />} />

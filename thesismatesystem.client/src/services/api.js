@@ -124,6 +124,51 @@ export const groupService = {
   update: (id, data) => api.put(`/groups/${id}`, data),
   archive: (id) => api.patch(`/groups/${id}/archive`),
   members: (id) => api.get(`/groups/${id}/members`),
+  updateVersion: (data) => api.patch('/groups/my-group/version', data),
+}
+
+export const manuscriptService = {
+  myGroup: () => api.get('/manuscript/my-group'),
+  byGroup: (groupId) => api.get(`/manuscript/group/${groupId}`),
+  saveSection: (sectionKey, data) => api.put(`/manuscript/my-group/${sectionKey}`, data),
+
+  // Voting
+  voteStatus: () => api.get('/manuscript/my-group/vote-status'),
+  castVote: () => api.post('/manuscript/my-group/vote'),
+  revokeVote: () => api.delete('/manuscript/my-group/vote'),
+
+  // Comments
+  comments: (groupId, sectionKey, revision) => {
+    const q = new URLSearchParams()
+    if (sectionKey) q.set('sectionKey', sectionKey)
+    if (revision != null) q.set('revision', revision)
+    return api.get(`/manuscript/group/${groupId}/comments?${q}`)
+  },
+  myGroupComments: (sectionKey, revision) => {
+    const q = new URLSearchParams()
+    if (sectionKey) q.set('sectionKey', sectionKey)
+    if (revision != null) q.set('revision', revision)
+    return api.get(`/manuscript/my-group/comments?${q}`)
+  },
+  addComment: (groupId, sectionKey, data) =>
+    api.post(`/manuscript/group/${groupId}/comments/${sectionKey}`, data),
+
+  // Revision management (Adviser / FIC)
+  openRevision: (groupId) => api.post(`/manuscript/group/${groupId}/open-revision`),
+
+  // Revision summary (section-level review completion based on comments)
+  revisionSummary: (groupId) => api.get(`/manuscript/group/${groupId}/revision-summary`),
+  myRevisionSummary: () => api.get('/manuscript/my-group/revision-summary'),
+
+  // Image upload
+  uploadImage: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return requestMultipart('POST', '/manuscript/upload-image', fd)
+  },
+
+  // Token for SignalR connection
+  getToken: () => localStorage.getItem('tm_token'),
 }
 
 export const chapterService = {
@@ -134,6 +179,7 @@ export const chapterService = {
   addRevisionNote: (groupId, chapterId, data) =>
     api.post(`/groups/${groupId}/chapters/submissions/${chapterId}/revision-notes`, data),
   download: (id) => `${BASE_URL}/groups/0/chapters/submissions/${id}/download`,
+  history: (groupId, chapterNumber) => api.get(`/groups/${groupId}/chapters/${chapterNumber}/history`),
 }
 
 export const consultationService = {
@@ -185,6 +231,12 @@ export const documentService = {
   addComment: (id, data) => api.post(`/documents/${id}/comments`, data),
   comments: (id) => api.get(`/documents/${id}/comments`),
   delete: (id) => api.delete(`/documents/${id}`),
+  uploadNewVersion: (id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return requestMultipart('POST', `/documents/${id}/new-version`, fd)
+  },
+  versions: (id) => api.get(`/documents/${id}/versions`),
 }
 
 export const systemFeatureService = {
@@ -209,6 +261,12 @@ export const classroomService = {
   myAnnouncements: () => api.get('/classrooms/announcements/my'),
   assignGroup: (data) => api.post('/classrooms/assign-group', data),
   regenerateCode: (id) => api.post(`/classrooms/${id}/regenerate-code`),
+}
+
+export const monitoringService = {
+  summary: () => api.get('/monitoring/groups'),
+  groupHealth: (id) => api.get(`/monitoring/groups/${id}`),
+  myGroup: () => api.get('/monitoring/my-group'),
 }
 
 export const consultationScheduleService = {
