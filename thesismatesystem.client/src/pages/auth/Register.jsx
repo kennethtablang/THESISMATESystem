@@ -202,7 +202,7 @@ export default function Register() {
               community.
             </h2>
             <p className="mt-3.5 text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.38)' }}>
-              Create your student account and connect with your adviser, group, and faculty coordinator.
+              Create your student account and connect with your adviser, group, and Department Chair.
             </p>
           </div>
 

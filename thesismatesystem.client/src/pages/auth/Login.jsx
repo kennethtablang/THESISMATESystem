@@ -149,7 +149,7 @@ export default function Login() {
               with ease.
             </h2>
             <p className="mt-3.5 text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.38)' }}>
-              A comprehensive platform for BSIT capstone students, advisers, and faculty coordinators.
+              A comprehensive platform for BSIT capstone students, advisers, and Department Chairs.
             </p>
           </div>
 
