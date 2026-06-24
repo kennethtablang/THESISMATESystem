@@ -7,6 +7,7 @@ namespace THESISMATESystem.Server.DTOs.Response
         public int Id { get; set; }
         public int CapstoneGroupId { get; set; }
         public string GroupName { get; set; } = string.Empty;
+        public string AcademicYear { get; set; } = string.Empty;
         public DateTime ScheduledDateTime { get; set; }
         public string Venue { get; set; } = string.Empty;
         public DefenseStatus Status { get; set; }

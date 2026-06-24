@@ -13,6 +13,7 @@ namespace THESISMATESystem.Server.DTOs.Response
         public DateTime CreatedAt { get; set; }
         public string? ManuscriptVersion { get; set; }
         public string? SystemVersion { get; set; }
+        public string? SystemLogoUrl { get; set; }
         public UserSummaryDto Adviser { get; set; } = null!;
         public List<UserSummaryDto> Members { get; set; } = [];
         public MilestoneProgressDto? MilestoneProgress { get; set; }
