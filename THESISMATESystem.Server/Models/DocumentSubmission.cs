@@ -20,6 +20,9 @@ namespace THESISMATESystem.Server.Models
         public int Version { get; set; } = 1;
         public DateTime SubmittedAt { get; set; } = PhilippineTime.Now;
 
+        public int? OriginalDocumentId { get; set; }
+        public DocumentSubmission? OriginalDocument { get; set; }
+
         public ICollection<DocumentComment> Comments { get; set; } = [];
     }
 }
