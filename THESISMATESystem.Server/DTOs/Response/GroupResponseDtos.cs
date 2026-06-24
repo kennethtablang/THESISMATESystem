@@ -11,6 +11,8 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string AcademicYear { get; set; } = string.Empty;
         public GroupStatus Status { get; set; }
         public DateTime CreatedAt { get; set; }
+        public string? ManuscriptVersion { get; set; }
+        public string? SystemVersion { get; set; }
         public UserSummaryDto Adviser { get; set; } = null!;
         public List<UserSummaryDto> Members { get; set; } = [];
         public MilestoneProgressDto? MilestoneProgress { get; set; }

@@ -18,4 +18,10 @@ namespace THESISMATESystem.Server.DTOs.Request
         public bool? TitleApproved { get; set; }
         public List<string>? MemberIds { get; set; }
     }
+
+    public class UpdateVersionRequestDto
+    {
+        public string? ManuscriptVersion { get; set; }
+        public string? SystemVersion { get; set; }
+    }
 }

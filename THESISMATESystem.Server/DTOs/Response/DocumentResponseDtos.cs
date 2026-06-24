@@ -14,6 +14,20 @@ namespace THESISMATESystem.Server.DTOs.Response
         public int Version { get; set; }
         public DateTime SubmittedAt { get; set; }
         public int CommentCount { get; set; }
+        public int? OriginalDocumentId { get; set; }
+        public bool IsRevised { get; set; }
+        public int TotalVersions { get; set; }
+        public bool IsChanged { get; set; }
+    }
+
+    public class DocumentVersionDto
+    {
+        public int Id { get; set; }
+        public int Version { get; set; }
+        public string FileName { get; set; } = string.Empty;
+        public long FileSize { get; set; }
+        public DateTime SubmittedAt { get; set; }
+        public UserSummaryDto SubmittedBy { get; set; } = null!;
     }
 
     public class DocumentCommentResponseDto
