@@ -14,6 +14,7 @@ namespace THESISMATESystem.Server.Models
         public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
         public string? ManuscriptVersion { get; set; }
         public string? SystemVersion { get; set; }
+        public string? SystemLogoPath { get; set; }
         public bool ManuscriptLocked { get; set; } = false;
         public int ManuscriptRevision { get; set; } = 1;
 
