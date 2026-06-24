@@ -7,6 +7,7 @@ using Microsoft.OpenApi;
 using QuestPDF.Infrastructure;
 using System.Text;
 using THESISMATESystem.Server.Data;
+using THESISMATESystem.Server.Hubs;
 using THESISMATESystem.Server.Interfaces;
 using THESISMATESystem.Server.Models;
 using THESISMATESystem.Server.Profiles;
@@ -64,6 +65,18 @@ namespace THESISMATESystem.Server
                     ValidAudience = builder.Configuration["Jwt:Audience"],
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
                 };
+                // Allow JWT via query string for SignalR WebSocket connections
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = ctx =>
+                    {
+                        var access = ctx.Request.Query["access_token"];
+                        var path = ctx.HttpContext.Request.Path;
+                        if (!string.IsNullOrEmpty(access) && path.StartsWithSegments("/hubs"))
+                            ctx.Token = access;
+                        return Task.CompletedTask;
+                    }
+                };
             });
 
             builder.Services.AddAuthorization();
@@ -84,6 +97,10 @@ namespace THESISMATESystem.Server
             builder.Services.AddScoped<ISystemFeatureService, SystemFeatureService>();
             builder.Services.AddScoped<IConsultationScheduleService, ConsultationScheduleService>();
             builder.Services.AddScoped<IClassroomService, ClassroomService>();
+            builder.Services.AddScoped<IManuscriptService, ManuscriptService>();
+            builder.Services.AddScoped<IMonitoringService, MonitoringService>();
+
+            builder.Services.AddSignalR();
 
             builder.Services.AddControllers()
                 .AddJsonOptions(o =>
@@ -140,6 +157,7 @@ namespace THESISMATESystem.Server
             Directory.CreateDirectory(wwwroot);
             Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "documents"));
             Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "chapters"));
+            Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "manuscripts"));
 
             app.UseDefaultFiles();
             app.MapStaticAssets();
@@ -154,11 +172,23 @@ namespace THESISMATESystem.Server
                 c.DisplayRequestDuration();
             });
 
+            // Serve static files; prevent MIME sniffing across all static paths
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                OnPrepareResponse = ctx =>
+                {
+                    // Prevents browser from overriding the Content-Type we set.
+                    // Combined with the server-side allowlist + magic-byte check in
+                    // ManuscriptService.UploadImageAsync, this closes the XSS-via-upload vector.
+                    ctx.Context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+                }
+            });
             app.UseHttpsRedirection();
             app.UseCors("SpaPolicy");
             app.UseAuthentication();
             app.UseAuthorization();
             app.MapControllers();
+            app.MapHub<ManuscriptHub>("/hubs/manuscript");
             app.MapFallbackToFile("/index.html");
 
             // Seed roles and default users on startup
