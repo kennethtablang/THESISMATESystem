@@ -48,6 +48,14 @@ namespace THESISMATESystem.Server.Profiles
             CreateMap<ClassroomAnnouncement, AnnouncementResponseDto>()
                 .ForMember(d => d.PostedBy, o => o.MapFrom(s => s.PostedBy))
                 .ForMember(d => d.TargetGroupName, o => o.MapFrom(s => s.TargetGroup != null ? s.TargetGroup.GroupName : null));
+
+            CreateMap<ManuscriptSection, ManuscriptSectionResponseDto>()
+                .ForMember(d => d.UpdatedBy, o => o.MapFrom(s => s.UpdatedBy))
+                .ForMember(d => d.YjsState, o => o.MapFrom(s =>
+                    s.YjsState != null ? Convert.ToBase64String(s.YjsState) : null));
+
+            CreateMap<ManuscriptSectionComment, ManuscriptCommentDto>()
+                .ForMember(d => d.Author, o => o.MapFrom(s => s.Author));
         }
     }
 }
