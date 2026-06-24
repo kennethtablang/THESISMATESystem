@@ -29,6 +29,10 @@ namespace THESISMATESystem.Server.Data
         public DbSet<Classroom> Classrooms => Set<Classroom>();
         public DbSet<ClassroomEnrollment> ClassroomEnrollments => Set<ClassroomEnrollment>();
         public DbSet<ClassroomAnnouncement> ClassroomAnnouncements => Set<ClassroomAnnouncement>();
+        public DbSet<ManuscriptSection> ManuscriptSections => Set<ManuscriptSection>();
+        public DbSet<ManuscriptFinalizationVote> ManuscriptFinalizationVotes => Set<ManuscriptFinalizationVote>();
+        public DbSet<ManuscriptSnapshot> ManuscriptSnapshots => Set<ManuscriptSnapshot>();
+        public DbSet<ManuscriptSectionComment> ManuscriptSectionComments => Set<ManuscriptSectionComment>();
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -121,6 +125,12 @@ namespace THESISMATESystem.Server.Data
                 .WithMany(u => u.DocumentSubmissions)
                 .HasForeignKey(ds => ds.SubmittedById)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<DocumentSubmission>()
+                .HasOne(d => d.OriginalDocument)
+                .WithMany()
+                .HasForeignKey(d => d.OriginalDocumentId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             builder.Entity<DocumentComment>()
                 .HasOne(dc => dc.Author)
@@ -220,6 +230,60 @@ namespace THESISMATESystem.Server.Data
                 .WithMany()
                 .HasForeignKey(a => a.TargetGroupId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Manuscript sections — one record per group per section key
+            builder.Entity<ManuscriptSection>()
+                .HasIndex(ms => new { ms.CapstoneGroupId, ms.SectionKey })
+                .IsUnique();
+
+            builder.Entity<ManuscriptSection>()
+                .HasOne(ms => ms.CapstoneGroup)
+                .WithMany()
+                .HasForeignKey(ms => ms.CapstoneGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<ManuscriptSection>()
+                .HasOne(ms => ms.UpdatedBy)
+                .WithMany()
+                .HasForeignKey(ms => ms.UpdatedById)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Finalization votes — one per user per revision per group
+            builder.Entity<ManuscriptFinalizationVote>()
+                .HasIndex(v => new { v.CapstoneGroupId, v.UserId, v.Revision })
+                .IsUnique();
+
+            builder.Entity<ManuscriptFinalizationVote>()
+                .HasOne(v => v.CapstoneGroup)
+                .WithMany()
+                .HasForeignKey(v => v.CapstoneGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<ManuscriptFinalizationVote>()
+                .HasOne(v => v.User)
+                .WithMany()
+                .HasForeignKey(v => v.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Manuscript snapshots
+            builder.Entity<ManuscriptSnapshot>()
+                .HasOne(s => s.CapstoneGroup)
+                .WithMany()
+                .HasForeignKey(s => s.CapstoneGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Section comments
+            builder.Entity<ManuscriptSectionComment>()
+                .HasOne(c => c.CapstoneGroup)
+                .WithMany()
+                .HasForeignKey(c => c.CapstoneGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<ManuscriptSectionComment>()
+                .HasOne(c => c.Author)
+                .WithMany()
+                .HasForeignKey(c => c.AuthorId)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }
