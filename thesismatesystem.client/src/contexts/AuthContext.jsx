@@ -24,25 +24,63 @@ function reducer(state, action) {
   }
 }
 
+function parseJwt(token) {
+  try {
+    const base64 = token.split('.')[1]
+    const json = atob(base64.replace(/-/g, '+').replace(/_/g, '/'))
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
+function isTokenExpired(token) {
+  const payload = parseJwt(token)
+  if (!payload?.exp) return true
+  return Date.now() / 1000 > payload.exp
+}
+
+function clearSession() {
+  localStorage.removeItem('tm_token')
+  localStorage.removeItem('tm_user')
+}
+
 export function AuthProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState)
 
+  // Restore session only if the stored JWT is still valid
   useEffect(() => {
     const token = localStorage.getItem('tm_token')
     const stored = localStorage.getItem('tm_user')
     if (token && stored) {
-      try {
-        const user = JSON.parse(stored)
-        dispatch({ type: 'LOGIN', user, token })
-      } catch {
-        localStorage.removeItem('tm_token')
-        localStorage.removeItem('tm_user')
+      if (isTokenExpired(token)) {
+        clearSession()
         dispatch({ type: 'LOADED' })
+      } else {
+        try {
+          const user = JSON.parse(stored)
+          dispatch({ type: 'LOGIN', user, token })
+        } catch {
+          clearSession()
+          dispatch({ type: 'LOADED' })
+        }
       }
     } else {
       dispatch({ type: 'LOADED' })
     }
   }, [])
+
+  // Periodically check whether the active token has expired (handles long-idle tabs)
+  useEffect(() => {
+    if (!state.token) return
+    const id = setInterval(() => {
+      if (isTokenExpired(state.token)) {
+        clearSession()
+        dispatch({ type: 'LOGOUT' })
+      }
+    }, 60_000)
+    return () => clearInterval(id)
+  }, [state.token])
 
   function normalizeUser(user) {
     const fallback = [user.firstName, user.middleName, user.lastName].filter(Boolean).join(' ')
