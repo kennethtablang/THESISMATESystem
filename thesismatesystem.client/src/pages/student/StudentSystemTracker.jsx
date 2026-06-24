@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Cpu, MessageSquare, ChevronDown, ChevronUp, BarChart2, List } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Cpu, MessageSquare, ChevronDown, ChevronUp, BarChart2, List, Users } from 'lucide-react'
 import TopBar from '../../components/layout/TopBar'
 import GanttChart from '../../components/ui/GanttChart'
+import { PageLoader } from '../../components/ui/Spinner'
 import { systemFeatureService, groupService } from '../../services/api'
 
 const statusColors = {
@@ -14,14 +16,28 @@ const statusColors = {
 function FeatureCard({ feature }) {
   const [expanded, setExpanded] = useState(false)
   const [comments, setComments] = useState([])
+  const [commentsLoaded, setCommentsLoaded] = useState(false)
+  const [commentError, setCommentError] = useState('')
   const sc = statusColors[feature.status] ?? statusColors.NotStarted
 
   async function loadComments() {
-    if (!expanded) {
-      const data = await systemFeatureService.comments(feature.id)
-      setComments(data)
+    if (expanded) {
+      setExpanded(false)
+      return
     }
-    setExpanded(e => !e)
+    if (!commentsLoaded) {
+      try {
+        const data = await systemFeatureService.comments(feature.id)
+        setComments(data)
+        setCommentsLoaded(true)
+        setCommentError('')
+      } catch (err) {
+        setCommentError(err.message ?? 'Failed to load comments')
+        setExpanded(true)
+        return
+      }
+    }
+    setExpanded(true)
   }
 
   return (
@@ -52,7 +68,11 @@ function FeatureCard({ feature }) {
 
       {expanded && (
         <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-light)' }}>
-          {comments.length === 0 ? (
+          {commentError ? (
+            <p className="text-xs px-3 py-2 rounded-lg" style={{ color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca' }}>
+              {commentError}
+            </p>
+          ) : comments.length === 0 ? (
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No comments yet.</p>
           ) : (
             <ul className="space-y-2">
@@ -81,27 +101,52 @@ function FeatureCard({ feature }) {
 }
 
 export default function StudentSystemTracker() {
+  const navigate = useNavigate()
   const [features, setFeatures] = useState([])
-  const [group, setGroup] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [group, setGroup] = useState(undefined) // undefined=loading, null=no group
   const [filter, setFilter] = useState('All')
   const [view, setView] = useState('list')
 
   useEffect(() => {
-    groupService.myGroup().then(g => {
-      setGroup(g)
-      return systemFeatureService.byGroup(g.id)
-    }).then(setFeatures).catch(() => {}).finally(() => setLoading(false))
+    groupService.myGroup()
+      .then(g => {
+        setGroup(g)
+        return systemFeatureService.byGroup(g.id)
+      })
+      .then(setFeatures)
+      .catch(() => {
+        setGroup(prev => prev === undefined ? null : prev)
+      })
   }, [])
 
   const functional = features.filter(f => f.featureType === 'Functional')
   const nonFunctional = features.filter(f => f.featureType === 'NonFunctional')
   const displayed = filter === 'All' ? features : filter === 'Functional' ? functional : nonFunctional
 
-  if (loading) {
+  if (group === undefined) {
+    return <><TopBar title="System Tracker" /><PageLoader /></>
+  }
+
+  if (group === null) {
     return (
-      <div className="p-8 flex items-center justify-center">
-        <div className="flex gap-1">{[0,1,2].map(i => <span key={i} className="w-2 h-2 rounded-full animate-bounce" style={{background:'#c9a84c',animationDelay:`${i*0.15}s`}} />)}</div>
+      <div>
+        <TopBar title="System Tracker" />
+        <div className="flex flex-col items-center justify-center" style={{ minHeight: 'calc(100vh - 80px)' }}>
+          <div className="rounded-2xl p-10 text-center max-w-md"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-main)' }}>
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
+              style={{ background: 'rgba(201,168,76,0.1)' }}>
+              <Users size={28} style={{ color: '#c9a84c' }} />
+            </div>
+            <h2 className="font-display font-semibold text-lg mb-2" style={{ color: 'var(--text-heading)' }}>
+              No Group Yet
+            </h2>
+            <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
+              You need to be part of a capstone group before you can access the System Tracker.
+            </p>
+            <button className="btn-primary" onClick={() => navigate('/groups')}>View Groups</button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -113,7 +158,7 @@ export default function StudentSystemTracker() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="page-title">System Feature Tracker</h2>
-            <p className="page-subtitle">{group?.groupName} — Descriptive-Developmental Progress</p>
+            <p className="page-subtitle">{group?.projectTitle ?? group?.groupName} — Descriptive-Developmental Progress</p>
           </div>
           <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--bg-subtle)' }}>
             <button onClick={() => setView('list')} className="px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 transition-all"
@@ -168,7 +213,15 @@ export default function StudentSystemTracker() {
         )}
 
         {view === 'gantt' && (
-          <GanttChart features={features} canEdit={false} />
+          features.length === 0 ? (
+            <div className="card text-center py-12">
+              <BarChart2 size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+              <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>No features to display</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Your adviser will add system features to track</p>
+            </div>
+          ) : (
+            <GanttChart features={features} canEdit={false} />
+          )
         )}
       </div>
     </>

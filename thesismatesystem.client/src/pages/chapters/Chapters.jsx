@@ -6,7 +6,7 @@ import Badge, { statusLabel, statusVariant } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
-import { FileText, Upload, Eye, MessageSquare, CheckCircle } from 'lucide-react'
+import { FileText, Upload, Eye, MessageSquare, CheckCircle, Download, History } from 'lucide-react'
 
 const CHAPTER_LABELS = [
   'Chapter 1 — Introduction',
@@ -28,6 +28,8 @@ export default function Chapters() {
   const [reviewForm, setReviewForm] = useState({ status: 'Approved', note: '' })
   const [saving, setSaving] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [reviewError, setReviewError] = useState('')
+  const [chapterHistory, setChapterHistory] = useState([])
   const fileRef = useRef()
 
   const isAdviser = user?.role === 'Adviser'
@@ -45,7 +47,7 @@ export default function Chapters() {
         .then((data) => setChapters(data ?? []))
         .catch(() => setChapters([]))
         .finally(() => setLoading(false))
-    } else {
+    } else if (isAdmin || isAdviser) {
       groupService.list()
         .then(async (groups) => {
           const results = await Promise.all(
@@ -60,8 +62,10 @@ export default function Chapters() {
         .then(setChapters)
         .catch(() => setChapters([]))
         .finally(() => setLoading(false))
+    } else {
+      setLoading(false)
     }
-  }, [isStudent])
+  }, [isStudent, isAdmin, isAdviser])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -96,6 +100,7 @@ export default function Chapters() {
     e.preventDefault()
     if (!selected) return
     setSaving(true)
+    setReviewError('')
     try {
       const groupId = selected.capstoneGroupId
       await chapterService.updateStatus(groupId, selected.id, { status: reviewForm.status })
@@ -115,9 +120,23 @@ export default function Chapters() {
       setSelected(null)
       setReviewForm({ status: 'Approved', note: '' })
     } catch (err) {
-      alert(err.message)
+      setReviewError(err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function openView(c) {
+    setSelected(c)
+    setChapterHistory([])
+    try {
+      const gid = c.capstoneGroupId ?? group?.id
+      if (gid) {
+        const history = await chapterService.history(gid, c.chapterNumber)
+        setChapterHistory(history ?? [])
+      }
+    } catch {
+      // ignore — history is optional
     }
   }
 
@@ -149,7 +168,7 @@ export default function Chapters() {
                 .slice()
                 .sort((a, b) => a.chapterNumber - b.chapterNumber)
                 .map((c) => (
-                  <StudentChapterRow key={c.id} chapter={c} onView={() => setSelected(c)} />
+                  <StudentChapterRow key={c.id} chapter={c} onView={() => openView(c)} />
                 ))}
             </div>
           )
@@ -181,11 +200,11 @@ export default function Chapters() {
                     <td><Badge variant={statusVariant(c.status)} size="sm">{statusLabel(c.status)}</Badge></td>
                     <td>
                       <div className="flex items-center gap-1.5">
-                        <button className="btn-ghost text-xs" onClick={() => setSelected(c)}>
+                        <button className="btn-ghost text-xs" onClick={() => openView(c)}>
                           <Eye size={13} /> View
                         </button>
                         {isAdviser && c.status === 'PendingReview' && (
-                          <button className="btn-primary text-xs px-3 py-1.5" onClick={() => { setSelected(c); setShowReview(true) }}>
+                          <button className="btn-primary text-xs px-3 py-1.5" onClick={() => { openView(c); setShowReview(true) }}>
                             Review
                           </button>
                         )}
@@ -264,11 +283,11 @@ export default function Chapters() {
       {/* Review Modal */}
       <Modal
         open={showReview && !!selected}
-        onClose={() => { setShowReview(false); setSelected(null); setReviewForm({ status: 'Approved', note: '' }) }}
+        onClose={() => { setShowReview(false); setSelected(null); setReviewForm({ status: 'Approved', note: '' }); setReviewError('') }}
         title={`Review: Chapter ${selected?.chapterNumber} — ${selected?.groupName ?? ''}`}
         footer={
           <>
-            <button className="btn-secondary" onClick={() => { setShowReview(false); setSelected(null) }}>Cancel</button>
+            <button className="btn-secondary" onClick={() => { setShowReview(false); setSelected(null); setReviewError('') }}>Cancel</button>
             <button className="btn-primary" onClick={handleReview} disabled={saving}>
               {saving ? 'Saving...' : 'Submit Review'}
             </button>
@@ -276,6 +295,11 @@ export default function Chapters() {
         }
       >
         <div className="space-y-4">
+          {reviewError && (
+            <div className="px-4 py-3 rounded-xl text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+              {reviewError}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Decision</label>
             <div className="flex gap-3">
@@ -339,12 +363,45 @@ export default function Chapters() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Version</span>
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>v{selected.version}</span>
+              <span className="text-sm font-medium" style={{ color: selected.version > 1 ? '#c9a84c' : 'var(--text-secondary)' }}>
+                v{selected.version}{selected.version > 1 ? ' Corrected' : ''}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm" style={{ color: 'var(--text-muted)' }}>File</span>
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{selected.fileName}</span>
+              <a href={chapterService.download(selected.id)} target="_blank" rel="noreferrer"
+                className="flex items-center gap-1 text-sm"
+                style={{ color: '#c9a84c' }}>
+                <Download size={13} />
+                {selected.fileName}
+              </a>
             </div>
+            {chapterHistory.length > 1 && (
+              <div className="pt-3" style={{ borderTop: '1px solid var(--border-light)' }}>
+                <p className="text-sm font-semibold mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
+                  <History size={13} /> Version History
+                </p>
+                <div className="space-y-1.5">
+                  {chapterHistory.map(h => (
+                    <div key={h.id} className="flex items-center gap-3 rounded-xl px-3 py-2"
+                      style={{ background: 'var(--bg-subtle)' }}>
+                      <span className="text-xs font-bold w-14 shrink-0" style={{ color: h.version > 1 ? '#c9a84c' : 'var(--text-muted)' }}>
+                        v{h.version}{h.version > 1 ? ' ✓' : ''}
+                      </span>
+                      <span className="text-xs flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>{h.fileName}</span>
+                      <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
+                        {new Date(h.submittedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                      </span>
+                      <a href={chapterService.download(h.id)} target="_blank" rel="noreferrer"
+                        className="shrink-0 text-xs flex items-center gap-1 px-2 py-1 rounded-lg transition-colors"
+                        style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
+                        <Download size={11} />
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {selected.revisionNotes?.length > 0 && (
               <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-light)' }}>
                 <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Revision Notes</p>
@@ -392,7 +449,15 @@ function StudentChapterRow({ chapter, onView }) {
           <p className="font-semibold" style={{ color: 'var(--text-heading)' }}>
             {CHAPTER_LABELS[chapter.chapterNumber - 1] ?? `Chapter ${chapter.chapterNumber}`}
           </p>
-          <Badge variant={statusVariant(chapter.status)} size="sm">{statusLabel(chapter.status)}</Badge>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {chapter.version > 1 && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+                v{chapter.version} Corrected
+              </span>
+            )}
+            <Badge variant={statusVariant(chapter.status)} size="sm">{statusLabel(chapter.status)}</Badge>
+          </div>
         </div>
         {chapter.submittedAt && (
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>

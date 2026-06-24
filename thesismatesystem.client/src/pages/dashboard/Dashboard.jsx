@@ -11,7 +11,8 @@ import {
 } from 'lucide-react'
 import {
   groupService, chapterService, consultationService,
-  defenseService, consultationScheduleService,
+  defenseService, consultationScheduleService, authService,
+  monitoringService,
 } from '../../services/api'
 
 // ─── Shared UI ───────────────────────────────────────────────────────────────
@@ -697,15 +698,18 @@ function AdminDashboard({ user }) {
   const navigate = useNavigate()
   const [groups, setGroups] = useState([])
   const [defenses, setDefenses] = useState([])
+  const [userCount, setUserCount] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([
       groupService.list().catch(() => []),
       defenseService.list().catch(() => []),
-    ]).then(([gs, de]) => {
+      authService.allUsers().catch(() => null),
+    ]).then(([gs, de, us]) => {
       setGroups(gs)
       setDefenses(de)
+      if (us) setUserCount(us.filter(u => u.isActive).length)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -724,10 +728,10 @@ function AdminDashboard({ user }) {
       />
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-        <StatCard icon={Users}       label="Total Groups"        value={groups.length}        sub="registered"      color={{ bg: 'rgba(59,130,246,0.12)',  icon: '#3b82f6' }} onClick={() => navigate('/groups')} />
-        <StatCard icon={GraduationCap} label="Scheduled Defenses" value={activeDefenses.length} sub="upcoming"       color={{ bg: 'rgba(34,197,94,0.12)',   icon: '#16a34a' }} onClick={() => navigate('/defenses')} />
-        <StatCard icon={ShieldCheck}  label="User Management"    value="Users"                sub="manage accounts" color={{ bg: 'rgba(245,158,11,0.12)',  icon: '#f59e0b' }} onClick={() => navigate('/users')} />
-        <StatCard icon={BarChart3}    label="Reports"            value="View"                 sub="system reports"  color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/reports')} />
+        <StatCard icon={Users}         label="Total Groups"       value={groups.length}        sub="registered"         color={{ bg: 'rgba(59,130,246,0.12)',  icon: '#3b82f6' }} onClick={() => navigate('/groups')} />
+        <StatCard icon={GraduationCap} label="Active Defenses"   value={activeDefenses.length} sub="upcoming"          color={{ bg: 'rgba(34,197,94,0.12)',   icon: '#16a34a' }} onClick={() => navigate('/defenses')} />
+        <StatCard icon={ShieldCheck}   label="Active Users"      value={userCount ?? '—'}     sub="manage accounts"    color={{ bg: 'rgba(245,158,11,0.12)',  icon: '#f59e0b' }} onClick={() => navigate('/users')} />
+        <StatCard icon={BarChart3}     label="Reports"           value="Export"               sub="system reports"     color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/reports')} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -802,21 +806,25 @@ function FacultyICDashboard({ user }) {
   const navigate = useNavigate()
   const [schedules, setSchedules] = useState([])
   const [defenses, setDefenses] = useState([])
+  const [monitoring, setMonitoring] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([
       consultationScheduleService.all().catch(() => []),
       defenseService.list().catch(() => []),
-    ]).then(([sc, de]) => {
+      monitoringService.summary().catch(() => null),
+    ]).then(([sc, de, mon]) => {
       setSchedules(sc)
       setDefenses(de)
+      setMonitoring(mon)
     }).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <DashboardLoader />
 
   const activeDefenses = defenses.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
+  const monGroups = monitoring?.groups ?? []
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
@@ -848,24 +856,125 @@ function FacultyICDashboard({ user }) {
         <StatCard
           icon={Users}
           label="Groups"
-          value={defenses.length}
-          sub="with defense records"
+          value={monitoring?.totalGroups ?? monGroups.length}
+          sub="capstone groups"
           color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }}
           onClick={() => navigate('/consultation-manager')}
         />
       </div>
 
-      <SectionHeader title="Quick Actions" />
-      <Card>
-        <QuickActions
-          items={[
-            { icon: Plus,          label: 'Create consultation slot', desc: 'Open a new schedule slot', to: '/consultation-manager' },
-            { icon: Calendar,      label: 'Manage presentations',     desc: 'Defense schedules',        to: '/defenses' },
-            { icon: CalendarClock, label: 'View calendar',            desc: 'All scheduled events',    to: '/calendar' },
-            { icon: BookOpen,      label: 'Classroom',                desc: 'Manage your classroom',   to: '/classroom' },
-          ]}
-        />
-      </Card>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Pre-Finals Consultation Progress */}
+        <div className="xl:col-span-2">
+          <SectionHeader
+            title="Pre-Finals Consultation Progress"
+            action={
+              <button className="btn-ghost text-xs" onClick={() => navigate('/consultation-manager')}>
+                Manage slots
+              </button>
+            }
+          />
+          <Card>
+            {monGroups.length === 0 ? (
+              <EmptyCard
+                icon={TrendingUp}
+                message="No group data available"
+                hint="Group consultation progress will appear here once groups are active."
+              />
+            ) : (
+              <div>
+                {/* Column headers */}
+                <div
+                  className="grid grid-cols-12 gap-2 px-5 py-2 text-xs font-semibold uppercase tracking-wide"
+                  style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-light)' }}
+                >
+                  <span className="col-span-6">Research Title</span>
+                  <span className="col-span-2 text-center">Total</span>
+                  <span className="col-span-2 text-center">Last 30d</span>
+                  <span className="col-span-2 text-right">Score</span>
+                </div>
+
+                {monGroups.map((g, idx) => {
+                  const displayName = g.projectTitle || g.groupName
+                  const score = g.consultationScore ?? 0
+                  const scoreColor =
+                    score >= 75 ? '#16a34a' :
+                    score >= 50 ? '#c9a84c' : '#ef4444'
+                  const scoreBg =
+                    score >= 75 ? 'rgba(34,197,94,0.10)' :
+                    score >= 50 ? 'rgba(201,168,76,0.10)' : 'rgba(239,68,68,0.08)'
+
+                  return (
+                    <div
+                      key={g.groupId}
+                      className="transition-colors duration-100"
+                      style={{ borderBottom: idx < monGroups.length - 1 ? '1px solid var(--border-light)' : 'none' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div className="grid grid-cols-12 gap-2 px-5 pt-3 pb-1 items-center">
+                        <div className="col-span-6 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                            {displayName}
+                          </p>
+                          {g.projectTitle && (
+                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                              {g.groupName}
+                            </p>
+                          )}
+                        </div>
+                        <div className="col-span-2 text-center">
+                          <span className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
+                            {g.totalConsultations ?? 0}
+                          </span>
+                        </div>
+                        <div className="col-span-2 text-center">
+                          <span className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
+                            {g.consultationsLast30Days ?? 0}
+                          </span>
+                        </div>
+                        <div className="col-span-2 flex justify-end">
+                          <span
+                            className="text-xs font-bold px-2 py-0.5 rounded-lg"
+                            style={{ background: scoreBg, color: scoreColor }}
+                          >
+                            {score}%
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="px-5 pb-3">
+                        <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
+                          <div
+                            className="h-1.5 rounded-full transition-all duration-500"
+                            style={{ width: `${score}%`, background: scoreColor }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Quick Actions */}
+        <div>
+          <SectionHeader title="Quick Actions" />
+          <Card>
+            <QuickActions
+              items={[
+                { icon: Plus,          label: 'Create consultation slot', desc: 'Open a new schedule slot', to: '/consultation-manager' },
+                { icon: Calendar,      label: 'Manage presentations',     desc: 'Defense schedules',        to: '/defenses' },
+                { icon: CalendarClock, label: 'View calendar',            desc: 'All scheduled events',    to: '/calendar' },
+                { icon: BookOpen,      label: 'Classroom',                desc: 'Manage your classroom',   to: '/classroom' },
+              ]}
+            />
+          </Card>
+        </div>
+      </div>
     </div>
   )
 }
@@ -973,16 +1082,81 @@ function PanelDashboard({ user }) {
 
 // ─── SuperAdmin Dashboard ─────────────────────────────────────────────────────
 
+const ROLE_META = {
+  SuperAdmin: { color: '#dc2626', bg: 'rgba(239,68,68,0.12)' },
+  Admin:      { color: '#ea580c', bg: 'rgba(249,115,22,0.12)' },
+  Adviser:    { color: '#16a34a', bg: 'rgba(34,197,94,0.12)' },
+  FacultyIC:  { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  Student:    { color: '#0284c7', bg: 'rgba(14,165,233,0.12)' },
+  Panel:      { color: '#7c3aed', bg: 'rgba(139,92,246,0.12)' },
+}
+
+function RoleBreakdownBar({ users }) {
+  const total = users.length
+  if (total === 0) return null
+  const byRole = Object.entries(
+    users.reduce((acc, u) => { acc[u.role] = (acc[u.role] ?? 0) + 1; return acc }, {})
+  ).sort((a, b) => b[1] - a[1])
+
+  return (
+    <div className="space-y-3">
+      {byRole.map(([role, count]) => {
+        const meta = ROLE_META[role] ?? { color: '#6b7280', bg: 'rgba(107,114,128,0.12)' }
+        const pct = Math.round((count / total) * 100)
+        return (
+          <div key={role}>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: meta.color }} />
+                <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{role}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{pct}%</span>
+                <span
+                  className="text-xs font-semibold tabular-nums"
+                  style={{ color: meta.color, minWidth: 18, textAlign: 'right' }}
+                >
+                  {count}
+                </span>
+              </div>
+            </div>
+            <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
+              <div
+                className="h-1.5 rounded-full transition-all duration-700"
+                style={{ width: `${pct}%`, background: meta.color, opacity: 0.85 }}
+              />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function SuperAdminDashboard({ user }) {
   const navigate = useNavigate()
   const [groups, setGroups] = useState([])
+  const [users, setUsers] = useState([])
+  const [defenses, setDefenses] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    groupService.list().catch(() => []).then(setGroups).finally(() => setLoading(false))
+    Promise.all([
+      groupService.list().catch(() => []),
+      authService.allUsers().catch(() => []),
+      defenseService.list().catch(() => []),
+    ]).then(([gs, us, de]) => {
+      setGroups(gs)
+      setUsers(us)
+      setDefenses(de)
+    }).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <DashboardLoader />
+
+  const activeUsers  = users.filter(u => u.isActive).length
+  const activeGroups = groups.filter(g => g.status === 'Active' || !g.status).length
+  const upcomingDefs = defenses.filter(d => d.status !== 'Cancelled' && d.status !== 'Completed').length
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
@@ -991,27 +1165,80 @@ function SuperAdminDashboard({ user }) {
         badge="Super Administrator"
         badgeColor="148,163,184"
         name={user?.fullName ?? 'SuperAdmin'}
-        sub="Full system access — manage all users, roles, and data."
+        sub={`${users.length} users · ${groups.length} groups · full system access`}
       />
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-        <StatCard icon={Users}        label="Total Users"       value="—"           sub="manage via users page" color={{ bg: 'rgba(59,130,246,0.12)',  icon: '#3b82f6' }} onClick={() => navigate('/users')} />
-        <StatCard icon={GraduationCap} label="Total Groups"     value={groups.length} sub="all statuses"        color={{ bg: 'rgba(34,197,94,0.12)',   icon: '#16a34a' }} onClick={() => navigate('/groups')} />
-        <StatCard icon={ShieldCheck}  label="User Management"  value="Admin"       sub="manage accounts"       color={{ bg: 'rgba(245,158,11,0.12)',  icon: '#f59e0b' }} onClick={() => navigate('/users')} />
-        <StatCard icon={BarChart3}    label="Reports"          value="View"        sub="system-wide"           color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/reports')} />
+        <StatCard icon={Users}         label="Total Users"       value={users.length}   sub={`${activeUsers} active`}           color={{ bg: 'rgba(59,130,246,0.12)',  icon: '#3b82f6' }} onClick={() => navigate('/users')} />
+        <StatCard icon={GraduationCap} label="Capstone Groups"   value={groups.length}  sub={`${activeGroups} active`}          color={{ bg: 'rgba(34,197,94,0.12)',   icon: '#16a34a' }} onClick={() => navigate('/groups')} />
+        <StatCard icon={Calendar}      label="Upcoming Defenses" value={upcomingDefs}   sub="scheduled"                        color={{ bg: 'rgba(124,58,237,0.12)',  icon: '#7c3aed' }} onClick={() => navigate('/defenses')} />
+        <StatCard icon={BarChart3}     label="Reports"           value="Export"         sub="system-wide data"                 color={{ bg: 'rgba(245,158,11,0.12)',  icon: '#f59e0b' }} onClick={() => navigate('/reports')} />
       </div>
 
-      <SectionHeader title="Quick Actions" />
-      <Card>
-        <QuickActions
-          items={[
-            { icon: Users,        label: 'Manage users',       desc: 'Roles, accounts, access',    to: '/users' },
-            { icon: GraduationCap, label: 'Manage groups',     desc: 'Capstone group registry',    to: '/groups' },
-            { icon: Calendar,     label: 'Defense schedules',  desc: 'All scheduled defenses',     to: '/defenses' },
-            { icon: BarChart3,    label: 'Generate report',    desc: 'Export system-wide data',    to: '/reports' },
-          ]}
-        />
-      </Card>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2">
+          <SectionHeader
+            title="Defense Schedules"
+            action={<button className="btn-ghost text-xs" onClick={() => navigate('/defenses')}>View all</button>}
+          />
+          <Card>
+            {defenses.length === 0 ? (
+              <EmptyCard icon={Calendar} message="No defenses scheduled" />
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Group</th>
+                    <th>Date &amp; Time</th>
+                    <th className="hidden md:table-cell">Venue</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {defenses.slice(0, 6).map((d) => (
+                    <tr key={d.id}>
+                      <td className="font-semibold">{d.groupName ?? '—'}</td>
+                      <td>
+                        {d.scheduledDateTime
+                          ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : '—'}
+                      </td>
+                      <td className="hidden md:table-cell">{d.venue ?? '—'}</td>
+                      <td>
+                        <Badge variant={statusVariant(d.status)} size="sm">{statusLabel(d.status)}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <SectionHeader title="User Distribution" />
+            <Card>
+              <div className="px-5 py-4">
+                <RoleBreakdownBar users={users} />
+              </div>
+            </Card>
+          </div>
+          <div>
+            <SectionHeader title="Quick Actions" />
+            <Card>
+              <QuickActions
+                items={[
+                  { icon: Users,         label: 'Manage users',      desc: 'Roles, accounts, access',   to: '/users' },
+                  { icon: GraduationCap, label: 'Manage groups',     desc: 'Capstone group registry',   to: '/groups' },
+                  { icon: Calendar,      label: 'Defense schedules', desc: 'All scheduled defenses',    to: '/defenses' },
+                  { icon: BarChart3,     label: 'Generate report',   desc: 'Export system-wide data',   to: '/reports' },
+                ]}
+              />
+            </Card>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

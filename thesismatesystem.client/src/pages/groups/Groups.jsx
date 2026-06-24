@@ -6,7 +6,7 @@ import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
-import { Users, Plus, Search, ChevronRight, BookOpen } from 'lucide-react'
+import { Users, Plus, Search, ChevronRight, BookOpen, FileText, Cpu, Pencil } from 'lucide-react'
 
 export default function Groups() {
   const { user } = useAuth()
@@ -21,13 +21,79 @@ export default function Groups() {
   const [error, setError] = useState('')
 
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
+  const isStudent = user?.role === 'Student'
+
+  const [showVersionModal, setShowVersionModal] = useState(false)
+  const [versionForm, setVersionForm] = useState({ manuscriptVersion: '', systemVersion: '' })
+  const [versionSaving, setVersionSaving] = useState(false)
+  const [versionError, setVersionError] = useState('')
+
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editTarget, setEditTarget] = useState(null)
+  const [editForm, setEditForm] = useState({ groupName: '', projectTitle: '' })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
 
   useEffect(() => {
-    groupService.list()
-      .then(setGroups)
-      .catch(() => setGroups([]))
-      .finally(() => setLoading(false))
-  }, [])
+    const fetch = isStudent
+      ? groupService.myGroup().then(g => [g]).catch(() => [])
+      : groupService.list().catch(() => [])
+    fetch.then(setGroups).finally(() => setLoading(false))
+  }, [isStudent])
+
+  function openEditModal(group) {
+    setEditTarget(group)
+    setEditForm({ groupName: group.groupName ?? '', projectTitle: group.projectTitle ?? '' })
+    setEditError('')
+    setShowEditModal(true)
+  }
+
+  async function handleEditSave() {
+    if (!editForm.groupName.trim()) {
+      setEditError('Group name is required.')
+      return
+    }
+    setEditSaving(true)
+    setEditError('')
+    try {
+      const updated = await groupService.update(editTarget.id, {
+        groupName: editForm.groupName.trim(),
+        projectTitle: editForm.projectTitle.trim() || null,
+      })
+      setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))
+      setShowEditModal(false)
+    } catch (err) {
+      setEditError(err.message)
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  function openVersionModal(group) {
+    setVersionForm({
+      manuscriptVersion: group.manuscriptVersion ?? '',
+      systemVersion: group.systemVersion ?? '',
+    })
+    setVersionError('')
+    setShowVersionModal(true)
+  }
+
+  async function handleVersionSave() {
+    setVersionSaving(true)
+    setVersionError('')
+    try {
+      const updated = await groupService.updateVersion({
+        manuscriptVersion: versionForm.manuscriptVersion || null,
+        systemVersion: versionForm.systemVersion || null,
+      })
+      setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))
+      setShowVersionModal(false)
+    } catch (err) {
+      setVersionError(err.message)
+    } finally {
+      setVersionSaving(false)
+    }
+  }
 
   function openCreateModal() {
     setError('')
@@ -107,11 +173,115 @@ export default function Groups() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map((g) => (
-              <GroupCard key={g.id} group={g} onClick={() => navigate(`/groups/${g.id}`)} />
+              <GroupCard
+                key={g.id}
+                group={g}
+                onClick={() => navigate(`/groups/${g.id}`)}
+                onEditVersion={isStudent ? () => openVersionModal(g) : null}
+                onEdit={isAdmin ? () => openEditModal(g) : null}
+              />
             ))}
           </div>
         )}
       </div>
+
+      <Modal
+        open={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="Edit Group"
+        size="md"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setShowEditModal(false)}>Cancel</button>
+            <button className="btn-primary" onClick={handleEditSave} disabled={editSaving}>
+              {editSaving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </>
+        }
+      >
+        {editError && (
+          <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+            {editError}
+          </div>
+        )}
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group Name *</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. Group Alpha, Group 1"
+              value={editForm.groupName}
+              onChange={e => setEditForm(f => ({ ...f, groupName: e.target.value }))}
+            />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Short identifier for the group.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Research Title</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Enter the actual research/project title…"
+              value={editForm.projectTitle}
+              onChange={e => setEditForm(f => ({ ...f, projectTitle: e.target.value }))}
+            />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Displayed in place of the group name once set. Leave blank to use only the group name.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showVersionModal}
+        onClose={() => setShowVersionModal(false)}
+        title="Set Version Tags"
+        size="md"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setShowVersionModal(false)}>Cancel</button>
+            <button className="btn-primary" onClick={handleVersionSave} disabled={versionSaving}>
+              {versionSaving ? 'Saving…' : 'Save'}
+            </button>
+          </>
+        }
+      >
+        {versionError && (
+          <div className="mb-4 px-4 py-3 rounded-xl text-sm flex items-center gap-2"
+            style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+            {versionError}
+          </div>
+        )}
+        <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
+          Tag your group's current progress so your adviser and panel can track which version they're reviewing.
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+              <span className="flex items-center gap-1.5"><FileText size={13} /> Manuscript Version</span>
+            </label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. Draft 3, v1.2, Chapter 5 Final"
+              value={versionForm.manuscriptVersion}
+              onChange={e => setVersionForm(f => ({ ...f, manuscriptVersion: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+              <span className="flex items-center gap-1.5"><Cpu size={13} /> System Version</span>
+            </label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. v1.0.0, Beta 2, Alpha"
+              value={versionForm.systemVersion}
+              onChange={e => setVersionForm(f => ({ ...f, systemVersion: e.target.value }))}
+            />
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={showModal}
@@ -186,8 +356,9 @@ export default function Groups() {
   )
 }
 
-function GroupCard({ group, onClick }) {
+function GroupCard({ group, onClick, onEditVersion, onEdit }) {
   const progress = group.milestoneProgress?.completionPercentage ?? 0
+  const displayName = group.projectTitle || group.groupName
 
   return (
     <div
@@ -210,13 +381,39 @@ function GroupCard({ group, onClick }) {
         >
           {(group.groupName ?? 'G')[0]}
         </div>
-        <ChevronRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity mt-0.5" style={{ color: 'var(--text-muted)' }} />
+        <div className="flex items-center gap-2">
+          {onEdit && (
+            <button
+              type="button"
+              className="p-1.5 rounded-lg transition-all duration-150"
+              style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)', border: '1px solid var(--border-main)' }}
+              onClick={(e) => { e.stopPropagation(); onEdit() }}
+              title="Edit group name / research title"
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#c9a84c'; e.currentTarget.style.borderColor = 'rgba(201,168,76,0.35)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-main)' }}
+            >
+              <Pencil size={12} />
+            </button>
+          )}
+          <ChevronRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity mt-0.5" style={{ color: 'var(--text-muted)' }} />
+        </div>
       </div>
 
-      <h3 className="font-semibold mb-0.5" style={{ color: 'var(--text-heading)' }}>{group.groupName ?? 'Unnamed Group'}</h3>
-      <p className="text-xs mb-3 line-clamp-2" style={{ color: 'var(--text-muted)', lineHeight: '1.5' }}>
-        {group.projectTitle ?? 'No thesis title set'}
-      </p>
+      {/* Primary: research title if set, else group name */}
+      <h3 className="font-semibold mb-0.5 line-clamp-2" style={{ color: 'var(--text-heading)', lineHeight: '1.4' }}>
+        {displayName ?? 'Unnamed Group'}
+      </h3>
+
+      {/* Secondary: show group name tag when research title overrides it */}
+      {group.projectTitle ? (
+        <p className="text-xs mb-3 font-medium" style={{ color: 'var(--text-muted)' }}>
+          {group.groupName}
+        </p>
+      ) : (
+        <p className="text-xs mb-3 italic" style={{ color: 'var(--text-muted)' }}>
+          No research title set
+        </p>
+      )}
 
       <div className="flex items-center gap-3 mb-3">
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -230,6 +427,48 @@ function GroupCard({ group, onClick }) {
           </div>
         )}
       </div>
+
+      {(group.manuscriptVersion || group.systemVersion || onEditVersion) && (
+        <div className="mb-3">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {(group.manuscriptVersion || onEditVersion) && (
+              <span
+                className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-md font-medium"
+                style={{
+                  background: group.manuscriptVersion ? 'rgba(201,168,76,0.12)' : 'var(--bg-subtle)',
+                  color: group.manuscriptVersion ? '#a0832a' : 'var(--text-muted)',
+                  border: `1px solid ${group.manuscriptVersion ? 'rgba(201,168,76,0.2)' : 'var(--border-main)'}`,
+                }}
+              >
+                <FileText size={10} />
+                MS {group.manuscriptVersion ?? '—'}
+              </span>
+            )}
+            {(group.systemVersion || onEditVersion) && (
+              <span
+                className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-md font-medium"
+                style={{
+                  background: group.systemVersion ? 'rgba(99,102,241,0.08)' : 'var(--bg-subtle)',
+                  color: group.systemVersion ? '#4f46e5' : 'var(--text-muted)',
+                  border: `1px solid ${group.systemVersion ? 'rgba(99,102,241,0.18)' : 'var(--border-main)'}`,
+                }}
+              >
+                <Cpu size={10} />
+                SYS {group.systemVersion ?? '—'}
+              </span>
+            )}
+            {onEditVersion && (
+              <button
+                className="ml-auto flex items-center gap-1 text-xs px-2 py-0.5 rounded-md font-medium transition-opacity hover:opacity-70"
+                style={{ color: '#c9a84c', border: '1px solid rgba(201,168,76,0.25)', background: 'rgba(201,168,76,0.06)' }}
+                onClick={(e) => { e.stopPropagation(); onEditVersion() }}
+              >
+                <Pencil size={10} /> Update
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="flex items-center justify-between mb-1.5">
