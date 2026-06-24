@@ -5,6 +5,7 @@ import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
 import { PageLoader } from '../../components/ui/Spinner'
 import { authService } from '../../services/api'
+import { useSort, SortIcon } from '../../hooks/useSort.jsx'
 
 const PAGE_SIZE = 10
 
@@ -64,8 +65,9 @@ export default function UserManagement() {
     return matchSearch && matchRole
   })
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const { sorted: sortedUsers, sortKey, sortDir, toggle } = useSort(filtered, 'fullName')
+  const totalPages = Math.ceil(sortedUsers.length / PAGE_SIZE)
+  const paginated = sortedUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const stats = {
     total:    users.length,
@@ -175,11 +177,19 @@ export default function UserManagement() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th className="hidden sm:table-cell">Email</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th className="hidden md:table-cell">Joined</th>
+                    {[
+                      { key: 'fullName', label: 'Name' },
+                      { key: 'email',    label: 'Email', cls: 'hidden sm:table-cell' },
+                      { key: 'role',     label: 'Role' },
+                      { key: 'isActive', label: 'Status' },
+                      { key: 'createdAt',label: 'Joined', cls: 'hidden md:table-cell' },
+                    ].map(({ key, label, cls }) => (
+                      <th key={key} className={cls}
+                        onClick={() => toggle(key)}
+                        style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                        {label}<SortIcon col={key} sortKey={sortKey} sortDir={sortDir} />
+                      </th>
+                    ))}
                     <th>Action</th>
                   </tr>
                 </thead>
