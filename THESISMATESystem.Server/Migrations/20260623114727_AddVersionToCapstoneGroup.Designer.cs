@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using THESISMATESystem.Server.Data;
 
@@ -11,9 +12,11 @@ using THESISMATESystem.Server.Data;
 namespace THESISMATESystem.Server.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260623114727_AddVersionToCapstoneGroup")]
+    partial class AddVersionToCapstoneGroup
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -303,12 +306,6 @@ namespace THESISMATESystem.Server.Migrations
                     b.Property<string>("GroupName")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("ManuscriptLocked")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("ManuscriptRevision")
-                        .HasColumnType("int");
 
                     b.Property<string>("ManuscriptVersion")
                         .HasColumnType("nvarchar(max)");
@@ -851,145 +848,6 @@ namespace THESISMATESystem.Server.Migrations
                     b.ToTable("GroupMembers");
                 });
 
-            modelBuilder.Entity("THESISMATESystem.Server.Models.ManuscriptFinalizationVote", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("CapstoneGroupId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Revision")
-                        .HasColumnType("int");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<DateTime>("VotedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("CapstoneGroupId", "UserId", "Revision")
-                        .IsUnique();
-
-                    b.ToTable("ManuscriptFinalizationVotes");
-                });
-
-            modelBuilder.Entity("THESISMATESystem.Server.Models.ManuscriptSection", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("CapstoneGroupId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("SectionKey")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("UpdatedById")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<int>("WordCount")
-                        .HasColumnType("int");
-
-                    b.Property<byte[]>("YjsState")
-                        .HasColumnType("varbinary(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UpdatedById");
-
-                    b.HasIndex("CapstoneGroupId", "SectionKey")
-                        .IsUnique();
-
-                    b.ToTable("ManuscriptSections");
-                });
-
-            modelBuilder.Entity("THESISMATESystem.Server.Models.ManuscriptSectionComment", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AuthorId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<int>("CapstoneGroupId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("Revision")
-                        .HasColumnType("int");
-
-                    b.Property<string>("SectionKey")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AuthorId");
-
-                    b.HasIndex("CapstoneGroupId");
-
-                    b.ToTable("ManuscriptSectionComments");
-                });
-
-            modelBuilder.Entity("THESISMATESystem.Server.Models.ManuscriptSnapshot", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("CapstoneGroupId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Revision")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("SnapshotAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("SnapshotJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CapstoneGroupId");
-
-                    b.ToTable("ManuscriptSnapshots");
-                });
-
             modelBuilder.Entity("THESISMATESystem.Server.Models.Notification", b =>
                 {
                     b.Property<int>("Id")
@@ -1478,74 +1336,6 @@ namespace THESISMATESystem.Server.Migrations
                     b.Navigation("CapstoneGroup");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("THESISMATESystem.Server.Models.ManuscriptFinalizationVote", b =>
-                {
-                    b.HasOne("THESISMATESystem.Server.Models.CapstoneGroup", "CapstoneGroup")
-                        .WithMany()
-                        .HasForeignKey("CapstoneGroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("THESISMATESystem.Server.Models.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CapstoneGroup");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("THESISMATESystem.Server.Models.ManuscriptSection", b =>
-                {
-                    b.HasOne("THESISMATESystem.Server.Models.CapstoneGroup", "CapstoneGroup")
-                        .WithMany()
-                        .HasForeignKey("CapstoneGroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("THESISMATESystem.Server.Models.ApplicationUser", "UpdatedBy")
-                        .WithMany()
-                        .HasForeignKey("UpdatedById")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CapstoneGroup");
-
-                    b.Navigation("UpdatedBy");
-                });
-
-            modelBuilder.Entity("THESISMATESystem.Server.Models.ManuscriptSectionComment", b =>
-                {
-                    b.HasOne("THESISMATESystem.Server.Models.ApplicationUser", "Author")
-                        .WithMany()
-                        .HasForeignKey("AuthorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("THESISMATESystem.Server.Models.CapstoneGroup", "CapstoneGroup")
-                        .WithMany()
-                        .HasForeignKey("CapstoneGroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Author");
-
-                    b.Navigation("CapstoneGroup");
-                });
-
-            modelBuilder.Entity("THESISMATESystem.Server.Models.ManuscriptSnapshot", b =>
-                {
-                    b.HasOne("THESISMATESystem.Server.Models.CapstoneGroup", "CapstoneGroup")
-                        .WithMany()
-                        .HasForeignKey("CapstoneGroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CapstoneGroup");
                 });
 
             modelBuilder.Entity("THESISMATESystem.Server.Models.Notification", b =>
