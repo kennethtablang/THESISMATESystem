@@ -295,7 +295,7 @@ namespace THESISMATESystem.Server.Services
             return dtos;
         }
 
-        private Task<ConsolidatedRatingDto> BuildConsolidatedRating(DefenseSchedule schedule)
+        private async Task<ConsolidatedRatingDto> BuildConsolidatedRating(DefenseSchedule schedule)
         {
             var panelCount = schedule.PanelAssignments.Count;
             var ratingsByCriterion = schedule.DefenseRatings
@@ -314,18 +314,16 @@ namespace THESISMATESystem.Server.Services
                 };
             }).ToList();
 
-            var totalCriteria = _db.DefenseCriteria.Count(c => c.IsActive);
+            var totalCriteria = await _db.DefenseCriteria.CountAsync(c => c.IsActive);
             var totalRatingsExpected = panelCount * totalCriteria;
             var allSubmitted = schedule.DefenseRatings.Count >= totalRatingsExpected;
 
-            var result = new ConsolidatedRatingDto
+            return new ConsolidatedRatingDto
             {
                 TotalWeightedScore = Math.Round(breakdown.Sum(b => b.WeightedContribution), 2),
                 AllRatingsSubmitted = allSubmitted,
                 CriterionBreakdown = breakdown
             };
-
-            return Task.FromResult(result);
         }
     }
 }

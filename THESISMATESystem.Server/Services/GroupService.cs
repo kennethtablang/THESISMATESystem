@@ -158,6 +158,23 @@ namespace THESISMATESystem.Server.Services
             return true;
         }
 
+        public async Task<CapstoneGroupResponseDto> UpdateVersionAsync(string studentId, UpdateVersionRequestDto dto)
+        {
+            var membership = await _db.GroupMembers
+                .Include(gm => gm.CapstoneGroup)
+                .FirstOrDefaultAsync(gm => gm.UserId == studentId &&
+                    gm.CapstoneGroup.Status == GroupStatus.Active)
+                ?? throw new KeyNotFoundException("No active group found for this student.");
+
+            var group = membership.CapstoneGroup;
+            group.ManuscriptVersion = dto.ManuscriptVersion;
+            group.SystemVersion = dto.SystemVersion;
+
+            await _db.SaveChangesAsync();
+            return await GetGroupByIdAsync(group.Id)
+                ?? throw new InvalidOperationException("Failed to reload group.");
+        }
+
         private static MilestoneProgressDto ComputeMilestone(CapstoneGroup group)
         {
             var approvedChapters = group.ChapterSubmissions
@@ -175,7 +192,7 @@ namespace THESISMATESystem.Server.Services
                 ApprovedChapters = approvedChapters,
                 DefenseScheduled = defenseScheduled || defenseCompleted,
                 DefenseCompleted = defenseCompleted,
-                CompletionPercentage = Math.Round((approvedChapters / 5m) * 100, 2)
+                CompletionPercentage = Math.Min(Math.Round((approvedChapters / 5m) * 100, 2), 100)
             };
         }
     }

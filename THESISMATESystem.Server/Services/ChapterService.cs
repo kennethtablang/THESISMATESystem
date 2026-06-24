@@ -72,15 +72,19 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<IEnumerable<ChapterSubmissionResponseDto>> GetChaptersByGroupAsync(int groupId)
         {
-            var submissions = await _db.ChapterSubmissions
+            // Fetch all first, then group in memory — EF Core drops Include() through GroupBy/Select/First in SQL.
+            var all = await _db.ChapterSubmissions
                 .Include(cs => cs.SubmittedBy)
                 .Include(cs => cs.RevisionNotes).ThenInclude(rn => rn.CreatedBy)
                 .Where(cs => cs.CapstoneGroupId == groupId)
-                .GroupBy(cs => cs.ChapterNumber)
-                .Select(g => g.OrderByDescending(cs => cs.Version).First())
                 .ToListAsync();
 
-            return _mapper.Map<IEnumerable<ChapterSubmissionResponseDto>>(submissions);
+            var latest = all
+                .GroupBy(cs => cs.ChapterNumber)
+                .Select(g => g.OrderByDescending(cs => cs.Version).First())
+                .ToList();
+
+            return _mapper.Map<IEnumerable<ChapterSubmissionResponseDto>>(latest);
         }
 
         public async Task<IEnumerable<ChapterSubmissionResponseDto>> GetChapterHistoryAsync(int groupId, int chapterNumber)

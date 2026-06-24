@@ -176,13 +176,14 @@ namespace THESISMATESystem.Server.Services
             request.ResponseNotes = dto.ResponseNotes;
             request.RespondedAt = PhilippineTime.Now;
 
-            // Auto-close schedule if full after approval
+            // Auto-close schedule if full after approval.
+            // Count is from DB (pre-save), so +1 accounts for the current approval being added.
             if (dto.Status == ConsultationRequestStatus.Approved)
             {
                 var approvedCount = await _db.ConsultationRequests
                     .CountAsync(r => r.ConsultationScheduleId == request.ConsultationScheduleId
                                   && r.Status == ConsultationRequestStatus.Approved);
-                if (approvedCount >= request.ConsultationSchedule.MaxGroups)
+                if (approvedCount + 1 >= request.ConsultationSchedule.MaxGroups)
                     request.ConsultationSchedule.Status = ConsultationScheduleStatus.Full;
             }
 

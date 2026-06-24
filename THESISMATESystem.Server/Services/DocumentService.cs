@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 using THESISMATESystem.Server.Models;
 
@@ -51,17 +53,118 @@ namespace THESISMATESystem.Server.Services
             return await BuildDocumentResponseAsync(submission);
         }
 
+        public async Task<DocumentSubmissionResponseDto> UploadNewVersionAsync(int originalId, string uploadedById, IFormFile file)
+        {
+            var original = await _db.DocumentSubmissions.FindAsync(originalId)
+                ?? throw new KeyNotFoundException("Document not found.");
+
+            // Resolve chain root
+            var rootId = original.OriginalDocumentId ?? original.Id;
+            var root = rootId == original.Id
+                ? original
+                : await _db.DocumentSubmissions.FindAsync(rootId)
+                    ?? throw new KeyNotFoundException("Original document not found.");
+
+            // Verify the uploader is a member of the document's group — prevents IDOR write
+            var isMember = await _db.GroupMembers
+                .AnyAsync(gm => gm.CapstoneGroupId == root.CapstoneGroupId && gm.UserId == uploadedById);
+            if (!isMember)
+                throw new UnauthorizedAccessException("You are not a member of this group.");
+
+            var maxVersion = await _db.DocumentSubmissions
+                .Where(d => d.Id == rootId || d.OriginalDocumentId == rootId)
+                .MaxAsync(d => (int?)d.Version) ?? 1;
+
+            var uploadDir = Path.Combine(_env.WebRootPath, "uploads", "documents", root.CapstoneGroupId.ToString());
+            Directory.CreateDirectory(uploadDir);
+
+            var ext = Path.GetExtension(file.FileName);
+            var storedName = $"{Guid.NewGuid()}{ext}";
+            var filePath = Path.Combine(uploadDir, storedName);
+
+            using (var stream = File.Create(filePath))
+                await file.CopyToAsync(stream);
+
+            var newVersion = new DocumentSubmission
+            {
+                CapstoneGroupId = root.CapstoneGroupId,
+                SubmittedById = uploadedById,
+                Title = root.Title,
+                Description = root.Description,
+                FileName = file.FileName,
+                FilePath = filePath,
+                FileSize = file.Length,
+                MimeType = file.ContentType,
+                OriginalDocumentId = rootId,
+                Version = maxVersion + 1,
+            };
+
+            _db.DocumentSubmissions.Add(newVersion);
+            await _db.SaveChangesAsync();
+
+            return await BuildDocumentResponseAsync(newVersion);
+        }
+
+        public async Task<IEnumerable<DocumentVersionDto>> GetVersionsAsync(int id, string callerId, string callerRole)
+        {
+            var doc = await _db.DocumentSubmissions.FindAsync(id)
+                ?? throw new KeyNotFoundException("Document not found.");
+
+            var rootId = doc.OriginalDocumentId ?? doc.Id;
+
+            // Admins and staff with broad access can view any version history
+            var isPrivileged = callerRole is "Admin" or "SuperAdmin" or "FacultyIC";
+            if (!isPrivileged)
+            {
+                // Adviser — must advise this group
+                var groupId = doc.CapstoneGroupId;
+                if (callerRole == "Adviser")
+                {
+                    var advises = await _db.CapstoneGroups
+                        .AnyAsync(g => g.Id == groupId && g.AdviserId == callerId);
+                    if (!advises) throw new UnauthorizedAccessException();
+                }
+                else
+                {
+                    // Student / Panel — must be a group member
+                    var isMember = await _db.GroupMembers
+                        .AnyAsync(gm => gm.CapstoneGroupId == groupId && gm.UserId == callerId);
+                    if (!isMember) throw new UnauthorizedAccessException();
+                }
+            }
+
+            var versions = await _db.DocumentSubmissions
+                .Include(d => d.SubmittedBy)
+                .Where(d => d.Id == rootId || d.OriginalDocumentId == rootId)
+                .OrderBy(d => d.Version)
+                .ToListAsync();
+
+            return versions.Select(d => new DocumentVersionDto
+            {
+                Id = d.Id,
+                Version = d.Version,
+                FileName = d.FileName,
+                FileSize = d.FileSize,
+                SubmittedAt = d.SubmittedAt,
+                SubmittedBy = new UserSummaryDto
+                {
+                    Id = d.SubmittedBy.Id,
+                    FullName = $"{d.SubmittedBy.FirstName} {d.SubmittedBy.LastName}"
+                }
+            });
+        }
+
         public async Task<IEnumerable<DocumentSubmissionResponseDto>> GetDocumentsByGroupAsync(int groupId)
         {
-            var docs = await _db.DocumentSubmissions
+            var all = await _db.DocumentSubmissions
                 .Include(d => d.SubmittedBy)
                 .Include(d => d.CapstoneGroup)
                 .Include(d => d.Comments)
                 .Where(d => d.CapstoneGroupId == groupId)
-                .OrderByDescending(d => d.SubmittedAt)
+                .OrderByDescending(d => d.Version)
                 .ToListAsync();
 
-            return docs.Select(MapToDto);
+            return BuildLatestPerChain(all);
         }
 
         public async Task<IEnumerable<DocumentSubmissionResponseDto>> GetDocumentsByAdviserAsync(string adviserId)
@@ -71,15 +174,30 @@ namespace THESISMATESystem.Server.Services
                 .Select(g => g.Id)
                 .ToListAsync();
 
-            var docs = await _db.DocumentSubmissions
+            var all = await _db.DocumentSubmissions
                 .Include(d => d.SubmittedBy)
                 .Include(d => d.CapstoneGroup)
                 .Include(d => d.Comments)
                 .Where(d => groupIds.Contains(d.CapstoneGroupId))
-                .OrderByDescending(d => d.SubmittedAt)
+                .OrderByDescending(d => d.Version)
                 .ToListAsync();
 
-            return docs.Select(MapToDto);
+            return BuildLatestPerChain(all);
+        }
+
+        private static IEnumerable<DocumentSubmissionResponseDto> BuildLatestPerChain(List<DocumentSubmission> all)
+        {
+            // Count versions per chain (keyed by root id)
+            var versionCounts = all
+                .GroupBy(d => d.OriginalDocumentId ?? d.Id)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            // Return only latest per chain, ordered by most recently submitted
+            return all
+                .GroupBy(d => d.OriginalDocumentId ?? d.Id)
+                .Select(g => g.OrderByDescending(d => d.Version).First())
+                .OrderByDescending(d => d.SubmittedAt)
+                .Select(d => MapToDtoWithMeta(d, versionCounts.GetValueOrDefault(d.OriginalDocumentId ?? d.Id, 1)));
         }
 
         public async Task<DocumentSubmissionResponseDto?> GetDocumentByIdAsync(int id)
@@ -90,7 +208,14 @@ namespace THESISMATESystem.Server.Services
                 .Include(d => d.Comments)
                 .FirstOrDefaultAsync(d => d.Id == id);
 
-            return doc is null ? null : MapToDto(doc);
+            if (doc is null) return null;
+
+            // Compute total versions for this chain
+            var rootId = doc.OriginalDocumentId ?? doc.Id;
+            var totalVersions = await _db.DocumentSubmissions
+                .CountAsync(d => d.Id == rootId || d.OriginalDocumentId == rootId);
+
+            return MapToDtoWithMeta(doc, totalVersions);
         }
 
         public async Task<string> GetDownloadPathAsync(int id)
@@ -144,11 +269,12 @@ namespace THESISMATESystem.Server.Services
             return result;
         }
 
-        public async Task<bool> DeleteDocumentAsync(int id, string userId)
+        public async Task<bool> DeleteDocumentAsync(int id, string userId, string callerRole)
         {
             var doc = await _db.DocumentSubmissions.FindAsync(id);
             if (doc is null) return false;
-            if (doc.SubmittedById != userId) return false;
+            bool isPrivileged = callerRole is "Admin" or "SuperAdmin";
+            if (!isPrivileged && doc.SubmittedById != userId) return false;
 
             if (File.Exists(doc.FilePath)) File.Delete(doc.FilePath);
             _db.DocumentSubmissions.Remove(doc);
@@ -156,12 +282,19 @@ namespace THESISMATESystem.Server.Services
             return true;
         }
 
+        // ── Helpers ───────────────────────────────────────────────────────────────
+
         private async Task<DocumentSubmissionResponseDto> BuildDocumentResponseAsync(DocumentSubmission submission)
         {
             await _db.Entry(submission).Reference(d => d.SubmittedBy).LoadAsync();
             await _db.Entry(submission).Reference(d => d.CapstoneGroup).LoadAsync();
             await _db.Entry(submission).Collection(d => d.Comments).LoadAsync();
-            return MapToDto(submission);
+
+            var rootId = submission.OriginalDocumentId ?? submission.Id;
+            var totalVersions = await _db.DocumentSubmissions
+                .CountAsync(d => d.Id == rootId || d.OriginalDocumentId == rootId);
+
+            return MapToDtoWithMeta(submission, totalVersions);
         }
 
         private async Task<DocumentCommentResponseDto> BuildCommentResponseAsync(DocumentComment comment)
@@ -180,7 +313,7 @@ namespace THESISMATESystem.Server.Services
             };
         }
 
-        private static DocumentSubmissionResponseDto MapToDto(DocumentSubmission d) => new()
+        private static DocumentSubmissionResponseDto MapToDtoWithMeta(DocumentSubmission d, int totalVersions) => new()
         {
             Id = d.Id,
             CapstoneGroupId = d.CapstoneGroupId,
@@ -193,7 +326,11 @@ namespace THESISMATESystem.Server.Services
             MimeType = d.MimeType,
             Version = d.Version,
             SubmittedAt = d.SubmittedAt,
-            CommentCount = d.Comments.Count
+            CommentCount = d.Comments.Count,
+            OriginalDocumentId = d.OriginalDocumentId,
+            IsRevised = d.Version > 1,
+            TotalVersions = totalVersions,
+            IsChanged = d.Version > 1 && d.SubmittedAt >= PhilippineTime.Now.AddDays(-7),
         };
     }
 }

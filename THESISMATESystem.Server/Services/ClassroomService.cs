@@ -123,15 +123,6 @@ namespace THESISMATESystem.Server.Services
                 .ThenBy(e => e.Student.FirstName)
                 .ToListAsync();
 
-            // Load group membership for students in this classroom's groups
-            var classroomGroupIds = await _db.CapstoneGroups
-                .Where(g => _db.ClassroomAnnouncements
-                    .Where(a => a.ClassroomId == classroomId && a.TargetGroupId != null)
-                    .Select(a => a.TargetGroupId)
-                    .Contains(g.Id))
-                .Select(g => g.Id)
-                .ToListAsync();
-
             // Get all group memberships for students enrolled in this classroom
             var studentIds = enrollments.Select(e => e.StudentId).ToList();
             var groupMemberships = await _db.GroupMembers
