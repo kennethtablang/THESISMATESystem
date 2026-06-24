@@ -167,6 +167,18 @@ namespace THESISMATESystem.Server.Services
             return BuildLatestPerChain(all);
         }
 
+        public async Task<IEnumerable<DocumentSubmissionResponseDto>> GetAllDocumentsAsync()
+        {
+            var all = await _db.DocumentSubmissions
+                .Include(d => d.SubmittedBy)
+                .Include(d => d.CapstoneGroup)
+                .Include(d => d.Comments)
+                .OrderByDescending(d => d.Version)
+                .ToListAsync();
+
+            return BuildLatestPerChain(all);
+        }
+
         public async Task<IEnumerable<DocumentSubmissionResponseDto>> GetDocumentsByAdviserAsync(string adviserId)
         {
             var groupIds = await _db.CapstoneGroups

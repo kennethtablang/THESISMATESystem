@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
 using THESISMATESystem.Server.Enums;
@@ -14,5 +15,7 @@ namespace THESISMATESystem.Server.Interfaces
         Task<CapstoneGroupResponseDto> UpdateGroupAsync(int id, UpdateGroupRequestDto dto);
         Task<bool> ArchiveGroupAsync(int id);
         Task<CapstoneGroupResponseDto> UpdateVersionAsync(string studentId, UpdateVersionRequestDto dto);
+        Task<CapstoneGroupResponseDto> UploadLogoAsync(int groupId, IFormFile file, string callerId, string callerRole);
+        Task<(byte[] bytes, string contentType)?> GetLogoAsync(int groupId);
     }
 }

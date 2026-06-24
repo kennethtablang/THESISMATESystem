@@ -9,6 +9,7 @@ namespace THESISMATESystem.Server.Interfaces
         Task<DocumentSubmissionResponseDto> UploadDocumentAsync(string uploadedById, UploadDocumentRequestDto dto);
         Task<IEnumerable<DocumentSubmissionResponseDto>> GetDocumentsByGroupAsync(int groupId);
         Task<IEnumerable<DocumentSubmissionResponseDto>> GetDocumentsByAdviserAsync(string adviserId);
+        Task<IEnumerable<DocumentSubmissionResponseDto>> GetAllDocumentsAsync();
         Task<DocumentSubmissionResponseDto?> GetDocumentByIdAsync(int id);
         Task<string> GetDownloadPathAsync(int id);
         Task<DocumentCommentResponseDto> AddCommentAsync(int documentId, string authorId, AddDocumentCommentRequestDto dto);

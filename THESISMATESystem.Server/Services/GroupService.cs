@@ -1,4 +1,5 @@
 using AutoMapper;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Request;
@@ -13,11 +14,13 @@ namespace THESISMATESystem.Server.Services
     {
         private readonly AppDbContext _db;
         private readonly IMapper _mapper;
+        private readonly IWebHostEnvironment _env;
 
-        public GroupService(AppDbContext db, IMapper mapper)
+        public GroupService(AppDbContext db, IMapper mapper, IWebHostEnvironment env)
         {
             _db = db;
             _mapper = mapper;
+            _env = env;
         }
 
         public async Task<CapstoneGroupResponseDto> CreateGroupAsync(CreateGroupRequestDto dto)
@@ -60,6 +63,7 @@ namespace THESISMATESystem.Server.Services
 
             var dto = _mapper.Map<CapstoneGroupResponseDto>(group);
             dto.MilestoneProgress = ComputeMilestone(group);
+            dto.SystemLogoUrl = group.SystemLogoPath != null ? $"/api/groups/{group.Id}/logo" : null;
             return dto;
         }
 
@@ -80,6 +84,7 @@ namespace THESISMATESystem.Server.Services
             {
                 var dto = _mapper.Map<CapstoneGroupResponseDto>(g);
                 dto.MilestoneProgress = ComputeMilestone(g);
+                dto.SystemLogoUrl = g.SystemLogoPath != null ? $"/api/groups/{g.Id}/logo" : null;
                 return dto;
             });
         }
@@ -99,6 +104,7 @@ namespace THESISMATESystem.Server.Services
             {
                 var dto = _mapper.Map<CapstoneGroupResponseDto>(g);
                 dto.MilestoneProgress = ComputeMilestone(g);
+                dto.SystemLogoUrl = g.SystemLogoPath != null ? $"/api/groups/{g.Id}/logo" : null;
                 return dto;
             });
         }
@@ -117,6 +123,8 @@ namespace THESISMATESystem.Server.Services
 
             var dto = _mapper.Map<CapstoneGroupResponseDto>(membership.CapstoneGroup);
             dto.MilestoneProgress = ComputeMilestone(membership.CapstoneGroup);
+            dto.SystemLogoUrl = membership.CapstoneGroup.SystemLogoPath != null
+                ? $"/api/groups/{membership.CapstoneGroup.Id}/logo" : null;
             return dto;
         }
 
@@ -173,6 +181,56 @@ namespace THESISMATESystem.Server.Services
             await _db.SaveChangesAsync();
             return await GetGroupByIdAsync(group.Id)
                 ?? throw new InvalidOperationException("Failed to reload group.");
+        }
+
+        public async Task<CapstoneGroupResponseDto> UploadLogoAsync(int groupId, IFormFile file, string callerId, string callerRole)
+        {
+            var group = await _db.CapstoneGroups.FindAsync(groupId)
+                ?? throw new KeyNotFoundException($"Group {groupId} not found.");
+
+            // Students may only upload a logo for the group they belong to
+            if (callerRole == "Student")
+            {
+                var isMember = await _db.GroupMembers
+                    .AnyAsync(m => m.CapstoneGroupId == groupId && m.UserId == callerId);
+                if (!isMember)
+                    throw new UnauthorizedAccessException("You are not a member of this group.");
+            }
+
+            var logoDir = Path.Combine(_env.WebRootPath, "uploads", "logos");
+            Directory.CreateDirectory(logoDir);
+
+            // Delete old logo if present
+            if (group.SystemLogoPath != null && File.Exists(group.SystemLogoPath))
+                File.Delete(group.SystemLogoPath);
+
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            var stored = Path.Combine(logoDir, $"group_{groupId}{ext}");
+            using (var stream = File.Create(stored))
+                await file.CopyToAsync(stream);
+
+            group.SystemLogoPath = stored;
+            await _db.SaveChangesAsync();
+
+            return await GetGroupByIdAsync(groupId)
+                ?? throw new InvalidOperationException("Failed to reload group.");
+        }
+
+        public async Task<(byte[] bytes, string contentType)?> GetLogoAsync(int groupId)
+        {
+            var group = await _db.CapstoneGroups.FindAsync(groupId);
+            if (group?.SystemLogoPath is null || !File.Exists(group.SystemLogoPath))
+                return null;
+
+            var ext = Path.GetExtension(group.SystemLogoPath).ToLowerInvariant();
+            var contentType = ext switch
+            {
+                ".png"  => "image/png",
+                ".gif"  => "image/gif",
+                ".webp" => "image/webp",
+                _       => "image/jpeg",
+            };
+            return (await File.ReadAllBytesAsync(group.SystemLogoPath), contentType);
         }
 
         private static MilestoneProgressDto ComputeMilestone(CapstoneGroup group)
