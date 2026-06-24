@@ -62,7 +62,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("{id:int}/comments")]
-        [Authorize(Roles = "Adviser,Admin,SuperAdmin")]
+        [Authorize(Roles = "Student,Adviser,Admin,SuperAdmin")]
         public async Task<IActionResult> AddComment(int id, [FromBody] AddDocumentCommentRequestDto dto)
         {
             var authorId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -79,8 +79,34 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> Delete(int id)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var success = await _documents.DeleteDocumentAsync(id, userId);
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            var success = await _documents.DeleteDocumentAsync(id, userId, role);
             return success ? Ok() : NotFound();
+        }
+
+        [HttpPost("{id:int}/new-version")]
+        [Authorize(Roles = "Student")]
+        public async Task<IActionResult> UploadNewVersion(int id, IFormFile file)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try
+            {
+                var result = await _documents.UploadNewVersionAsync(id, userId, file);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpGet("{id:int}/versions")]
+        public async Task<IActionResult> GetVersions(int id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _documents.GetVersionsAsync(id, userId, role)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (KeyNotFoundException) { return NotFound(); }
         }
     }
 }

@@ -39,6 +39,15 @@ namespace THESISMATESystem.Server.Controllers
             return group is null ? NotFound() : Ok(group);
         }
 
+        [HttpPatch("my-group/version")]
+        [Authorize(Roles = "Student")]
+        public async Task<IActionResult> UpdateVersion(UpdateVersionRequestDto dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try { return Ok(await _groups.UpdateVersionAsync(userId, dto)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {
