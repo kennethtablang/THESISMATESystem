@@ -13,5 +13,6 @@ namespace THESISMATESystem.Server.Interfaces
         Task<CapstoneGroupResponseDto?> GetGroupByStudentAsync(string studentId);
         Task<CapstoneGroupResponseDto> UpdateGroupAsync(int id, UpdateGroupRequestDto dto);
         Task<bool> ArchiveGroupAsync(int id);
+        Task<CapstoneGroupResponseDto> UpdateVersionAsync(string studentId, UpdateVersionRequestDto dto);
     }
 }
