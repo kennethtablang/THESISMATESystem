@@ -360,7 +360,7 @@ function DefenseCard({ defense, isPanel, isFacultyIC, toggling, onView, onToggle
                 <MapPin size={11} /> {defense.venue}
               </span>
               <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                <Users size={11} /> {defense.panelists?.length ?? 0} panelists
+                <Users size={11} /> {defense.panelists?.length ?? 0} panel members
               </span>
             </div>
           </div>

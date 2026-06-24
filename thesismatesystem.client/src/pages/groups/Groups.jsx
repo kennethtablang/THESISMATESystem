@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { groupService, authService } from '../../services/api'
@@ -6,7 +6,7 @@ import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
-import { Users, Plus, Search, ChevronRight, BookOpen, FileText, Cpu, Pencil } from 'lucide-react'
+import { Users, Plus, Search, ChevronRight, BookOpen, FileText, Cpu, Pencil, Image } from 'lucide-react'
 
 export default function Groups() {
   const { user } = useAuth()
@@ -22,6 +22,7 @@ export default function Groups() {
 
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
   const isStudent = user?.role === 'Student'
+  const [logoUploading, setLogoUploading] = useState(false)
 
   const [showVersionModal, setShowVersionModal] = useState(false)
   const [versionForm, setVersionForm] = useState({ manuscriptVersion: '', systemVersion: '' })
@@ -92,6 +93,19 @@ export default function Groups() {
       setVersionError(err.message)
     } finally {
       setVersionSaving(false)
+    }
+  }
+
+  async function handleLogoUpload(groupId, file) {
+    if (!file) return
+    setLogoUploading(true)
+    try {
+      const updated = await groupService.uploadLogo(groupId, file)
+      setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))
+    } catch (err) {
+      alert(err.message || 'Failed to upload logo')
+    } finally {
+      setLogoUploading(false)
     }
   }
 
@@ -179,6 +193,8 @@ export default function Groups() {
                 onClick={() => navigate(`/groups/${g.id}`)}
                 onEditVersion={isStudent ? () => openVersionModal(g) : null}
                 onEdit={isAdmin ? () => openEditModal(g) : null}
+                onUploadLogo={(isStudent || isAdmin) ? (file) => handleLogoUpload(g.id, file) : null}
+                logoUploading={logoUploading}
               />
             ))}
           </div>
@@ -356,9 +372,17 @@ export default function Groups() {
   )
 }
 
-function GroupCard({ group, onClick, onEditVersion, onEdit }) {
+function GroupCard({ group, onClick, onEditVersion, onEdit, onUploadLogo, logoUploading }) {
   const progress = group.milestoneProgress?.completionPercentage ?? 0
   const displayName = group.projectTitle || group.groupName
+  const fileRef = useRef(null)
+  const [logoError, setLogoError] = useState(false)
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    if (file) onUploadLogo?.(file)
+    e.target.value = ''
+  }
 
   return (
     <div
@@ -375,12 +399,39 @@ function GroupCard({ group, onClick, onEditVersion, onEdit }) {
       }}
     >
       <div className="flex items-start justify-between mb-4">
-        <div
-          className="w-11 h-11 rounded-xl flex items-center justify-center font-display font-semibold text-lg"
-          style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}
-        >
-          {(group.groupName ?? 'G')[0]}
+        {/* Logo / avatar */}
+        <div className="relative" onClick={e => e.stopPropagation()}>
+          {group.systemLogoUrl && !logoError ? (
+            <img
+              src={group.systemLogoUrl}
+              alt={group.groupName}
+              onError={() => setLogoError(true)}
+              style={{ width: 44, height: 44, borderRadius: 12, objectFit: 'cover', border: '1px solid var(--border-light)' }}
+            />
+          ) : (
+            <div
+              className="w-11 h-11 rounded-xl flex items-center justify-center font-display font-semibold text-lg"
+              style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}
+            >
+              {(group.groupName ?? 'G')[0]}
+            </div>
+          )}
+          {onUploadLogo && (
+            <>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+              <button
+                title="Upload system logo"
+                disabled={logoUploading}
+                className="absolute -bottom-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center transition-all"
+                style={{ background: '#c9a84c', color: '#0a1628', border: '2px solid var(--bg-card)' }}
+                onClick={(e) => { e.stopPropagation(); fileRef.current?.click() }}
+              >
+                <Image size={9} />
+              </button>
+            </>
+          )}
         </div>
+
         <div className="flex items-center gap-2">
           {onEdit && (
             <button

@@ -507,18 +507,18 @@ function AdviserDashboard({ user }) {
   const [groups, setGroups] = useState([])
   const [pendingChapters, setPendingChapters] = useState([])
   const [consultations, setConsultations] = useState([])
-  const [defenses, setDefenses] = useState([])
+  const [panelAssignments, setPanelAssignments] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([
       groupService.list().catch(() => []),
       consultationService.list().catch(() => []),
-      defenseService.list().catch(() => []),
-    ]).then(async ([gs, co, de]) => {
+      defenseService.mySchedules().catch(() => []),
+    ]).then(async ([gs, co, pa]) => {
       setGroups(gs)
       setConsultations(co)
-      setDefenses(de)
+      setPanelAssignments(pa)
       const chaptersByGroup = await Promise.all(
         gs.map((g) =>
           chapterService
@@ -536,7 +536,7 @@ function AdviserDashboard({ user }) {
 
   if (loading) return <DashboardLoader />
 
-  const upcomingDefenses = defenses.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
+  const upcomingPanelDefenses = panelAssignments.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
@@ -578,10 +578,10 @@ function AdviserDashboard({ user }) {
           onClick={() => navigate('/consultations')}
         />
         <StatCard
-          icon={Calendar}
-          label="Upcoming Defenses"
-          value={upcomingDefenses.length}
-          sub="scheduled"
+          icon={Star}
+          label="Panel Assignments"
+          value={upcomingPanelDefenses.length}
+          sub="as panel member"
           color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
           onClick={() => navigate('/defenses')}
         />
@@ -636,56 +636,105 @@ function AdviserDashboard({ user }) {
           </div>
         </div>
 
-        <div>
-          <SectionHeader
-            title="My Advisees"
-            action={
-              <button className="btn-ghost text-xs" onClick={() => navigate('/groups')}>
-                View all
-              </button>
-            }
-          />
-          <Card>
-            {groups.length === 0 ? (
-              <EmptyCard icon={Users} message="No groups assigned yet" />
-            ) : (
-              <div>
-                {groups.map((g, idx) => {
-                  const prog = g.milestoneProgress?.completionPercentage ?? 0
-                  return (
-                    <div
-                      key={g.id}
-                      className="px-5 py-4 transition-colors duration-100"
-                      style={{ borderBottom: idx < groups.length - 1 ? '1px solid var(--border-light)' : 'none' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                          {g.groupName ?? g.name}
+        <div className="space-y-6">
+          <div>
+            <SectionHeader
+              title="My Advisees"
+              action={
+                <button className="btn-ghost text-xs" onClick={() => navigate('/groups')}>
+                  View all
+                </button>
+              }
+            />
+            <Card>
+              {groups.length === 0 ? (
+                <EmptyCard icon={Users} message="No groups assigned yet" />
+              ) : (
+                <div>
+                  {groups.map((g, idx) => {
+                    const prog = g.milestoneProgress?.completionPercentage ?? 0
+                    return (
+                      <div
+                        key={g.id}
+                        className="px-5 py-4 transition-colors duration-100"
+                        style={{ borderBottom: idx < groups.length - 1 ? '1px solid var(--border-light)' : 'none' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                            {g.groupName ?? g.name}
+                          </p>
+                          <span className="text-xs font-bold" style={{ color: prog >= 70 ? '#16a34a' : prog >= 40 ? '#c9a84c' : 'var(--text-muted)' }}>
+                            {prog}%
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
+                          <div
+                            className="h-1.5 rounded-full transition-all duration-500"
+                            style={{
+                              width: `${prog}%`,
+                              background: prog >= 70 ? '#16a34a' : prog >= 40 ? '#c9a84c' : 'var(--border-main)',
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                          {g.memberCount ?? g.members?.length ?? 0} members
                         </p>
-                        <span className="text-xs font-bold" style={{ color: prog >= 70 ? '#16a34a' : prog >= 40 ? '#c9a84c' : 'var(--text-muted)' }}>
-                          {prog}%
-                        </span>
                       </div>
-                      <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
-                        <div
-                          className="h-1.5 rounded-full transition-all duration-500"
-                          style={{
-                            width: `${prog}%`,
-                            background: prog >= 70 ? '#16a34a' : prog >= 40 ? '#c9a84c' : 'var(--border-main)',
-                          }}
-                        />
+                    )
+                  })}
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {panelAssignments.length > 0 && (
+            <div>
+              <SectionHeader
+                title="My Panel Assignments"
+                action={
+                  <button className="btn-ghost text-xs" onClick={() => navigate('/defenses')}>
+                    View all
+                  </button>
+                }
+              />
+              <Card>
+                <div>
+                  {panelAssignments.map((d, idx) => {
+                    const isCompleted = d.status === 'Completed' || d.status === 'Finalized'
+                    return (
+                      <div
+                        key={d.id}
+                        className="flex items-center gap-4 px-5 py-4 transition-colors duration-100"
+                        style={{ borderBottom: idx < panelAssignments.length - 1 ? '1px solid var(--border-light)' : 'none' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                          style={{ background: 'rgba(124,58,237,0.12)' }}>
+                          <Star size={15} style={{ color: '#7c3aed' }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                            {d.groupName ?? '—'}
+                          </p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            {d.scheduledDateTime
+                              ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                              : '—'}
+                          </p>
+                        </div>
+                        <Badge variant={isCompleted ? 'approved' : statusVariant(d.status)} size="sm">
+                          {statusLabel(d.status)}
+                        </Badge>
                       </div>
-                      <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                        {g.memberCount ?? g.members?.length ?? 0} members
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </Card>
+                    )
+                  })}
+                </div>
+              </Card>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -806,6 +855,7 @@ function FacultyICDashboard({ user }) {
   const navigate = useNavigate()
   const [schedules, setSchedules] = useState([])
   const [defenses, setDefenses] = useState([])
+  const [panelAssignments, setPanelAssignments] = useState([])
   const [monitoring, setMonitoring] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -813,10 +863,12 @@ function FacultyICDashboard({ user }) {
     Promise.all([
       consultationScheduleService.all().catch(() => []),
       defenseService.list().catch(() => []),
+      defenseService.mySchedules().catch(() => []),
       monitoringService.summary().catch(() => null),
-    ]).then(([sc, de, mon]) => {
+    ]).then(([sc, de, pa, mon]) => {
       setSchedules(sc)
       setDefenses(de)
+      setPanelAssignments(pa)
       setMonitoring(mon)
     }).finally(() => setLoading(false))
   }, [])
@@ -960,19 +1012,68 @@ function FacultyICDashboard({ user }) {
           </Card>
         </div>
 
-        {/* Quick Actions */}
-        <div>
-          <SectionHeader title="Quick Actions" />
-          <Card>
-            <QuickActions
-              items={[
-                { icon: Plus,          label: 'Create consultation slot', desc: 'Open a new schedule slot', to: '/consultation-manager' },
-                { icon: Calendar,      label: 'Manage presentations',     desc: 'Defense schedules',        to: '/defenses' },
-                { icon: CalendarClock, label: 'View calendar',            desc: 'All scheduled events',    to: '/calendar' },
-                { icon: BookOpen,      label: 'Classroom',                desc: 'Manage your classroom',   to: '/classroom' },
-              ]}
-            />
-          </Card>
+        {/* Quick Actions + Panel Assignments */}
+        <div className="space-y-6">
+          <div>
+            <SectionHeader title="Quick Actions" />
+            <Card>
+              <QuickActions
+                items={[
+                  { icon: Plus,          label: 'Create consultation slot', desc: 'Open a new schedule slot', to: '/consultation-manager' },
+                  { icon: Calendar,      label: 'Manage presentations',     desc: 'Defense schedules',        to: '/defenses' },
+                  { icon: CalendarClock, label: 'View calendar',            desc: 'All scheduled events',    to: '/calendar' },
+                  { icon: BookOpen,      label: 'Classroom',                desc: 'Manage your classroom',   to: '/classroom' },
+                ]}
+              />
+            </Card>
+          </div>
+
+          {panelAssignments.length > 0 && (
+            <div>
+              <SectionHeader
+                title="My Panel Assignments"
+                action={
+                  <button className="btn-ghost text-xs" onClick={() => navigate('/defenses')}>
+                    View all
+                  </button>
+                }
+              />
+              <Card>
+                <div>
+                  {panelAssignments.map((d, idx) => {
+                    const isCompleted = d.status === 'Completed' || d.status === 'Finalized'
+                    return (
+                      <div
+                        key={d.id}
+                        className="flex items-center gap-4 px-5 py-4 transition-colors duration-100"
+                        style={{ borderBottom: idx < panelAssignments.length - 1 ? '1px solid var(--border-light)' : 'none' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                          style={{ background: 'rgba(124,58,237,0.12)' }}>
+                          <Star size={15} style={{ color: '#7c3aed' }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                            {d.groupName ?? '—'}
+                          </p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            {d.scheduledDateTime
+                              ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                              : '—'}
+                          </p>
+                        </div>
+                        <Badge variant={isCompleted ? 'approved' : statusVariant(d.status)} size="sm">
+                          {statusLabel(d.status)}
+                        </Badge>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -998,10 +1099,10 @@ function PanelDashboard({ user }) {
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
         gradient="linear-gradient(135deg, #2e1065 0%, #4c1d95 50%, #5b21b6 100%)"
-        badge="Panelist"
+        badge="Panel Member"
         badgeColor="167,139,250"
-        name={user?.fullName ?? 'Panelist'}
-        sub="Ratings open when activated by the Faculty in Charge."
+        name={user?.fullName ?? 'Panel Member'}
+        sub="Ratings open when activated by the Department Chair."
       />
 
       <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
