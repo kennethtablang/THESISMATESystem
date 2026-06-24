@@ -125,6 +125,12 @@ export const groupService = {
   archive: (id) => api.patch(`/groups/${id}/archive`),
   members: (id) => api.get(`/groups/${id}/members`),
   updateVersion: (data) => api.patch('/groups/my-group/version', data),
+  uploadLogo: (id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return requestMultipart('POST', `/groups/${id}/logo`, fd)
+  },
+  logoUrl: (id) => `${BASE_URL}/groups/${id}/logo`,
 }
 
 export const manuscriptService = {
@@ -225,6 +231,7 @@ export const reportService = {
 export const documentService = {
   byGroup: (groupId) => api.get(`/documents/group/${groupId}`),
   forAdviser: () => api.get('/documents/my-advisees'),
+  all: () => api.get('/documents/all'),
   get: (id) => api.get(`/documents/${id}`),
   upload: (formData) => api.postForm('/documents', formData),
   download: (id) => `${BASE_URL}/documents/${id}/download`,

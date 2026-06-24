@@ -4,6 +4,7 @@ import TopBar from '../../components/layout/TopBar'
 import { BarChart3, Users, Calendar, TrendingUp, FileDown } from 'lucide-react'
 import { groupService, defenseService, reportService } from '../../services/api'
 import { PageLoader } from '../../components/ui/Spinner'
+import { useSort, SortIcon } from '../../hooks/useSort.jsx'
 
 function PdfButton({ onClick, downloading }) {
   return (
@@ -26,6 +27,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [downloading, setDownloading] = useState({})
+  const [yearFilter, setYearFilter] = useState('All')
 
   async function handlePdf(key, fn) {
     setDownloading(prev => ({ ...prev, [key]: true }))
@@ -50,6 +52,11 @@ export default function Reports() {
   ]
 
   const completedDefenses = defenses.filter(d => d.status === 'Completed' || d.status === 'Finalized')
+  const schoolYears = ['All', ...[...new Set(defenses.map(d => d.academicYear).filter(Boolean))].sort()]
+  const filteredDefenses = yearFilter === 'All' ? defenses : defenses.filter(d => d.academicYear === yearFilter)
+
+  const { sorted: sortedGroups,   sortKey: gKey, sortDir: gDir, toggle: gToggle } = useSort(groups,          'groupName')
+  const { sorted: sortedDefenses, sortKey: dKey, sortDir: dDir, toggle: dToggle } = useSort(filteredDefenses, 'scheduledDateTime', 'desc')
   const progressBuckets = [
     { stage: 'Just Started (0–25%)', count: groups.filter(g => (g.milestoneProgress?.completionPercentage ?? 0) < 25).length, color: 'rgba(239,68,68,0.12)', text: '#dc2626' },
     { stage: 'In Progress (25–50%)', count: groups.filter(g => { const p = g.milestoneProgress?.completionPercentage ?? 0; return p >= 25 && p < 50 }).length, color: 'rgba(245,158,11,0.12)', text: '#d97706' },
@@ -158,16 +165,23 @@ export default function Reports() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Group</th>
-                      <th>Adviser</th>
-                      <th>Members</th>
-                      <th>Progress</th>
+                      {[
+                        { key: 'groupName',                        label: 'Group'    },
+                        { key: 'adviser.fullName',                 label: 'Adviser'  },
+                        { key: 'members.length',                   label: 'Members'  },
+                        { key: 'milestoneProgress.completionPercentage', label: 'Progress' },
+                      ].map(({ key, label }) => (
+                        <th key={key} onClick={() => gToggle(key)}
+                          style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                          {label}<SortIcon col={key} sortKey={gKey} sortDir={gDir} />
+                        </th>
+                      ))}
                       <th>Status</th>
                       <th></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {groups.map((g) => {
+                    {sortedGroups.map((g) => {
                       const progress = g.milestoneProgress?.completionPercentage ?? 0
                       const isComplete = progress === 100
                       const isOnTrack = progress >= 50
@@ -228,61 +242,102 @@ export default function Reports() {
                 <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>No defenses scheduled</p>
               </div>
             ) : (
-              <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Group</th>
-                      <th className="hidden sm:table-cell">Thesis Title</th>
-                      <th>Date</th>
-                      <th>Status</th>
-                      <th>Score</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {defenses.map((d) => {
-                      const isCompleted = d.status === 'Completed' || d.status === 'Finalized'
-                      return (
-                        <tr key={d.id}>
-                          <td className="font-semibold" style={{ color: 'var(--text-heading)' }}>{d.groupName ?? '—'}</td>
-                          <td className="hidden sm:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                            <span className="truncate block max-w-[200px]">{d.thesisTitle ?? d.projectTitle ?? '—'}</span>
-                          </td>
-                          <td style={{ color: 'var(--text-secondary)' }}>
-                            {d.scheduledDateTime ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                          </td>
-                          <td>
-                            <span
-                              className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold"
-                              style={{
-                                background: isCompleted ? 'rgba(34,197,94,0.12)' : d.status === 'Scheduled' ? 'rgba(59,130,246,0.12)' : d.status === 'Cancelled' ? 'rgba(107,114,128,0.12)' : 'rgba(245,158,11,0.12)',
-                                color: isCompleted ? '#16a34a' : d.status === 'Scheduled' ? '#3b82f6' : d.status === 'Cancelled' ? '#6b7280' : '#d97706',
-                              }}
-                            >
-                              {d.statusLabel ?? d.status}
-                            </span>
-                          </td>
-                          <td style={{ color: 'var(--text-secondary)' }}>
-                            {d.consolidatedRating?.averageScore != null
-                              ? <span className="font-semibold" style={{ color: d.consolidatedRating.averageScore >= 85 ? '#16a34a' : '#d97706' }}>{d.consolidatedRating.averageScore.toFixed(1)}</span>
-                              : <span style={{ color: 'var(--text-muted)' }}>—</span>
-                            }
-                          </td>
-                          <td>
-                            {isCompleted && (
-                              <PdfButton
-                                downloading={downloading[`defense_${d.id}`]}
-                                onClick={() => handlePdf(`defense_${d.id}`, () => reportService.defenseOutcome(d.id))}
-                              />
-                            )}
-                          </td>
+              <>
+                {schoolYears.length > 1 && (
+                  <div className="flex items-center gap-3 mb-4 flex-wrap">
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>School Year:</span>
+                    <div className="flex gap-2 flex-wrap">
+                      {schoolYears.map(y => (
+                        <button
+                          key={y}
+                          onClick={() => setYearFilter(y)}
+                          className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
+                          style={{
+                            background: yearFilter === y ? '#c9a84c' : 'var(--bg-subtle)',
+                            color: yearFilter === y ? '#0a1628' : 'var(--text-secondary)',
+                          }}
+                        >
+                          {y}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {filteredDefenses.length === 0 ? (
+                  <div className="card text-center py-12">
+                    <Calendar size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+                    <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>No defenses for {yearFilter}</p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          {[
+                            { key: 'groupName',          label: 'Group'       },
+                            { key: 'academicYear',        label: 'School Year' },
+                            { key: 'scheduledDateTime',   label: 'Date'        },
+                            { key: 'status',              label: 'Status'      },
+                            { key: 'consolidatedRating.averageScore', label: 'Score' },
+                          ].map(({ key, label }) => (
+                            <th key={key} onClick={() => dToggle(key)}
+                              style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                              {label}<SortIcon col={key} sortKey={dKey} sortDir={dDir} />
+                            </th>
+                          ))}
+                          <th className="hidden sm:table-cell">Thesis Title</th>
+                          <th></th>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody>
+                        {sortedDefenses.map((d) => {
+                          const isCompleted = d.status === 'Completed' || d.status === 'Finalized'
+                          return (
+                            <tr key={d.id}>
+                              <td className="font-semibold" style={{ color: 'var(--text-heading)' }}>{d.groupName ?? '—'}</td>
+                              <td>
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold"
+                                  style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+                                  {d.academicYear || '—'}
+                                </span>
+                              </td>
+                              <td style={{ color: 'var(--text-secondary)' }}>
+                                {d.scheduledDateTime ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                              </td>
+                              <td>
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold"
+                                  style={{
+                                    background: isCompleted ? 'rgba(34,197,94,0.12)' : d.status === 'Scheduled' ? 'rgba(59,130,246,0.12)' : d.status === 'Cancelled' ? 'rgba(107,114,128,0.12)' : 'rgba(245,158,11,0.12)',
+                                    color: isCompleted ? '#16a34a' : d.status === 'Scheduled' ? '#3b82f6' : d.status === 'Cancelled' ? '#6b7280' : '#d97706',
+                                  }}>
+                                  {d.statusLabel ?? d.status}
+                                </span>
+                              </td>
+                              <td style={{ color: 'var(--text-secondary)' }}>
+                                {d.consolidatedRating?.averageScore != null
+                                  ? <span className="font-semibold" style={{ color: d.consolidatedRating.averageScore >= 85 ? '#16a34a' : '#d97706' }}>{d.consolidatedRating.averageScore.toFixed(1)}</span>
+                                  : <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                }
+                              </td>
+                              <td className="hidden sm:table-cell" style={{ color: 'var(--text-secondary)' }}>
+                                <span className="truncate block max-w-[180px]">{d.thesisTitle ?? d.projectTitle ?? '—'}</span>
+                              </td>
+                              <td>
+                                {isCompleted && (
+                                  <PdfButton
+                                    downloading={downloading[`defense_${d.id}`]}
+                                    onClick={() => handlePdf(`defense_${d.id}`, () => reportService.defenseOutcome(d.id))}
+                                  />
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

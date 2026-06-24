@@ -321,7 +321,7 @@ function DefenseRatingCard({ defense, onRate }) {
               </span>
               {defense.panelists?.length > 0 && (
                 <span className="text-xs flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                  <Users size={11} /> {defense.panelists.length} panelists
+                  <Users size={11} /> {defense.panelists.length} panel members
                 </span>
               )}
             </div>
