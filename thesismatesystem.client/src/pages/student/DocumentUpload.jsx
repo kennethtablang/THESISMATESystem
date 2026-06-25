@@ -162,7 +162,9 @@ export default function DocumentUpload() {
       const updated = await documentService.uploadNewVersion(docId, versionFile)
       // Replace the doc in list
       setDocs(prev => prev.map(d => (d.id === docId || d.id === updated.originalDocumentId) ? updated : d))
-      // Refresh versions
+      // Move expanded panel to the new doc ID so version history stays visible
+      setExpandedDoc(updated.id)
+      // Refresh versions under the new doc's ID
       const v = await documentService.versions(updated.id)
       setVersions(prev => ({ ...prev, [updated.id]: v }))
       setVersionFile(null)
@@ -289,9 +291,9 @@ export default function DocumentUpload() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <a href={documentService.download(doc.id)} target="_blank" rel="noreferrer" className="btn-ghost px-2" title="Download latest version">
+                    <button onClick={() => documentService.downloadFile(doc.id, doc.fileName)} className="btn-ghost px-2" title="Download latest version">
                       <Download size={15} />
-                    </a>
+                    </button>
                     <button className="btn-ghost px-2" onClick={() => toggleExpand(doc.id)}>
                       {expandedDoc === doc.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                     </button>
@@ -322,11 +324,11 @@ export default function DocumentUpload() {
                               <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
                                 {new Date(v.submittedAt).toLocaleDateString()}
                               </span>
-                              <a href={documentService.download(v.id)} target="_blank" rel="noreferrer"
+                              <button onClick={() => documentService.downloadFile(v.id, v.fileName)}
                                 className="shrink-0 text-xs flex items-center gap-1 px-2 py-1 rounded-lg transition-colors"
-                                style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
+                                style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)', cursor: 'pointer' }}>
                                 <Download size={11} />
-                              </a>
+                              </button>
                             </div>
                           ))}
                         </div>

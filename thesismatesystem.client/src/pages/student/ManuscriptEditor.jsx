@@ -142,9 +142,8 @@ export default function ManuscriptEditor() {
   // Build SignalR connection once per group
   useEffect(() => {
     if (!group) return
-    const token = manuscriptService.getToken()
     const conn = new HubConnectionBuilder()
-      .withUrl('/hubs/manuscript', { accessTokenFactory: () => token })
+      .withUrl('/hubs/manuscript', { accessTokenFactory: () => manuscriptService.getToken() })
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Warning)
       .build()

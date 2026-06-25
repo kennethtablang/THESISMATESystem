@@ -22,6 +22,7 @@ export default function ConsultationCalendar() {
   const [group, setGroup] = useState(null)
   const [loading, setLoading] = useState(true)
   const [requesting, setRequesting] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [notes, setNotes] = useState('')
   const [tab, setTab] = useState('calendar')
 
@@ -43,8 +44,8 @@ export default function ConsultationCalendar() {
   }, [])
 
   async function handleRequest(scheduleId) {
-    if (!group) return
-    setRequesting(scheduleId)
+    if (!group || submitting) return
+    setSubmitting(true)
     try {
       const req = await consultationScheduleService.requestSlot({
         consultationScheduleId: scheduleId,
@@ -53,11 +54,12 @@ export default function ConsultationCalendar() {
       })
       setMyRequests(prev => [req, ...prev])
       setNotes('')
+      setRequesting(null)
       alert('Request submitted successfully!')
     } catch (err) {
       alert(err.message)
     } finally {
-      setRequesting(null)
+      setSubmitting(false)
     }
   }
 
@@ -154,7 +156,7 @@ export default function ConsultationCalendar() {
                       <div className="flex gap-2">
                         <input className="form-input py-2 text-sm" placeholder="Optional notes for the faculty..."
                           value={requesting === s.id ? notes : ''} onChange={e => { setRequesting(s.id); setNotes(e.target.value) }} />
-                        <button className="btn-primary shrink-0" onClick={() => handleRequest(s.id)} disabled={requesting === s.id && !group}>
+                        <button className="btn-primary shrink-0" onClick={() => handleRequest(s.id)} disabled={submitting}>
                           <Send size={14} />
                           Request
                         </button>
