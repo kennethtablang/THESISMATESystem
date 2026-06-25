@@ -48,6 +48,19 @@ namespace THESISMATESystem.Server.Services
                 ?? throw new InvalidOperationException("Failed to load consultation.");
         }
 
+        public async Task<IEnumerable<ConsultationLogResponseDto>> GetConsultationsForUserAsync(string userId, string role)
+        {
+            IQueryable<ConsultationLog> query = _db.ConsultationLogs
+                .Include(cl => cl.Adviser)
+                .Include(cl => cl.CapstoneGroup);
+
+            if (role == "Adviser")
+                query = query.Where(cl => cl.AdviserId == userId);
+
+            var logs = await query.OrderByDescending(cl => cl.ConsultationDate).ToListAsync();
+            return _mapper.Map<IEnumerable<ConsultationLogResponseDto>>(logs);
+        }
+
         public async Task<IEnumerable<ConsultationLogResponseDto>> GetConsultationsByGroupAsync(int groupId)
         {
             var logs = await _db.ConsultationLogs
