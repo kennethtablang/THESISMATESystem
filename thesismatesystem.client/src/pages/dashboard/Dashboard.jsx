@@ -702,7 +702,7 @@ function AdviserDashboard({ user }) {
               <Card>
                 <div>
                   {panelAssignments.map((d, idx) => {
-                    const isCompleted = d.status === 'Completed' || d.status === 'Finalized'
+                    const isCompleted = d.status === 'Completed'
                     return (
                       <div
                         key={d.id}
@@ -1041,7 +1041,7 @@ function FacultyICDashboard({ user }) {
               <Card>
                 <div>
                   {panelAssignments.map((d, idx) => {
-                    const isCompleted = d.status === 'Completed' || d.status === 'Finalized'
+                    const isCompleted = d.status === 'Completed'
                     return (
                       <div
                         key={d.id}
