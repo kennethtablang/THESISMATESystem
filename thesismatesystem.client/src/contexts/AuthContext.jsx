@@ -41,8 +41,8 @@ function isTokenExpired(token) {
 }
 
 function clearSession() {
-  localStorage.removeItem('tm_token')
-  localStorage.removeItem('tm_user')
+  sessionStorage.removeItem('tm_token')
+  sessionStorage.removeItem('tm_user')
 }
 
 export function AuthProvider({ children }) {
@@ -50,8 +50,8 @@ export function AuthProvider({ children }) {
 
   // Restore session only if the stored JWT is still valid
   useEffect(() => {
-    const token = localStorage.getItem('tm_token')
-    const stored = localStorage.getItem('tm_user')
+    const token = sessionStorage.getItem('tm_token')
+    const stored = sessionStorage.getItem('tm_user')
     if (token && stored) {
       if (isTokenExpired(token)) {
         clearSession()
@@ -96,8 +96,8 @@ export function AuthProvider({ children }) {
       return { twoFactorRequired: true, tempUserId: res.tempUserId }
     }
     const user = normalizeUser(res.user)
-    localStorage.setItem('tm_token', res.token)
-    localStorage.setItem('tm_user', JSON.stringify(user))
+    sessionStorage.setItem('tm_token', res.token)
+    sessionStorage.setItem('tm_user', JSON.stringify(user))
     dispatch({ type: 'LOGIN', user, token: res.token })
     return user
   }
@@ -108,21 +108,21 @@ export function AuthProvider({ children }) {
   }
 
   function logout() {
-    localStorage.removeItem('tm_token')
-    localStorage.removeItem('tm_user')
+    sessionStorage.removeItem('tm_token')
+    sessionStorage.removeItem('tm_user')
     dispatch({ type: 'LOGOUT' })
   }
 
   function setAuth(token, user) {
     const normalized = normalizeUser(user)
-    localStorage.setItem('tm_token', token)
-    localStorage.setItem('tm_user', JSON.stringify(normalized))
+    sessionStorage.setItem('tm_token', token)
+    sessionStorage.setItem('tm_user', JSON.stringify(normalized))
     dispatch({ type: 'LOGIN', user: normalized, token })
   }
 
   function updateUser(payload) {
     const updated = { ...state.user, ...payload }
-    localStorage.setItem('tm_user', JSON.stringify(updated))
+    sessionStorage.setItem('tm_user', JSON.stringify(updated))
     dispatch({ type: 'UPDATE_USER', payload })
   }
 
