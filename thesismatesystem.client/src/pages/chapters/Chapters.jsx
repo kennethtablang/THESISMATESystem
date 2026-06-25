@@ -369,12 +369,12 @@ export default function Chapters() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm" style={{ color: 'var(--text-muted)' }}>File</span>
-              <a href={chapterService.download(selected.id)} target="_blank" rel="noreferrer"
+              <button onClick={() => chapterService.downloadFile(selected.id, selected.fileName)}
                 className="flex items-center gap-1 text-sm"
-                style={{ color: '#c9a84c' }}>
+                style={{ color: '#c9a84c', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                 <Download size={13} />
                 {selected.fileName}
-              </a>
+              </button>
             </div>
             {chapterHistory.length > 1 && (
               <div className="pt-3" style={{ borderTop: '1px solid var(--border-light)' }}>
@@ -392,11 +392,11 @@ export default function Chapters() {
                       <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
                         {new Date(h.submittedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
                       </span>
-                      <a href={chapterService.download(h.id)} target="_blank" rel="noreferrer"
+                      <button onClick={() => chapterService.downloadFile(h.id, h.fileName)}
                         className="shrink-0 text-xs flex items-center gap-1 px-2 py-1 rounded-lg transition-colors"
-                        style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
+                        style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)', cursor: 'pointer' }}>
                         <Download size={11} />
-                      </a>
+                      </button>
                     </div>
                   ))}
                 </div>
