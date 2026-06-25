@@ -269,11 +269,10 @@ function DocumentCard({ doc, expanded, onToggleExpand }) {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          <a href={`/api/documents/${doc.id}/download`} target="_blank" rel="noreferrer"
-            className="btn-ghost text-xs flex items-center gap-1.5 px-3 py-1.5 flex-1 justify-center"
-            onClick={e => e.stopPropagation()}>
+          <button onClick={e => { e.stopPropagation(); documentService.downloadFile(doc.id, doc.fileName) }}
+            className="btn-ghost text-xs flex items-center gap-1.5 px-3 py-1.5 flex-1 justify-center">
             <Download size={13} /> Download
-          </a>
+          </button>
           <button
             className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium flex-1 justify-center transition-all"
             style={{

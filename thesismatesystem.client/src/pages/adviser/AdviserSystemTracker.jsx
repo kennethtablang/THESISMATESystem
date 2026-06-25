@@ -177,8 +177,12 @@ export default function AdviserSystemTracker() {
 
   async function handleDelete(featureId) {
     if (!confirm('Delete this feature?')) return
-    await systemFeatureService.delete(featureId)
-    setFeatures(prev => prev.filter(f => f.id !== featureId))
+    try {
+      await systemFeatureService.delete(featureId)
+      setFeatures(prev => prev.filter(f => f.id !== featureId))
+    } catch (err) {
+      alert(err.message || 'Failed to delete feature.')
+    }
   }
 
   function handleGanttSave(updated) {
