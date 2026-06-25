@@ -1,7 +1,7 @@
 const BASE_URL = '/api'
 
 function getHeaders() {
-  const token = localStorage.getItem('tm_token')
+  const token = sessionStorage.getItem('tm_token')
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -9,7 +9,7 @@ function getHeaders() {
 }
 
 function getMultipartHeaders() {
-  const token = localStorage.getItem('tm_token')
+  const token = sessionStorage.getItem('tm_token')
   return {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   }
@@ -23,8 +23,8 @@ async function request(method, path, body) {
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('tm_token')
-    localStorage.removeItem('tm_user')
+    sessionStorage.removeItem('tm_token')
+    sessionStorage.removeItem('tm_user')
     window.location.href = '/login'
     return
   }
@@ -52,8 +52,8 @@ async function requestMultipart(method, path, formData) {
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('tm_token')
-    localStorage.removeItem('tm_user')
+    sessionStorage.removeItem('tm_token')
+    sessionStorage.removeItem('tm_user')
     window.location.href = '/login'
     return
   }
@@ -114,6 +114,7 @@ export const defenseService = {
   getConsolidated: (id) => api.get(`/defenses/${id}/consolidated`),
   finalize: (id) => api.post(`/defenses/${id}/finalize`),
   criteria: () => api.get('/defenses/criteria'),
+  createCriterion: (data) => api.post('/defenses/criteria', data),
 }
 
 export const groupService = {
@@ -174,7 +175,7 @@ export const manuscriptService = {
   },
 
   // Token for SignalR connection
-  getToken: () => localStorage.getItem('tm_token'),
+  getToken: () => sessionStorage.getItem('tm_token'),
 }
 
 export const chapterService = {
@@ -185,6 +186,7 @@ export const chapterService = {
   addRevisionNote: (groupId, chapterId, data) =>
     api.post(`/groups/${groupId}/chapters/submissions/${chapterId}/revision-notes`, data),
   download: (id) => `${BASE_URL}/groups/0/chapters/submissions/${id}/download`,
+  downloadFile: (id, filename) => downloadBlobAuth(`/groups/0/chapters/submissions/${id}/download`, filename || `chapter_${id}`),
   history: (groupId, chapterNumber) => api.get(`/groups/${groupId}/chapters/${chapterNumber}/history`),
 }
 
@@ -203,20 +205,24 @@ export const notificationService = {
   markAllRead: () => api.patch('/notifications/read-all'),
 }
 
-async function downloadPdf(path, filename) {
-  const token = localStorage.getItem('tm_token')
+async function downloadBlobAuth(path, filename) {
+  const token = sessionStorage.getItem('tm_token')
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
-  if (!res.ok) throw new Error(`Failed to generate report: ${res.statusText}`)
+  if (!res.ok) throw new Error(`Download failed: ${res.statusText}`)
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
   a.click()
+  document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
+
+const downloadPdf = downloadBlobAuth
 
 export const reportService = {
   groupProgress: (groupId) => downloadPdf(`/reports/group/${groupId}/progress`, `group_${groupId}_progress.pdf`),
@@ -235,6 +241,7 @@ export const documentService = {
   get: (id) => api.get(`/documents/${id}`),
   upload: (formData) => api.postForm('/documents', formData),
   download: (id) => `${BASE_URL}/documents/${id}/download`,
+  downloadFile: (id, filename) => downloadBlobAuth(`/documents/${id}/download`, filename || `document_${id}`),
   addComment: (id, data) => api.post(`/documents/${id}/comments`, data),
   comments: (id) => api.get(`/documents/${id}/comments`),
   delete: (id) => api.delete(`/documents/${id}`),
