@@ -130,7 +130,7 @@ namespace THESISMATESystem.Server.Data
                 .HasOne(d => d.OriginalDocument)
                 .WithMany()
                 .HasForeignKey(d => d.OriginalDocumentId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .OnDelete(DeleteBehavior.ClientSetNull);
 
             builder.Entity<DocumentComment>()
                 .HasOne(dc => dc.Author)
