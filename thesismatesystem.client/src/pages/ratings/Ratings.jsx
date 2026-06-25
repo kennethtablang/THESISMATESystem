@@ -198,7 +198,7 @@ export default function Ratings() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
-                            {(criterion.weight * 100).toFixed(0)}% weight
+                            {Number(criterion.weight).toFixed(0)}% weight
                           </span>
                         </div>
                       </div>
