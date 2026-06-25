@@ -51,7 +51,7 @@ export default function Reports() {
     { id: 'defenses', label: 'Defense Results' },
   ]
 
-  const completedDefenses = defenses.filter(d => d.status === 'Completed' || d.status === 'Finalized')
+  const completedDefenses = defenses.filter(d => d.status === 'Completed')
   const schoolYears = ['All', ...[...new Set(defenses.map(d => d.academicYear).filter(Boolean))].sort()]
   const filteredDefenses = yearFilter === 'All' ? defenses : defenses.filter(d => d.academicYear === yearFilter)
 
@@ -278,7 +278,7 @@ export default function Reports() {
                             { key: 'academicYear',        label: 'School Year' },
                             { key: 'scheduledDateTime',   label: 'Date'        },
                             { key: 'status',              label: 'Status'      },
-                            { key: 'consolidatedRating.averageScore', label: 'Score' },
+                            { key: 'consolidatedRating.totalWeightedScore', label: 'Score' },
                           ].map(({ key, label }) => (
                             <th key={key} onClick={() => dToggle(key)}
                               style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
@@ -291,7 +291,7 @@ export default function Reports() {
                       </thead>
                       <tbody>
                         {sortedDefenses.map((d) => {
-                          const isCompleted = d.status === 'Completed' || d.status === 'Finalized'
+                          const isCompleted = d.status === 'Completed'
                           return (
                             <tr key={d.id}>
                               <td className="font-semibold" style={{ color: 'var(--text-heading)' }}>{d.groupName ?? '—'}</td>
@@ -314,8 +314,8 @@ export default function Reports() {
                                 </span>
                               </td>
                               <td style={{ color: 'var(--text-secondary)' }}>
-                                {d.consolidatedRating?.averageScore != null
-                                  ? <span className="font-semibold" style={{ color: d.consolidatedRating.averageScore >= 85 ? '#16a34a' : '#d97706' }}>{d.consolidatedRating.averageScore.toFixed(1)}</span>
+                                {d.consolidatedRating?.totalWeightedScore != null
+                                  ? <span className="font-semibold" style={{ color: d.consolidatedRating.totalWeightedScore >= 85 ? '#16a34a' : '#d97706' }}>{d.consolidatedRating.totalWeightedScore.toFixed(2)}</span>
                                   : <span style={{ color: 'var(--text-muted)' }}>—</span>
                                 }
                               </td>
