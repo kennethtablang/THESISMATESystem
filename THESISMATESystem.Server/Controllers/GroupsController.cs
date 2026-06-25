@@ -18,7 +18,7 @@ namespace THESISMATESystem.Server.Controllers
         public GroupsController(IGroupService groups) => _groups = groups;
 
         [HttpGet]
-        [Authorize(Roles = "Admin,SuperAdmin,Adviser")]
+        [Authorize(Roles = "Admin,SuperAdmin,Adviser,FacultyIC,Panel")]
         public async Task<IActionResult> GetAll([FromQuery] GroupStatus? status)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

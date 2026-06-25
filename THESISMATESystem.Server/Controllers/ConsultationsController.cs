@@ -15,6 +15,15 @@ namespace THESISMATESystem.Server.Controllers
 
         public ConsultationsController(IConsultationService consultations) => _consultations = consultations;
 
+        [HttpGet]
+        [Authorize(Roles = "Adviser,Admin,SuperAdmin")]
+        public async Task<IActionResult> GetAll()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role = User.FindFirstValue(ClaimTypes.Role)!;
+            return Ok(await _consultations.GetConsultationsForUserAsync(userId, role));
+        }
+
         [HttpGet("group/{groupId:int}")]
         public async Task<IActionResult> GetByGroup(int groupId)
             => Ok(await _consultations.GetConsultationsByGroupAsync(groupId));
