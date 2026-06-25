@@ -1,26 +1,46 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { defenseService, groupService } from '../../services/api'
+import { defenseService, groupService, authService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
 import Badge, { statusVariant } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
-import { Calendar, Clock, MapPin, Users, Plus, Star, Lock, Unlock, ToggleLeft, ToggleRight } from 'lucide-react'
+import {
+  Calendar, Clock, MapPin, Users, Plus, Star, Lock, Unlock,
+  ToggleRight, Pencil, ChevronDown, ChevronUp, Scale,
+} from 'lucide-react'
 
 export default function Defenses() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [defenses, setDefenses] = useState([])
   const [groups, setGroups] = useState([])
+  const [panelUsers, setPanelUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
-  const [showCreate, setShowCreate] = useState(false)
   const [togglingId, setTogglingId] = useState(null)
+
+  // Create
+  const [showCreate, setShowCreate] = useState(false)
   const [createError, setCreateError] = useState('')
   const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState({ groupId: '', date: '', time: '', venue: '' })
+  const [form, setForm] = useState({ groupId: '', date: '', time: '', venue: '', panelistIds: [] })
+
+  // Edit
+  const [showEdit, setShowEdit] = useState(false)
+  const [editTarget, setEditTarget] = useState(null)
+  const [editForm, setEditForm] = useState({ date: '', time: '', venue: '', panelistIds: [] })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
+
+  // Criteria
+  const [showCriteria, setShowCriteria] = useState(false)
+  const [criteriaList, setCriteriaList] = useState([])
+  const [newCrit, setNewCrit] = useState({ name: '', description: '', weight: '', maxScore: '100' })
+  const [critSaving, setCritSaving] = useState(false)
+  const [critError, setCritError] = useState('')
 
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
   const isFacultyIC = user?.role === 'FacultyIC'
@@ -39,14 +59,23 @@ export default function Defenses() {
           const nested = await Promise.all(grps.map(g => defenseService.byGroup(g.id).catch(() => [])))
           defs = nested.flat()
         } else {
-          // Student
           const grp = await groupService.myGroup().catch(() => null)
           if (grp) defs = await defenseService.byGroup(grp.id).catch(() => [])
         }
         setDefenses(defs ?? [])
+
         if (isAdmin) {
-          const grps = await groupService.list().catch(() => [])
+          const [grps, allUsers, crit] = await Promise.all([
+            groupService.list().catch(() => []),
+            authService.allUsers().catch(() => []),
+            defenseService.criteria().catch(() => []),
+          ])
           setGroups(grps)
+          setPanelUsers(allUsers.filter(u => u.role === 'Panel'))
+          setCriteriaList(crit)
+        }
+        if (isFacultyIC) {
+          defenseService.criteria().then(setCriteriaList).catch(() => {})
         }
       } catch {
         setDefenses([])
@@ -70,14 +99,52 @@ export default function Defenses() {
         capstoneGroupId: parseInt(form.groupId),
         scheduledDateTime: `${form.date}T${form.time || '00:00'}:00`,
         venue: form.venue,
+        panelistIds: form.panelistIds,
       })
-      setDefenses((prev) => [...prev, created])
+      setDefenses(prev => [...prev, created])
       setShowCreate(false)
-      setForm({ groupId: '', date: '', time: '', venue: '' })
+      setForm({ groupId: '', date: '', time: '', venue: '', panelistIds: [] })
     } catch (err) {
       setCreateError(err.message || 'Failed to schedule defense.')
     } finally {
       setCreating(false)
+    }
+  }
+
+  function openEdit(defense, e) {
+    e.stopPropagation()
+    const dt = defense.scheduledDateTime ? new Date(defense.scheduledDateTime) : null
+    setEditTarget(defense)
+    setEditForm({
+      date: dt ? dt.toISOString().slice(0, 10) : '',
+      time: dt ? dt.toTimeString().slice(0, 5) : '',
+      venue: defense.venue ?? '',
+      panelistIds: (defense.panelists ?? []).map(p => p.id),
+    })
+    setEditError('')
+    setShowEdit(true)
+  }
+
+  async function handleEdit(e) {
+    e.preventDefault()
+    if (!editForm.date || !editForm.venue) {
+      setEditError('Date and venue are required.')
+      return
+    }
+    setEditSaving(true)
+    setEditError('')
+    try {
+      const updated = await defenseService.update(editTarget.id, {
+        scheduledDateTime: `${editForm.date}T${editForm.time || '00:00'}:00`,
+        venue: editForm.venue,
+        panelistIds: editForm.panelistIds,
+      })
+      setDefenses(prev => prev.map(d => d.id === updated.id ? updated : d))
+      setShowEdit(false)
+    } catch (err) {
+      setEditError(err.message || 'Failed to update.')
+    } finally {
+      setEditSaving(false)
     }
   }
 
@@ -86,8 +153,8 @@ export default function Defenses() {
     setTogglingId(defense.id)
     try {
       await defenseService.setRatingStatus(defense.id, !defense.isRatingOpen)
-      setDefenses((prev) => prev.map((d) => d.id === defense.id ? { ...d, isRatingOpen: !d.isRatingOpen } : d))
-      if (selected?.id === defense.id) setSelected((s) => ({ ...s, isRatingOpen: !s.isRatingOpen }))
+      setDefenses(prev => prev.map(d => d.id === defense.id ? { ...d, isRatingOpen: !d.isRatingOpen } : d))
+      if (selected?.id === defense.id) setSelected(s => ({ ...s, isRatingOpen: !s.isRatingOpen }))
     } catch {
       // silent
     } finally {
@@ -95,8 +162,42 @@ export default function Defenses() {
     }
   }
 
-  const upcoming = defenses.filter((d) => d.status === 'Scheduled' || d.status === 'Rescheduled')
-  const past = defenses.filter((d) => d.status !== 'Scheduled' && d.status !== 'Rescheduled')
+  async function handleAddCriterion(e) {
+    e.preventDefault()
+    const w = parseFloat(newCrit.weight)
+    const ms = parseInt(newCrit.maxScore)
+    if (!newCrit.name.trim()) { setCritError('Name is required.'); return }
+    if (!newCrit.weight || isNaN(w) || w <= 0 || w > 100) { setCritError('Weight must be 0.01–100.'); return }
+    if (!newCrit.maxScore || isNaN(ms) || ms < 1) { setCritError('Max score must be at least 1.'); return }
+    setCritSaving(true)
+    setCritError('')
+    try {
+      const created = await defenseService.createCriterion({
+        name: newCrit.name.trim(),
+        description: newCrit.description.trim() || null,
+        weight: w,
+        maxScore: ms,
+      })
+      setCriteriaList(prev => [...prev, created])
+      setNewCrit({ name: '', description: '', weight: '', maxScore: '100' })
+    } catch (err) {
+      setCritError(err.message || 'Failed to create criterion.')
+    } finally {
+      setCritSaving(false)
+    }
+  }
+
+  function togglePanelist(id, setFormFn) {
+    setFormFn(f => ({
+      ...f,
+      panelistIds: f.panelistIds.includes(id)
+        ? f.panelistIds.filter(x => x !== id)
+        : [...f.panelistIds, id],
+    }))
+  }
+
+  const upcoming = defenses.filter(d => d.status === 'Scheduled' || d.status === 'Rescheduled')
+  const past = defenses.filter(d => d.status !== 'Scheduled' && d.status !== 'Rescheduled')
 
   if (loading) return <><TopBar title="Defense Schedule" /><PageLoader /></>
 
@@ -107,14 +208,145 @@ export default function Defenses() {
         subtitle={`${upcoming.length} upcoming · ${past.length} completed`}
       />
       <div className="p-4 sm:p-8">
+
+        {/* FacultyIC / Admin info banner */}
         {(isAdmin || isFacultyIC) && (
           <div className="mb-5 p-4 rounded-xl text-sm flex items-start gap-3" style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
             <ToggleRight size={16} style={{ color: '#c9a84c', marginTop: 2, flexShrink: 0 }} />
             <span style={{ color: 'var(--text-secondary)' }}>
               {isFacultyIC
                 ? 'Toggle the rating lock on each defense. When open, Panel members can submit/edit ratings. When locked, all submitted grades are immutable.'
-                : 'Admins can view and manage all defense schedules.'}
+                : 'Admins can schedule defenses and assign panelists. Criteria set the rubric used by panel members for rating.'}
             </span>
+          </div>
+        )}
+
+        {/* Criteria management (Admin/SuperAdmin) */}
+        {isAdmin && (
+          <div className="mb-6 rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-main)', background: 'var(--bg-card)' }}>
+            <button
+              className="w-full flex items-center justify-between px-5 py-4 text-left transition-colors"
+              style={{ background: showCriteria ? 'var(--bg-subtle)' : 'transparent' }}
+              onClick={() => setShowCriteria(s => !s)}
+            >
+              <div className="flex items-center gap-2.5">
+                <Scale size={15} style={{ color: '#c9a84c' }} />
+                <span className="font-semibold text-sm" style={{ color: 'var(--text-heading)' }}>
+                  Rating Criteria
+                </span>
+                {criteriaList.length > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+                    {criteriaList.length}
+                  </span>
+                )}
+              </div>
+              {showCriteria ? <ChevronUp size={15} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={15} style={{ color: 'var(--text-muted)' }} />}
+            </button>
+
+            {showCriteria && (
+              <div className="px-5 pb-5 border-t" style={{ borderColor: 'var(--border-main)' }}>
+                {criteriaList.length === 0 ? (
+                  <p className="text-sm italic py-4 text-center" style={{ color: 'var(--text-muted)' }}>
+                    No criteria yet — add one below so panel members can rate defenses.
+                  </p>
+                ) : (
+                  <div className="mt-4 space-y-2 mb-5">
+                    {criteriaList.map(c => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between p-3 rounded-xl"
+                        style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-main)' }}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm" style={{ color: 'var(--text-heading)' }}>{c.name}</p>
+                          {c.description && (
+                            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 ml-3 shrink-0">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+                            {Number(c.weight).toFixed(0)}% weight
+                          </span>
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>/ {c.maxScore}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add new criterion */}
+                <div className="pt-4" style={{ borderTop: '1px dashed var(--border-main)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>Add Criterion</p>
+                  {critError && (
+                    <div className="mb-3 px-3 py-2 rounded-lg text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                      {critError}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Name *</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. Technical Depth"
+                        value={newCrit.name}
+                        onChange={e => setNewCrit(n => ({ ...n, name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Description</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Optional description"
+                        value={newCrit.description}
+                        onChange={e => setNewCrit(n => ({ ...n, description: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Weight (%) *</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        placeholder="e.g. 25"
+                        min="0.01"
+                        max="100"
+                        step="0.5"
+                        value={newCrit.weight}
+                        onChange={e => setNewCrit(n => ({ ...n, weight: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Max Score *</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        placeholder="100"
+                        min="1"
+                        max="100"
+                        value={newCrit.maxScore}
+                        onChange={e => setNewCrit(n => ({ ...n, maxScore: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    className="btn-primary text-sm"
+                    onClick={handleAddCriterion}
+                    disabled={critSaving}
+                  >
+                    <Plus size={13} /> {critSaving ? 'Adding…' : 'Add Criterion'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Criteria summary for FacultyIC */}
+        {isFacultyIC && criteriaList.length > 0 && (
+          <div className="mb-5 text-xs flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+            <Scale size={12} />
+            {criteriaList.length} rating criteria configured · total weight {(criteriaList.reduce((s, c) => s + Number(c.weight), 0)).toFixed(0)}%
           </div>
         )}
 
@@ -145,16 +377,18 @@ export default function Defenses() {
                   Upcoming Defenses
                 </h2>
                 <div className="space-y-4">
-                  {upcoming.map((d) => (
+                  {upcoming.map(d => (
                     <DefenseCard
                       key={d.id}
                       defense={d}
                       isPanel={isPanel}
                       isFacultyIC={isFacultyIC || isAdmin}
+                      isAdmin={isAdmin}
                       toggling={togglingId === d.id}
                       onView={() => setSelected(d)}
-                      onToggleRating={(e) => toggleRating(d, e)}
+                      onToggleRating={e => toggleRating(d, e)}
                       onRate={() => navigate('/ratings')}
+                      onEdit={e => openEdit(d, e)}
                     />
                   ))}
                 </div>
@@ -167,16 +401,18 @@ export default function Defenses() {
                   Completed
                 </h2>
                 <div className="space-y-4">
-                  {past.map((d) => (
+                  {past.map(d => (
                     <DefenseCard
                       key={d.id}
                       defense={d}
                       isPanel={isPanel}
                       isFacultyIC={isFacultyIC || isAdmin}
+                      isAdmin={isAdmin}
                       toggling={togglingId === d.id}
                       onView={() => setSelected(d)}
-                      onToggleRating={(e) => toggleRating(d, e)}
+                      onToggleRating={e => toggleRating(d, e)}
                       onRate={() => navigate('/ratings')}
+                      onEdit={e => openEdit(d, e)}
                     />
                   ))}
                 </div>
@@ -188,7 +424,7 @@ export default function Defenses() {
 
       {/* Detail Modal */}
       <Modal
-        open={!!selected && !showCreate}
+        open={!!selected && !showCreate && !showEdit}
         onClose={() => setSelected(null)}
         title="Defense Details"
         size="md"
@@ -201,6 +437,9 @@ export default function Defenses() {
                 Capstone Group
               </p>
               <p className="font-semibold" style={{ color: 'var(--text-heading)' }}>{selected.groupName}</p>
+              {selected.academicYear && (
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{selected.academicYear}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -222,7 +461,8 @@ export default function Defenses() {
               </div>
             </div>
 
-            <div className="rounded-xl p-4 flex items-center justify-between" style={{ background: selected.isRatingOpen ? 'rgba(22,163,74,0.08)' : 'rgba(239,68,68,0.06)', border: `1px solid ${selected.isRatingOpen ? '#bbf7d0' : '#fecaca'}` }}>
+            <div className="rounded-xl p-4 flex items-center justify-between"
+              style={{ background: selected.isRatingOpen ? 'rgba(22,163,74,0.08)' : 'rgba(239,68,68,0.06)', border: `1px solid ${selected.isRatingOpen ? '#bbf7d0' : '#fecaca'}` }}>
               <div className="flex items-center gap-2">
                 {selected.isRatingOpen ? <Unlock size={15} style={{ color: '#16a34a' }} /> : <Lock size={15} style={{ color: '#dc2626' }} />}
                 <span className="text-sm font-medium" style={{ color: selected.isRatingOpen ? '#16a34a' : '#dc2626' }}>
@@ -259,11 +499,12 @@ export default function Defenses() {
         )}
       </Modal>
 
-      {/* Create Modal (Admin only) */}
+      {/* Create Modal */}
       <Modal
         open={showCreate}
         onClose={() => { setShowCreate(false); setCreateError('') }}
         title="Schedule Defense"
+        size="md"
         footer={
           <>
             <button className="btn-secondary" onClick={() => { setShowCreate(false); setCreateError('') }}>Cancel</button>
@@ -278,35 +519,138 @@ export default function Defenses() {
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group</label>
-            <select className="form-input" value={form.groupId} onChange={(e) => setForm({ ...form, groupId: e.target.value })}>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group *</label>
+            <select className="form-input" value={form.groupId} onChange={e => setForm(f => ({ ...f, groupId: e.target.value }))}>
               <option value="">Select a group</option>
-              {groups.map((g) => (
+              {groups.map(g => (
                 <option key={g.id} value={g.id}>{g.groupName ?? g.name}</option>
               ))}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Date</label>
-              <input type="date" className="form-input" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Date *</label>
+              <input type="date" className="form-input" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Time</label>
-              <input type="time" className="form-input" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />
+              <input type="time" className="form-input" value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Venue</label>
-            <input type="text" className="form-input" placeholder="e.g. Room 201" value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} />
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Venue *</label>
+            <input type="text" className="form-input" placeholder="e.g. Room 201" value={form.venue} onChange={e => setForm(f => ({ ...f, venue: e.target.value }))} />
           </div>
+          {panelUsers.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                Panel Members <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({form.panelistIds.length} selected)</span>
+              </label>
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-main)', maxHeight: 180, overflowY: 'auto' }}>
+                {panelUsers.map((p, i) => (
+                  <label
+                    key={p.id}
+                    className="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors"
+                    style={{
+                      borderTop: i > 0 ? '1px solid var(--border-main)' : 'none',
+                      background: form.panelistIds.includes(p.id) ? 'rgba(201,168,76,0.06)' : 'var(--bg-card)',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.panelistIds.includes(p.id)}
+                      onChange={() => togglePanelist(p.id, setForm)}
+                      className="rounded"
+                      style={{ accentColor: '#c9a84c' }}
+                    />
+                    <div>
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{p.fullName}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.email}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal
+        open={showEdit}
+        onClose={() => { setShowEdit(false); setEditError('') }}
+        title="Edit Defense"
+        size="md"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => { setShowEdit(false); setEditError('') }}>Cancel</button>
+            <button className="btn-primary" onClick={handleEdit} disabled={editSaving}>{editSaving ? 'Saving…' : 'Save Changes'}</button>
+          </>
+        }
+      >
+        {editTarget && (
+          <div className="space-y-4">
+            <div className="px-4 py-3 rounded-xl text-sm font-medium" style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
+              {editTarget.groupName}
+            </div>
+            {editError && (
+              <div className="px-4 py-3 rounded-xl text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                {editError}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Date *</label>
+                <input type="date" className="form-input" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Time</label>
+                <input type="time" className="form-input" value={editForm.time} onChange={e => setEditForm(f => ({ ...f, time: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Venue *</label>
+              <input type="text" className="form-input" placeholder="e.g. Room 201" value={editForm.venue} onChange={e => setEditForm(f => ({ ...f, venue: e.target.value }))} />
+            </div>
+            {panelUsers.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                  Panel Members <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({editForm.panelistIds.length} selected)</span>
+                </label>
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-main)', maxHeight: 180, overflowY: 'auto' }}>
+                  {panelUsers.map((p, i) => (
+                    <label
+                      key={p.id}
+                      className="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors"
+                      style={{
+                        borderTop: i > 0 ? '1px solid var(--border-main)' : 'none',
+                        background: editForm.panelistIds.includes(p.id) ? 'rgba(201,168,76,0.06)' : 'var(--bg-card)',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={editForm.panelistIds.includes(p.id)}
+                        onChange={() => togglePanelist(p.id, setEditForm)}
+                        className="rounded"
+                        style={{ accentColor: '#c9a84c' }}
+                      />
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{p.fullName}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.email}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   )
 }
 
-function DefenseCard({ defense, isPanel, isFacultyIC, toggling, onView, onToggleRating, onRate }) {
+function DefenseCard({ defense, isPanel, isFacultyIC, isAdmin, toggling, onView, onToggleRating, onRate, onEdit }) {
   const isCompleted = !['Scheduled', 'Rescheduled'].includes(defense.status)
   const dateStr = defense.scheduledDateTime
     ? new Date(defense.scheduledDateTime).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
@@ -325,8 +669,8 @@ function DefenseCard({ defense, isPanel, isFacultyIC, toggling, onView, onToggle
         opacity: isCompleted ? 0.8 : 1,
       }}
       onClick={onView}
-      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)'; e.currentTarget.style.transform = 'translateY(0)' }}
+      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+      onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)'; e.currentTarget.style.transform = 'translateY(0)' }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
@@ -360,13 +704,24 @@ function DefenseCard({ defense, isPanel, isFacultyIC, toggling, onView, onToggle
                 <MapPin size={11} /> {defense.venue}
               </span>
               <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                <Users size={11} /> {defense.panelists?.length ?? 0} panel members
+                <Users size={11} /> {defense.panelists?.length ?? 0} panel
               </span>
             </div>
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0">
+          {isAdmin && !isCompleted && (
+            <button
+              className="text-xs px-2.5 py-1.5 rounded-lg font-medium transition-all duration-150 flex items-center gap-1"
+              style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)', border: '1px solid var(--border-main)' }}
+              onClick={onEdit}
+              onMouseEnter={e => { e.currentTarget.style.color = '#c9a84c'; e.currentTarget.style.borderColor = 'rgba(201,168,76,0.35)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-main)' }}
+            >
+              <Pencil size={11} /> Edit
+            </button>
+          )}
           {isFacultyIC && !isCompleted && (
             <button
               className="text-xs px-3 py-1.5 rounded-lg font-medium transition-all duration-150 flex items-center gap-1.5"
@@ -384,7 +739,7 @@ function DefenseCard({ defense, isPanel, isFacultyIC, toggling, onView, onToggle
           )}
           {isPanel && !isCompleted && (
             defense.isRatingOpen
-              ? <button className="btn-primary text-xs px-3 py-1.5" onClick={(e) => { e.stopPropagation(); onRate() }}><Star size={13} /> Rate</button>
+              ? <button className="btn-primary text-xs px-3 py-1.5" onClick={e => { e.stopPropagation(); onRate() }}><Star size={13} /> Rate</button>
               : <span className="text-xs italic" style={{ color: 'var(--text-muted)' }}>Locked</span>
           )}
         </div>
