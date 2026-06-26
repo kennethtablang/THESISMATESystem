@@ -54,8 +54,9 @@ const navByRole = {
     { label: 'Consultations',         icon: MessageSquare,   to: '/consultations' },
     { label: 'Classroom',             icon: School,          to: '/classroom' },
     { label: 'Consultation Manager',  icon: CalendarClock,   to: '/consultation-manager' },
-    { label: 'Defense Schedules',     icon: Calendar,        to: '/defenses' },
-    { label: 'Rate Defenses',         icon: Star,            to: '/ratings' },
+    { label: 'Defense Schedules',  icon: Calendar,      to: '/defenses' },
+    { label: 'Defense Scheduler',  icon: CalendarRange, to: '/defense-scheduler' },
+    { label: 'Rate Defenses',      icon: Star,          to: '/ratings' },
     { label: 'Reports',               icon: BarChart3,       to: '/reports' },
   ],
   Student: [
