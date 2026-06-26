@@ -52,7 +52,8 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> UpdateProfile(UpdateUserRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            return Ok(await _auth.UpdateUserAsync(userId, dto));
+            var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+            return Ok(await _auth.UpdateUserAsync(userId, dto, callerRole));
         }
 
         [HttpPost("change-password")]
@@ -143,8 +144,12 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> UpdateUser(string userId, UpdateUserRequestDto dto)
         {
-            try { return Ok(await _auth.UpdateUserAsync(userId, dto)); }
+            var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+            try { return Ok(await _auth.UpdateUserAsync(userId, dto, callerRole)); }
             catch (KeyNotFoundException) { return NotFound(); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPatch("users/{userId}/deactivate")]
@@ -153,6 +158,41 @@ namespace THESISMATESystem.Server.Controllers
         {
             var success = await _auth.DeactivateUserAsync(userId);
             return success ? Ok() : NotFound();
+        }
+
+        [HttpPost("users/{userId}/reset-password")]
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> AdminForceResetPassword(string userId, [FromBody] AdminForcePasswordRequestDto dto)
+        {
+            try { await _auth.AdminForceSetPasswordAsync(userId, dto.NewPassword); return Ok(); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpPatch("users/{userId}/email")]
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> AdminSetEmail(string userId, [FromBody] AdminSetEmailRequestDto dto)
+        {
+            try { return Ok(await _auth.AdminSetEmailAsync(userId, dto.Email)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpPatch("users/{userId}/2fa/disable")]
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> AdminDisableTwoFactor(string userId)
+        {
+            try { await _auth.AdminDisableTwoFactorAsync(userId); return Ok(); }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
+        [HttpPatch("users/{userId}/2fa/enable")]
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> AdminEnableTwoFactor(string userId)
+        {
+            try { await _auth.AdminEnableTwoFactorAsync(userId); return Ok(); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
     }
 }

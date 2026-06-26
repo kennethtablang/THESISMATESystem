@@ -16,7 +16,7 @@ namespace THESISMATESystem.Server.Controllers
 
         // All groups summary — for Admin, SuperAdmin, Adviser, FacultyIC
         [HttpGet("groups")]
-        [Authorize(Roles = "Admin,SuperAdmin,Adviser,FacultyIC")]
+        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
         public async Task<IActionResult> GetSummary()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -26,7 +26,7 @@ namespace THESISMATESystem.Server.Controllers
 
         // Single group detail — Admin, SuperAdmin, Adviser (own groups only), FacultyIC
         [HttpGet("groups/{id:int}")]
-        [Authorize(Roles = "Admin,SuperAdmin,Adviser,FacultyIC")]
+        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
         public async Task<IActionResult> GetGroupHealth(int id)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

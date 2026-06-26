@@ -6,7 +6,7 @@ namespace THESISMATESystem.Server.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin,SuperAdmin,Adviser,FacultyIC")]
+    [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
     public class ReportsController : ControllerBase
     {
         private readonly IReportService _reports;
@@ -43,7 +43,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpGet("all-groups")]
-        [Authorize(Roles = "Admin,SuperAdmin,FacultyIC")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> AllGroups(
             [FromQuery] string? adviserId,
             [FromQuery] string? academicYear,

@@ -27,7 +27,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Adviser,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> Create([FromBody] CreateSystemFeatureRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -36,7 +36,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPut("{id:int}")]
-        [Authorize(Roles = "Adviser,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateSystemFeatureRequestDto dto)
         {
             try { return Ok(await _features.UpdateFeatureAsync(id, dto)); }
@@ -44,7 +44,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = "Adviser,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> Delete(int id)
         {
             var success = await _features.DeleteFeatureAsync(id);
@@ -52,7 +52,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("{id:int}/comments")]
-        [Authorize(Roles = "Adviser,Panel,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> AddComment(int id, [FromBody] AddSystemFeatureCommentRequestDto dto)
         {
             var authorId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -61,7 +61,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/dates")]
-        [Authorize(Roles = "Adviser,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> UpdateDates(int id, [FromBody] UpdateSystemFeatureRequestDto dto)
         {
             try { return Ok(await _features.UpdateFeatureAsync(id, dto)); }

@@ -45,7 +45,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("submissions/{id:int}/status")]
-        [Authorize(Roles = "Adviser")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> UpdateStatus(int id, UpdateChapterStatusRequestDto dto)
         {
             var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -54,7 +54,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("submissions/{id:int}/revision-notes")]
-        [Authorize(Roles = "Adviser")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> AddRevisionNote(int id, AddRevisionNoteRequestDto dto)
         {
             var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

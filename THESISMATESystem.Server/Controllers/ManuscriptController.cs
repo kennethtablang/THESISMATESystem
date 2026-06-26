@@ -18,7 +18,7 @@ namespace THESISMATESystem.Server.Controllers
         // ── Sections ──────────────────────────────────────────
 
         [HttpGet("group/{groupId:int}")]
-        [Authorize(Roles = "Admin,SuperAdmin,Adviser,Panel,FacultyIC")]
+        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
         public async Task<IActionResult> GetByGroup(int groupId)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -85,7 +85,7 @@ namespace THESISMATESystem.Server.Controllers
         // ── Comments ──────────────────────────────────────────
 
         [HttpGet("group/{groupId:int}/comments")]
-        [Authorize(Roles = "Admin,SuperAdmin,Adviser,Panel,FacultyIC,Student")]
+        [Authorize(Roles = "Admin,SuperAdmin,Faculty,Student")]
         public async Task<IActionResult> GetComments(int groupId, [FromQuery] string? sectionKey, [FromQuery] int? revision)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -104,7 +104,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("group/{groupId:int}/comments/{sectionKey}")]
-        [Authorize(Roles = "Adviser,Panel,FacultyIC")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> AddComment(int groupId, string sectionKey, [FromBody] AddManuscriptCommentRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -121,7 +121,7 @@ namespace THESISMATESystem.Server.Controllers
         // ── Revision summary ──────────────────────────────────
 
         [HttpGet("group/{groupId:int}/revision-summary")]
-        [Authorize(Roles = "Admin,SuperAdmin,Adviser,Panel,FacultyIC")]
+        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
         public async Task<IActionResult> GetRevisionSummary(int groupId)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -146,7 +146,7 @@ namespace THESISMATESystem.Server.Controllers
         // ── Revision management ───────────────────────────────
 
         [HttpPost("group/{groupId:int}/open-revision")]
-        [Authorize(Roles = "Adviser,FacultyIC")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> OpenRevision(int groupId)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

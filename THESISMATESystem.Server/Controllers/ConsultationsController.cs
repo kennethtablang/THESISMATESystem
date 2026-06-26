@@ -16,7 +16,7 @@ namespace THESISMATESystem.Server.Controllers
         public ConsultationsController(IConsultationService consultations) => _consultations = consultations;
 
         [HttpGet]
-        [Authorize(Roles = "Adviser,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> GetAll()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -36,7 +36,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Adviser")]
+        [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> Create(CreateConsultationRequestDto dto)
         {
             var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -45,7 +45,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPut("{id:int}")]
-        [Authorize(Roles = "Adviser")]
+        [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> Update(int id, UpdateConsultationRequestDto dto)
         {
             var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -54,7 +54,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = "Adviser")]
+        [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> Delete(int id)
         {
             var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

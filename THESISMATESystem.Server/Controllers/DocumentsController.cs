@@ -20,7 +20,7 @@ namespace THESISMATESystem.Server.Controllers
             => Ok(await _documents.GetDocumentsByGroupAsync(groupId));
 
         [HttpGet("my-advisees")]
-        [Authorize(Roles = "Adviser")]
+        [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> GetForAdviser()
         {
             var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -67,7 +67,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("{id:int}/comments")]
-        [Authorize(Roles = "Student,Adviser,Admin,SuperAdmin")]
+        [Authorize(Roles = "Student,Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> AddComment(int id, [FromBody] AddDocumentCommentRequestDto dto)
         {
             var authorId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

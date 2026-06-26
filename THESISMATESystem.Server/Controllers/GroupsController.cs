@@ -18,13 +18,13 @@ namespace THESISMATESystem.Server.Controllers
         public GroupsController(IGroupService groups) => _groups = groups;
 
         [HttpGet]
-        [Authorize(Roles = "Admin,SuperAdmin,Adviser,FacultyIC,Panel")]
+        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
         public async Task<IActionResult> GetAll([FromQuery] GroupStatus? status)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var role = User.FindFirstValue(ClaimTypes.Role)!;
 
-            var result = role == "Adviser"
+            var result = role == "Faculty"
                 ? await _groups.GetGroupsByAdviserAsync(userId)
                 : await _groups.GetAllGroupsAsync(status);
 
@@ -70,6 +70,31 @@ namespace THESISMATESystem.Server.Controllers
         {
             try { return Ok(await _groups.UpdateGroupAsync(id, dto)); }
             catch (KeyNotFoundException) { return NotFound(); }
+        }
+
+        [HttpPost("{id:int}/members")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> AddMember(int id, [FromBody] AddMemberRequestDto dto)
+        {
+            try { return Ok(await _groups.AddMemberAsync(id, dto.UserId)); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpDelete("{id:int}/members/{userId}")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> RemoveMember(int id, string userId)
+        {
+            try { return Ok(await _groups.RemoveMemberAsync(id, userId)); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+        }
+
+        [HttpPatch("{id:int}/deadlines")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        public async Task<IActionResult> SetDeadlines(int id, [FromBody] SetGroupDeadlinesRequestDto dto)
+        {
+            try { return Ok(await _groups.SetDeadlinesAsync(id, dto)); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
         }
 
         [HttpPatch("{id:int}/archive")]

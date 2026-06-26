@@ -16,11 +16,11 @@ namespace THESISMATESystem.Server.Controllers
         public DefensesController(IDefenseService defenses) => _defenses = defenses;
 
         [HttpGet]
-        [Authorize(Roles = "Admin,SuperAdmin,FacultyIC")]
+        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
         public async Task<IActionResult> GetAll() => Ok(await _defenses.GetAllSchedulesAsync());
 
         [HttpGet("my-schedules")]
-        [Authorize(Roles = "Panel,Adviser,FacultyIC")]
+        [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> GetMySchedules()
         {
             var panelistId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -63,7 +63,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/rating-status")]
-        [Authorize(Roles = "FacultyIC,Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> SetRatingStatus(int id, [FromBody] bool isOpen)
         {
             var success = await _defenses.SetRatingOpenAsync(id, isOpen);
@@ -72,7 +72,7 @@ namespace THESISMATESystem.Server.Controllers
 
         // Ratings
         [HttpPost("ratings")]
-        [Authorize(Roles = "Panel")]
+        [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> SubmitRating(SubmitRatingRequestDto dto)
         {
             var panelistId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

@@ -20,7 +20,7 @@ namespace THESISMATESystem.Server.Controllers
             => Ok(await _schedules.GetAllSchedulesAsync());
 
         [HttpGet("my-schedules")]
-        [Authorize(Roles = "FacultyIC")]
+        [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> GetMySchedules()
         {
             var facultyICId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -35,7 +35,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "FacultyIC,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> Create([FromBody] CreateConsultationScheduleRequestDto dto)
         {
             var facultyICId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -44,7 +44,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPut("{id:int}")]
-        [Authorize(Roles = "FacultyIC,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateConsultationScheduleRequestDto dto)
         {
             var facultyICId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -54,7 +54,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/status")]
-        [Authorize(Roles = "FacultyIC,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateScheduleStatusRequestDto dto)
         {
             var success = await _schedules.UpdateScheduleStatusAsync(id, dto);
@@ -72,7 +72,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpGet("{id:int}/requests")]
-        [Authorize(Roles = "FacultyIC,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> GetRequests(int id)
             => Ok(await _schedules.GetRequestsByScheduleAsync(id));
 
@@ -82,7 +82,7 @@ namespace THESISMATESystem.Server.Controllers
             => Ok(await _schedules.GetMyRequestsAsync(groupId));
 
         [HttpPatch("requests/{requestId:int}/respond")]
-        [Authorize(Roles = "FacultyIC,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> Respond(int requestId, [FromBody] RespondToConsultationRequestDto dto)
         {
             var facultyICId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
