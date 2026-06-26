@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, Copy, Check, Users, Megaphone, RefreshCw, Send, UserX } from 'lucide-react'
+import { Plus, Copy, Check, Users, Megaphone, RefreshCw, Send, ChevronDown, ChevronUp } from 'lucide-react'
 import TopBar from '../../components/layout/TopBar'
-import { classroomService, groupService } from '../../services/api'
+import { classroomService, groupService, authService } from '../../services/api'
+import { useAuth } from '../../contexts/AuthContext'
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false)
@@ -19,11 +20,14 @@ function CopyButton({ text }) {
 }
 
 export default function ClassroomManager() {
+  const { user } = useAuth()
   const [classrooms, setClassrooms] = useState([])
   const [selected, setSelected] = useState(null)
   const [enrollments, setEnrollments] = useState([])
   const [announcements, setAnnouncements] = useState([])
-  const [groups, setGroups] = useState([])
+  const [groups, setGroups] = useState([])          // all existing groups (for assign tab)
+  const [classroomGroups, setClassroomGroups] = useState([])  // groups created in this classroom
+  const [facultyList, setFacultyList] = useState([])
   const [tab, setTab] = useState('students')
   const [loading, setLoading] = useState(true)
 
@@ -36,10 +40,16 @@ export default function ClassroomManager() {
   const [annForm, setAnnForm] = useState({ title: '', content: '', targetGroupId: '' })
   const [posting, setPosting] = useState(false)
 
-  // Assign group form
+  // Assign existing group form
   const [assignStudentId, setAssignStudentId] = useState('')
   const [assignGroupId, setAssignGroupId] = useState('')
   const [assigning, setAssigning] = useState(false)
+
+  // Create new group inside classroom
+  const [showCreateGroup, setShowCreateGroup] = useState(false)
+  const [groupForm, setGroupForm] = useState({ groupName: '', adviserId: '', memberIds: [] })
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [groupError, setGroupError] = useState('')
 
   useEffect(() => {
     classroomService.myClassrooms().then(data => {
@@ -53,15 +63,36 @@ export default function ClassroomManager() {
     setSelected(room)
     setEnrollments([])
     setAnnouncements([])
+    setGroups([])
+    setClassroomGroups([])
     try {
       const [enr, ann, grps] = await Promise.all([
         classroomService.enrollments(room.id),
         classroomService.announcements(room.id),
         groupService.list(),
       ])
-      setEnrollments(Array.isArray(enr) ? enr : [])
+      const enrList = Array.isArray(enr) ? enr : []
+      const grpList = Array.isArray(grps) ? grps : []
+      setEnrollments(enrList)
       setAnnouncements(Array.isArray(ann) ? ann : [])
-      setGroups(Array.isArray(grps) ? grps : [])
+      setGroups(grpList)
+
+      // Derive which groups were created within this classroom:
+      // groups whose members are all (or mostly) from this classroom's enrollment
+      const enrolledIds = new Set(enrList.map(e => e.student?.id).filter(Boolean))
+      const classroomGrps = grpList.filter(g =>
+        g.members?.length > 0 && g.members.every(m => enrolledIds.has(m.userId ?? m.id))
+      )
+      setClassroomGroups(classroomGrps)
+    } catch {}
+  }
+
+  // Load faculty list lazily when the groups tab is opened
+  async function ensureFacultyLoaded() {
+    if (facultyList.length > 0) return
+    try {
+      const users = await authService.allUsers()
+      setFacultyList((Array.isArray(users) ? users : []).filter(u => u.role === 'Faculty'))
     } catch {}
   }
 
@@ -100,7 +131,7 @@ export default function ClassroomManager() {
     }
   }
 
-  async function handleAssign(e) {
+  async function handleAssignExisting(e) {
     e.preventDefault()
     if (!assignStudentId || !assignGroupId) return
     setAssigning(true)
@@ -109,9 +140,10 @@ export default function ClassroomManager() {
         groupId: parseInt(assignGroupId),
         studentIds: [assignStudentId],
       })
+      const targetGroup = groups.find(g => g.id === parseInt(assignGroupId))
       setEnrollments(prev => prev.map(enr =>
         enr.student.id === assignStudentId
-          ? { ...enr, groupId: parseInt(assignGroupId), groupName: groups.find(g => g.id === parseInt(assignGroupId))?.groupName }
+          ? { ...enr, groupId: parseInt(assignGroupId), groupName: targetGroup?.groupName }
           : enr
       ))
       setAssignStudentId('')
@@ -123,11 +155,56 @@ export default function ClassroomManager() {
     }
   }
 
+  async function handleCreateGroup(e) {
+    e.preventDefault()
+    if (!groupForm.groupName.trim()) {
+      setGroupError('Group name is required.')
+      return
+    }
+    setCreatingGroup(true)
+    setGroupError('')
+    try {
+      const created = await classroomService.createGroup(selected.id, {
+        groupName: groupForm.groupName.trim(),
+        adviserId: groupForm.adviserId || null,
+        memberIds: groupForm.memberIds,
+      })
+
+      // Update local state
+      setGroups(prev => [...prev, created])
+      setClassroomGroups(prev => [...prev, created])
+
+      // Update enrollment records to reflect new group membership
+      const newGroupId = created.id
+      const newGroupName = created.groupName
+      setEnrollments(prev => prev.map(enr =>
+        groupForm.memberIds.includes(enr.student?.id)
+          ? { ...enr, groupId: newGroupId, groupName: newGroupName }
+          : enr
+      ))
+
+      setGroupForm({ groupName: '', adviserId: '', memberIds: [] })
+      setShowCreateGroup(false)
+    } catch (err) {
+      setGroupError(err.message || 'Failed to create group.')
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
+
+  function toggleMember(studentId) {
+    setGroupForm(f => ({
+      ...f,
+      memberIds: f.memberIds.includes(studentId)
+        ? f.memberIds.filter(id => id !== studentId)
+        : [...f.memberIds, studentId],
+    }))
+  }
+
   async function handleRegenerateCode() {
     if (!confirm('Regenerate join code? The old code will stop working.')) return
     try {
       await classroomService.regenerateCode(selected.id)
-      // Reload classrooms to get the new code
       const list = await classroomService.myClassrooms()
       const updated = Array.isArray(list) ? list : []
       setClassrooms(updated)
@@ -153,7 +230,7 @@ export default function ClassroomManager() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="page-title">Classroom Manager</h2>
-            <p className="page-subtitle">Google Classroom-style class management</p>
+            <p className="page-subtitle">Manage your class, create groups, and post announcements</p>
           </div>
           <button className="btn-primary flex items-center gap-2" onClick={() => setShowCreate(s => !s)}>
             <Plus size={16} />
@@ -188,7 +265,7 @@ export default function ClassroomManager() {
         {classrooms.length === 0 ? (
           <div className="card text-center py-16">
             <Users size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-            <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>No classrooms yet</p>
+            <p className="font-medium" style={{ color: 'var(--text-heading)' }}>No classrooms yet</p>
             <p className="text-sm mt-1 mb-4" style={{ color: 'var(--text-muted)' }}>Create your first classroom to get started</p>
             <button className="btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> Create Classroom</button>
           </div>
@@ -210,7 +287,6 @@ export default function ClassroomManager() {
               ))}
             </div>
 
-            {/* Right: selected classroom content */}
             {selected && (
               <div className="lg:col-span-3 space-y-5">
                 {/* Join code card */}
@@ -249,11 +325,12 @@ export default function ClassroomManager() {
                 {/* Tabs */}
                 <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--bg-subtle)' }}>
                   {[
-                    { key: 'students', label: 'Students', icon: Users },
-                    { key: 'groups', label: 'Assign Groups', icon: Users },
+                    { key: 'students',      label: 'Students',   icon: Users },
+                    { key: 'groups',        label: 'Groups',     icon: Users },
                     { key: 'announcements', label: 'Announcements', icon: Megaphone },
                   ].map(t => (
-                    <button key={t.key} onClick={() => setTab(t.key)}
+                    <button key={t.key}
+                      onClick={() => { setTab(t.key); if (t.key === 'groups') ensureFacultyLoaded() }}
                       className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all"
                       style={{
                         background: tab === t.key ? 'var(--bg-card)' : 'transparent',
@@ -266,7 +343,7 @@ export default function ClassroomManager() {
                   ))}
                 </div>
 
-                {/* Students tab */}
+                {/* ── Students tab ── */}
                 {tab === 'students' && (
                   <div className="card">
                     <h3 className="font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>
@@ -283,7 +360,7 @@ export default function ClassroomManager() {
                             <tr>
                               <th>Student</th>
                               <th>Joined</th>
-                              <th>Assigned Group</th>
+                              <th>Group</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -304,7 +381,7 @@ export default function ClassroomManager() {
                                 <td>
                                   {enr.groupName
                                     ? <span className="text-sm font-medium" style={{ color: '#c9a84c' }}>{enr.groupName}</span>
-                                    : <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(107,114,128,0.1)', color: '#6b7280' }}>Unassigned</span>
+                                    : <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)', border: '1px solid var(--border-main)' }}>Unassigned</span>
                                   }
                                 </td>
                               </tr>
@@ -316,59 +393,216 @@ export default function ClassroomManager() {
                   </div>
                 )}
 
-                {/* Assign groups tab */}
+                {/* ── Groups tab ── */}
                 {tab === 'groups' && (
-                  <div className="card">
-                    <h3 className="font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Assign Students to Groups</h3>
-                    {enrollments.length === 0 ? (
-                      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No students enrolled yet.</p>
-                    ) : (
-                      <form onSubmit={handleAssign} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Student</label>
-                            <select className="form-input" value={assignStudentId} onChange={e => setAssignStudentId(e.target.value)} required>
-                              <option value="">Select student...</option>
-                              {enrollments.map(enr => (
-                                <option key={enr.student?.id} value={enr.student?.id}>{enr.student?.fullName}</option>
-                              ))}
-                            </select>
+                  <div className="space-y-4">
+
+                    {/* Create new group */}
+                    <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-main)', background: 'var(--bg-card)' }}>
+                      <button
+                        className="w-full flex items-center justify-between px-5 py-4"
+                        onClick={() => { setShowCreateGroup(s => !s); setGroupError('') }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(201,168,76,0.12)' }}>
+                            <Plus size={16} style={{ color: '#c9a84c' }} />
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Assign to Group</label>
-                            <select className="form-input" value={assignGroupId} onChange={e => setAssignGroupId(e.target.value)} required>
-                              <option value="">Select group...</option>
-                              {groups.map(g => (
-                                <option key={g.id} value={g.id}>{g.groupName}</option>
-                              ))}
-                            </select>
+                          <div className="text-left">
+                            <p className="font-semibold text-sm" style={{ color: 'var(--text-heading)' }}>Create New Group</p>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Name a group and pick students from this class</p>
                           </div>
                         </div>
-                        <button type="submit" className="btn-primary" disabled={assigning}>{assigning ? 'Assigning...' : 'Assign Student'}</button>
-                      </form>
-                    )}
+                        {showCreateGroup
+                          ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} />
+                          : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />
+                        }
+                      </button>
 
-                    {enrollments.length > 0 && (
-                      <div className="mt-5 pt-5" style={{ borderTop: '1px solid var(--border-main)' }}>
-                        <h4 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>Current Assignments</h4>
-                        <div className="space-y-2">
-                          {enrollments.filter(e => e.groupName).length === 0 ? (
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No assignments yet.</p>
-                          ) : (
-                            enrollments.filter(e => e.groupName).map(enr => (
-                              <div key={enr.id} className="flex items-center justify-between py-2 px-3 rounded-lg" style={{ background: 'var(--bg-subtle)' }}>
-                                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{enr.student?.fullName}</span>
-                                <span className="text-sm" style={{ color: '#c9a84c' }}>{enr.groupName}</span>
-                              </div>
-                            ))
+                      {showCreateGroup && (
+                        <div className="px-5 pb-5 pt-1" style={{ borderTop: '1px solid var(--border-light)' }}>
+                          {groupError && (
+                            <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                              {groupError}
+                            </div>
                           )}
+                          <form onSubmit={handleCreateGroup} className="space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Group Name *</label>
+                                <input
+                                  className="form-input"
+                                  placeholder="e.g. Group Alpha"
+                                  value={groupForm.groupName}
+                                  onChange={e => setGroupForm(f => ({ ...f, groupName: e.target.value }))}
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Adviser</label>
+                                <select
+                                  className="form-input"
+                                  value={groupForm.adviserId}
+                                  onChange={e => setGroupForm(f => ({ ...f, adviserId: e.target.value }))}
+                                >
+                                  <option value="">— Me ({user?.fullName}) —</option>
+                                  {facultyList
+                                    .filter(f => f.id !== user?.id)
+                                    .map(f => (
+                                      <option key={f.id} value={f.id}>{f.fullName}</option>
+                                    ))
+                                  }
+                                </select>
+                                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                                  Leave blank to assign yourself as adviser. Academic year is inherited from this classroom ({selected.academicYear}).
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Student picker */}
+                            <div>
+                              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
+                                Select Members
+                                {groupForm.memberIds.length > 0 && (
+                                  <span className="ml-2 text-xs font-normal px-2 py-0.5 rounded-full" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+                                    {groupForm.memberIds.length} selected
+                                  </span>
+                                )}
+                              </label>
+
+                              {enrollments.length === 0 ? (
+                                <p className="text-sm py-3" style={{ color: 'var(--text-muted)' }}>No students enrolled yet.</p>
+                              ) : (
+                                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-main)' }}>
+                                  {enrollments.map((enr, idx) => {
+                                    const sid = enr.student?.id
+                                    const checked = groupForm.memberIds.includes(sid)
+                                    const alreadyInGroup = !!enr.groupName
+                                    return (
+                                      <label
+                                        key={enr.id}
+                                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${alreadyInGroup ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        style={{
+                                          background: checked ? 'rgba(201,168,76,0.06)' : 'transparent',
+                                          borderTop: idx > 0 ? '1px solid var(--border-light)' : 'none',
+                                        }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          disabled={alreadyInGroup}
+                                          onChange={() => !alreadyInGroup && toggleMember(sid)}
+                                          className="w-4 h-4 rounded"
+                                          style={{ accentColor: '#c9a84c' }}
+                                        />
+                                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                                          style={{ background: 'linear-gradient(135deg,#c9a84c,#d4b565)', color: '#0a1628' }}>
+                                          {enr.student?.fullName?.[0] ?? '?'}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium truncate" style={{ color: 'var(--text-heading)' }}>
+                                            {enr.student?.fullName}
+                                          </p>
+                                          {alreadyInGroup && (
+                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Already in {enr.groupName}</p>
+                                          )}
+                                        </div>
+                                      </label>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex gap-3 pt-1">
+                              <button
+                                type="submit"
+                                className="btn-primary"
+                                disabled={creatingGroup || !groupForm.groupName.trim()}
+                              >
+                                {creatingGroup ? 'Creating...' : 'Create Group'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => { setShowCreateGroup(false); setGroupError(''); setGroupForm({ groupName: '', adviserId: '', memberIds: [] }) }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Groups created in this classroom */}
+                    {classroomGroups.length > 0 && (
+                      <div className="card">
+                        <h3 className="font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>
+                          Groups in This Class ({classroomGroups.length})
+                        </h3>
+                        <div className="space-y-3">
+                          {classroomGroups.map(g => (
+                            <div key={g.id} className="flex items-start gap-3 p-3 rounded-xl" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-main)' }}>
+                              <div className="w-9 h-9 rounded-xl flex items-center justify-center font-display font-bold text-base shrink-0"
+                                style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+                                {(g.groupName ?? 'G')[0]}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-sm" style={{ color: 'var(--text-heading)' }}>{g.groupName}</p>
+                                <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                                  Adviser: {g.adviser?.fullName ?? '—'} · {g.members?.length ?? 0} member{(g.members?.length ?? 0) !== 1 ? 's' : ''}
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {(g.members ?? []).map(m => (
+                                    <span key={m.userId ?? m.id} className="text-xs px-2 py-0.5 rounded-full font-medium"
+                                      style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-main)' }}>
+                                      {m.fullName}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
+
+                    {/* Assign student to an existing group */}
+                    <div className="card">
+                      <h3 className="font-semibold mb-1" style={{ color: 'var(--text-heading)' }}>Assign to Existing Group</h3>
+                      <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Move a student into a group that was created outside this classroom.</p>
+                      {enrollments.length === 0 ? (
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No students enrolled yet.</p>
+                      ) : (
+                        <form onSubmit={handleAssignExisting} className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Student</label>
+                              <select className="form-input" value={assignStudentId} onChange={e => setAssignStudentId(e.target.value)} required>
+                                <option value="">Select student...</option>
+                                {enrollments.map(enr => (
+                                  <option key={enr.student?.id} value={enr.student?.id}>{enr.student?.fullName}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Group</label>
+                              <select className="form-input" value={assignGroupId} onChange={e => setAssignGroupId(e.target.value)} required>
+                                <option value="">Select group...</option>
+                                {groups.map(g => (
+                                  <option key={g.id} value={g.id}>{g.groupName}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <button type="submit" className="btn-primary" disabled={assigning}>{assigning ? 'Assigning...' : 'Assign'}</button>
+                        </form>
+                      )}
+                    </div>
                   </div>
                 )}
 
-                {/* Announcements tab */}
+                {/* ── Announcements tab ── */}
                 {tab === 'announcements' && (
                   <div className="space-y-4">
                     <div className="card">
