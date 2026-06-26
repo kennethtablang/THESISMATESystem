@@ -8,6 +8,7 @@ namespace THESISMATESystem.Server.Models
         public string FirstName { get; set; } = string.Empty;
         public string? MiddleName { get; set; }
         public string LastName { get; set; } = string.Empty;
+        public string? StudentId { get; set; }
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
 

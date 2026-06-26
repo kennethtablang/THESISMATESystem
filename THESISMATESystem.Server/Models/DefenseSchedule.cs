@@ -10,7 +10,9 @@ namespace THESISMATESystem.Server.Models
         public CapstoneGroup CapstoneGroup { get; set; } = null!;
 
         public DateTime ScheduledDateTime { get; set; }
-        public string Venue { get; set; } = string.Empty; // room or online link
+        public int DurationMinutes { get; set; } = 60;
+        public string Venue { get; set; } = string.Empty;
+        public DefensePhase Phase { get; set; } = DefensePhase.TitleDefense;
         public DefenseStatus Status { get; set; } = DefenseStatus.Scheduled;
         public bool IsRatingOpen { get; set; } = false;
         public DateTime CreatedAt { get; set; } = PhilippineTime.Now;

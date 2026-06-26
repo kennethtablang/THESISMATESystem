@@ -17,6 +17,8 @@ namespace THESISMATESystem.Server.Models
         public string? SystemLogoPath { get; set; }
         public bool ManuscriptLocked { get; set; } = false;
         public int ManuscriptRevision { get; set; } = 1;
+        public DateTime? ManuscriptDueDate { get; set; }
+        public DateTime? SystemFeaturesDueDate { get; set; }
 
         public string AdviserId { get; set; } = string.Empty;
         public ApplicationUser Adviser { get; set; } = null!;
