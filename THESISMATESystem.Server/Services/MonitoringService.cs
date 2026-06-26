@@ -42,7 +42,7 @@ namespace THESISMATESystem.Server.Services
             if (group is null) return null;
 
             // Enforce scope for Adviser
-            if (role == "Adviser" && group.AdviserId != userId) return null;
+            if (role == "Faculty" && group.AdviserId != userId) return null;
 
             return await ComputeHealthAsync(group);
         }
@@ -236,7 +236,7 @@ namespace THESISMATESystem.Server.Services
                 .Include(g => g.Adviser)
                 .AsQueryable();
 
-            if (role == "Adviser")
+            if (role == "Faculty")
                 query = query.Where(g => g.AdviserId == userId);
 
             return await query.OrderBy(g => g.GroupName).ToListAsync();

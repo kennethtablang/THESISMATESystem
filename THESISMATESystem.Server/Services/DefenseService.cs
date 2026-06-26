@@ -27,9 +27,11 @@ namespace THESISMATESystem.Server.Services
         {
             var schedule = new DefenseSchedule
             {
-                CapstoneGroupId = dto.CapstoneGroupId,
+                CapstoneGroupId   = dto.CapstoneGroupId,
                 ScheduledDateTime = dto.ScheduledDateTime,
-                Venue = dto.Venue
+                DurationMinutes   = dto.DurationMinutes > 0 ? dto.DurationMinutes : 60,
+                Venue             = dto.Venue,
+                Phase             = dto.Phase,
             };
 
             _db.DefenseSchedules.Add(schedule);
@@ -111,7 +113,9 @@ namespace THESISMATESystem.Server.Services
                 schedule.Status = DefenseStatus.Rescheduled;
                 rescheduled = true;
             }
-            if (dto.Venue is not null) schedule.Venue = dto.Venue;
+            if (dto.Venue is not null)          schedule.Venue           = dto.Venue;
+            if (dto.Phase.HasValue)             schedule.Phase           = dto.Phase.Value;
+            if (dto.DurationMinutes.HasValue)   schedule.DurationMinutes = dto.DurationMinutes.Value;
             schedule.UpdatedAt = PhilippineTime.Now;
 
             if (dto.PanelistIds is not null)

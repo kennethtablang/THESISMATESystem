@@ -113,12 +113,12 @@ namespace THESISMATESystem.Server.Services
             var rootId = doc.OriginalDocumentId ?? doc.Id;
 
             // Admins and staff with broad access can view any version history
-            var isPrivileged = callerRole is "Admin" or "SuperAdmin" or "FacultyIC";
+            var isPrivileged = callerRole is "Admin" or "SuperAdmin" or "Faculty";
             if (!isPrivileged)
             {
-                // Adviser — must advise this group
+                // Faculty as adviser — must advise this group
                 var groupId = doc.CapstoneGroupId;
-                if (callerRole == "Adviser")
+                if (callerRole == "Faculty")
                 {
                     var advises = await _db.CapstoneGroups
                         .AnyAsync(g => g.Id == groupId && g.AdviserId == callerId);

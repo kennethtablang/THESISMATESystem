@@ -54,7 +54,7 @@ namespace THESISMATESystem.Server.Services
                 .Include(cl => cl.Adviser)
                 .Include(cl => cl.CapstoneGroup);
 
-            if (role == "Adviser")
+            if (role == "Faculty")
                 query = query.Where(cl => cl.AdviserId == userId);
 
             var logs = await query.OrderByDescending(cl => cl.ConsultationDate).ToListAsync();

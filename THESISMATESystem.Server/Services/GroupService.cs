@@ -216,6 +216,47 @@ namespace THESISMATESystem.Server.Services
                 ?? throw new InvalidOperationException("Failed to reload group.");
         }
 
+        public async Task<CapstoneGroupResponseDto> AddMemberAsync(int groupId, string userId)
+        {
+            var group = await _db.CapstoneGroups.FindAsync(groupId)
+                ?? throw new KeyNotFoundException($"Group {groupId} not found.");
+
+            var alreadyMember = await _db.GroupMembers
+                .AnyAsync(gm => gm.CapstoneGroupId == groupId && gm.UserId == userId);
+            if (alreadyMember)
+                throw new InvalidOperationException("This student is already a member of this group.");
+
+            _db.GroupMembers.Add(new GroupMember { CapstoneGroupId = groupId, UserId = userId });
+            await _db.SaveChangesAsync();
+            return await GetGroupByIdAsync(groupId)
+                ?? throw new InvalidOperationException("Failed to reload group.");
+        }
+
+        public async Task<CapstoneGroupResponseDto> RemoveMemberAsync(int groupId, string userId)
+        {
+            var member = await _db.GroupMembers
+                .FirstOrDefaultAsync(gm => gm.CapstoneGroupId == groupId && gm.UserId == userId)
+                ?? throw new KeyNotFoundException("Member not found in this group.");
+
+            _db.GroupMembers.Remove(member);
+            await _db.SaveChangesAsync();
+            return await GetGroupByIdAsync(groupId)
+                ?? throw new InvalidOperationException("Failed to reload group.");
+        }
+
+        public async Task<CapstoneGroupResponseDto> SetDeadlinesAsync(int groupId, SetGroupDeadlinesRequestDto dto)
+        {
+            var group = await _db.CapstoneGroups.FindAsync(groupId)
+                ?? throw new KeyNotFoundException("Group not found.");
+
+            group.ManuscriptDueDate = dto.ManuscriptDueDate;
+            group.SystemFeaturesDueDate = dto.SystemFeaturesDueDate;
+            await _db.SaveChangesAsync();
+
+            return await GetGroupByIdAsync(groupId)
+                ?? throw new InvalidOperationException("Failed to reload group.");
+        }
+
         public async Task<(byte[] bytes, string contentType)?> GetLogoAsync(int groupId)
         {
             var group = await _db.CapstoneGroups.FindAsync(groupId);

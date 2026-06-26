@@ -37,17 +37,20 @@ namespace THESISMATESystem.Server.Services
         {
             if (role is "Admin" or "SuperAdmin") return true;
 
-            if (role == "Adviser")
-                return await _db.CapstoneGroups
-                    .AnyAsync(g => g.Id == groupId && g.AdviserId == userId);
-
-            if (role == "Panel")
-                return await _db.PanelAssignments
-                    .AnyAsync(pa => pa.PanelistId == userId &&
-                        pa.DefenseSchedule.CapstoneGroupId == groupId);
-
-            if (role == "FacultyIC")
+            if (role == "Faculty")
             {
+                // Adviser assignment
+                if (await _db.CapstoneGroups
+                    .AnyAsync(g => g.Id == groupId && g.AdviserId == userId))
+                    return true;
+
+                // Panel assignment via defense schedule
+                if (await _db.PanelAssignments
+                    .AnyAsync(pa => pa.PanelistId == userId &&
+                        pa.DefenseSchedule.CapstoneGroupId == groupId))
+                    return true;
+
+                // FacultyIC assignment via classroom enrollment
                 var memberIds = await _db.GroupMembers
                     .Where(gm => gm.CapstoneGroupId == groupId)
                     .Select(gm => gm.UserId)
@@ -501,12 +504,16 @@ namespace THESISMATESystem.Server.Services
             if (comments.Count == 0) return [];
 
             var authorIds = comments.Select(c => c.AuthorId).Distinct().ToList();
-            var roleMap = await (
+            var roleRows = await (
                 from ur in _db.UserRoles
                 join r in _db.Roles on ur.RoleId equals r.Id
                 where authorIds.Contains(ur.UserId)
                 select new { ur.UserId, r.Name }
-            ).ToDictionaryAsync(x => x.UserId, x => x.Name);
+            ).ToListAsync();
+            // A user can theoretically have multiple role records; take the first one per user.
+            var roleMap = roleRows
+                .GroupBy(x => x.UserId)
+                .ToDictionary(g => g.Key, g => g.First().Name);
 
             var dtos = new List<ManuscriptCommentDto>(comments.Count);
             foreach (var c in comments)

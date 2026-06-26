@@ -13,11 +13,13 @@ namespace THESISMATESystem.Server.Services
     {
         private readonly AppDbContext _db;
         private readonly INotificationService _notifications;
+        private readonly IGroupService _groups;
 
-        public ClassroomService(AppDbContext db, INotificationService notifications)
+        public ClassroomService(AppDbContext db, INotificationService notifications, IGroupService groups)
         {
             _db = db;
             _notifications = notifications;
+            _groups = groups;
         }
 
         // ── Create ──────────────────────────────────────────────────────────
@@ -79,22 +81,26 @@ namespace THESISMATESystem.Server.Services
                 .FirstOrDefaultAsync(c => c.JoinCode == dto.JoinCode.ToUpper() && c.IsActive)
                 ?? throw new KeyNotFoundException("Classroom not found or is inactive.");
 
-            var alreadyEnrolled = classroom.Enrollments.Any(e => e.StudentId == studentId);
-            if (alreadyEnrolled)
-                throw new InvalidOperationException("You are already enrolled in this classroom.");
+            var existing = classroom.Enrollments.FirstOrDefault(e => e.StudentId == studentId);
+            if (existing is not null)
+            {
+                if (existing.Status == EnrollmentStatus.Active)
+                    throw new InvalidOperationException("You are already enrolled in this classroom.");
+                // Invited → accept via code
+                existing.Status = EnrollmentStatus.Active;
+                await _db.SaveChangesAsync();
+                await _db.Entry(classroom).Collection(c => c.Enrollments).LoadAsync();
+                return MapClassroomToDto(classroom);
+            }
 
-            var enrollment = new ClassroomEnrollment
+            _db.ClassroomEnrollments.Add(new ClassroomEnrollment
             {
                 ClassroomId = classroom.Id,
-                StudentId = studentId
-            };
-
-            _db.ClassroomEnrollments.Add(enrollment);
+                StudentId = studentId,
+                Status = EnrollmentStatus.Active
+            });
             await _db.SaveChangesAsync();
-
-            // Reload enrollment count
             await _db.Entry(classroom).Collection(c => c.Enrollments).LoadAsync();
-
             return MapClassroomToDto(classroom);
         }
 
@@ -105,7 +111,7 @@ namespace THESISMATESystem.Server.Services
                     .ThenInclude(c => c.FacultyIC)
                 .Include(e => e.Classroom)
                     .ThenInclude(c => c.Enrollments)
-                .Where(e => e.StudentId == studentId && e.Classroom.IsActive)
+                .Where(e => e.StudentId == studentId && e.Status == EnrollmentStatus.Active && e.Classroom.IsActive)
                 .OrderByDescending(e => e.JoinedAt)
                 .FirstOrDefaultAsync();
 
@@ -140,9 +146,11 @@ namespace THESISMATESystem.Server.Services
                     {
                         Id = e.Student.Id,
                         FullName = $"{e.Student.FirstName} {e.Student.LastName}".Trim(),
-                        Email = e.Student.Email ?? string.Empty
+                        Email = e.Student.Email ?? string.Empty,
+                        StudentId = e.Student.StudentId
                     },
                     JoinedAt = e.JoinedAt,
+                    Status = e.Status.ToString(),
                     GroupId = membership?.CapstoneGroupId,
                     GroupName = membership?.CapstoneGroup?.GroupName
                 };
@@ -215,9 +223,9 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<IEnumerable<AnnouncementResponseDto>> GetStudentAnnouncementsAsync(string studentId)
         {
-            // Find the student's active classroom
+            // Find the student's active classroom enrollment
             var enrollment = await _db.ClassroomEnrollments
-                .Where(e => e.StudentId == studentId && e.Classroom.IsActive)
+                .Where(e => e.StudentId == studentId && e.Status == EnrollmentStatus.Active && e.Classroom.IsActive)
                 .OrderByDescending(e => e.JoinedAt)
                 .FirstOrDefaultAsync();
 
@@ -268,6 +276,174 @@ namespace THESISMATESystem.Server.Services
             }
 
             await _db.SaveChangesAsync();
+        }
+
+        // ── Create group within classroom ────────────────────────────────────
+
+        public async Task<CapstoneGroupResponseDto> CreateGroupInClassroomAsync(int classroomId, string callerId, string callerRole, CreateGroupInClassroomRequestDto dto)
+        {
+            var classroom = await _db.Classrooms.FindAsync(classroomId)
+                ?? throw new KeyNotFoundException("Classroom not found.");
+
+            // Fix 1: Faculty can only create groups in classrooms they own.
+            // Admin/SuperAdmin bypass the ownership check.
+            if (callerRole == "Faculty" && classroom.FacultyICId != callerId)
+                throw new UnauthorizedAccessException("You do not own this classroom.");
+
+            // Fix 3: Validate that the specified adviser exists and holds the Faculty role.
+            var adviserId = !string.IsNullOrWhiteSpace(dto.AdviserId) ? dto.AdviserId : callerId;
+            var adviserIsValid = await _db.Users
+                .Where(u => u.Id == adviserId)
+                .Join(_db.UserRoles, u => u.Id, ur => ur.UserId, (u, ur) => ur.RoleId)
+                .Join(_db.Roles, roleId => roleId, r => r.Id, (roleId, r) => r.Name)
+                .AnyAsync(name => name == "Faculty");
+            if (!adviserIsValid)
+                throw new InvalidOperationException("The specified adviser must be an existing Faculty member.");
+
+            var group = new CapstoneGroup
+            {
+                GroupName = dto.GroupName,
+                AdviserId = adviserId,
+                AcademicYear = classroom.AcademicYear,
+            };
+
+            _db.CapstoneGroups.Add(group);
+            await _db.SaveChangesAsync();
+
+            if (dto.MemberIds.Count > 0)
+            {
+                // Fix 2: Only allow students who are actually enrolled in this classroom.
+                // This prevents cross-classroom member manipulation.
+                var enrolledIds = await _db.ClassroomEnrollments
+                    .Where(e => e.ClassroomId == classroomId && dto.MemberIds.Contains(e.StudentId))
+                    .Select(e => e.StudentId)
+                    .ToListAsync();
+
+                var unauthorised = dto.MemberIds.Except(enrolledIds).ToList();
+                if (unauthorised.Count > 0)
+                    throw new InvalidOperationException(
+                        $"{unauthorised.Count} submitted member(s) are not enrolled in this classroom.");
+
+                // Remove any existing group memberships for the validated students
+                var existing = await _db.GroupMembers
+                    .Where(gm => enrolledIds.Contains(gm.UserId))
+                    .ToListAsync();
+                _db.GroupMembers.RemoveRange(existing);
+
+                _db.GroupMembers.AddRange(enrolledIds.Select(uid => new GroupMember
+                {
+                    CapstoneGroupId = group.Id,
+                    UserId = uid
+                }));
+
+                await _db.SaveChangesAsync();
+            }
+
+            return await _groups.GetGroupByIdAsync(group.Id)
+                ?? throw new InvalidOperationException("Failed to load created group.");
+        }
+
+        // ── Admin: all classrooms ────────────────────────────────────────────
+
+        public async Task<IEnumerable<ClassroomResponseDto>> GetAllClassroomsAsync()
+        {
+            var classrooms = await _db.Classrooms
+                .Include(c => c.FacultyIC)
+                .Include(c => c.Enrollments)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+            return classrooms.Select(MapClassroomToDto);
+        }
+
+        // ── Invite & accept ──────────────────────────────────────────────────
+
+        public async Task InviteStudentsAsync(int classroomId, InviteStudentsRequestDto dto)
+        {
+            var classroom = await _db.Classrooms
+                .Include(c => c.FacultyIC)
+                .Include(c => c.Enrollments)
+                .FirstOrDefaultAsync(c => c.Id == classroomId && c.IsActive)
+                ?? throw new KeyNotFoundException("Classroom not found or inactive.");
+
+            foreach (var studentUserId in dto.StudentIds)
+            {
+                var existing = classroom.Enrollments.FirstOrDefault(e => e.StudentId == studentUserId);
+                if (existing is not null) continue; // already enrolled or invited — skip
+
+                _db.ClassroomEnrollments.Add(new ClassroomEnrollment
+                {
+                    ClassroomId = classroomId,
+                    StudentId = studentUserId,
+                    Status = EnrollmentStatus.Invited
+                });
+
+                await _notifications.SendAsync(
+                    studentUserId,
+                    $"You've been invited to join \"{classroom.ClassName}\" ({classroom.AcademicYear}). Open your class page to accept.",
+                    NotificationType.ClassroomInvitation
+                );
+            }
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task AcceptInvitationAsync(int enrollmentId, string studentId)
+        {
+            var enrollment = await _db.ClassroomEnrollments
+                .FirstOrDefaultAsync(e => e.Id == enrollmentId)
+                ?? throw new KeyNotFoundException("Invitation not found.");
+
+            if (enrollment.StudentId != studentId)
+                throw new UnauthorizedAccessException();
+
+            enrollment.Status = EnrollmentStatus.Active;
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task<IEnumerable<ClassroomInvitationDto>> GetMyInvitationsAsync(string studentId)
+        {
+            var invitations = await _db.ClassroomEnrollments
+                .Include(e => e.Classroom).ThenInclude(c => c.FacultyIC)
+                .Where(e => e.StudentId == studentId && e.Status == EnrollmentStatus.Invited && e.Classroom.IsActive)
+                .OrderByDescending(e => e.JoinedAt)
+                .ToListAsync();
+
+            return invitations.Select(e => new ClassroomInvitationDto
+            {
+                EnrollmentId = e.Id,
+                ClassroomId = e.ClassroomId,
+                ClassName = e.Classroom.ClassName,
+                AcademicYear = e.Classroom.AcademicYear,
+                FacultyIC = new UserSummaryDto
+                {
+                    Id = e.Classroom.FacultyIC.Id,
+                    FullName = $"{e.Classroom.FacultyIC.FirstName} {e.Classroom.FacultyIC.LastName}".Trim(),
+                    Email = e.Classroom.FacultyIC.Email ?? string.Empty
+                },
+                InvitedAt = e.JoinedAt
+            });
+        }
+
+        // ── Active enrolled students (for Add-to-Group filtering) ────────────
+
+        public async Task<IEnumerable<UserSummaryDto>> GetActiveEnrolledStudentsAsync()
+        {
+            var students = await _db.ClassroomEnrollments
+                .Include(e => e.Student)
+                .Include(e => e.Classroom)
+                .Where(e => e.Status == EnrollmentStatus.Active
+                         && e.Classroom.IsActive
+                         && e.Student.IsActive)
+                .Select(e => e.Student)
+                .Distinct()
+                .ToListAsync();
+
+            return students.Select(s => new UserSummaryDto
+            {
+                Id = s.Id,
+                FullName = $"{s.FirstName} {s.LastName}".Trim(),
+                Email = s.Email ?? string.Empty,
+                StudentId = s.StudentId
+            });
         }
 
         // ── Regenerate join code ─────────────────────────────────────────────

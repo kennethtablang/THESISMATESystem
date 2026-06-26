@@ -110,11 +110,18 @@ namespace THESISMATESystem.Server.Services
             if (dto.Role != "Student")
                 throw new InvalidOperationException("Self-registration is only available for students. Other roles must be created by an administrator.");
 
+            var studentId = dto.StudentId.Trim();
+            var duplicateId = await _userManager.Users
+                .AnyAsync(u => u.StudentId == studentId);
+            if (duplicateId)
+                throw new InvalidOperationException($"DUPLICATE_STUDENT_ID");
+
             var user = new ApplicationUser
             {
                 FirstName = dto.FirstName,
                 MiddleName = string.IsNullOrWhiteSpace(dto.MiddleName) ? null : dto.MiddleName.Trim(),
                 LastName = dto.LastName,
+                StudentId = studentId,
                 Email = dto.Email,
                 UserName = dto.Email,
                 IsActive = true,
@@ -387,18 +394,44 @@ namespace THESISMATESystem.Server.Services
             return dto;
         }
 
-        public async Task<UserResponseDto> UpdateUserAsync(string userId, UpdateUserRequestDto dto)
+        private static readonly HashSet<string> ValidRoles =
+            ["SuperAdmin", "Admin", "Faculty", "Student"];
+
+        public async Task<UserResponseDto> UpdateUserAsync(string userId, UpdateUserRequestDto dto, string callerRole)
         {
             var user = await _userManager.FindByIdAsync(userId)
                 ?? throw new KeyNotFoundException("User not found.");
 
-            if (dto.FirstName is not null) user.FirstName = dto.FirstName;
+            if (dto.FirstName is not null) user.FirstName = dto.FirstName.Trim();
             if (dto.MiddleName is not null) user.MiddleName = string.IsNullOrWhiteSpace(dto.MiddleName) ? null : dto.MiddleName.Trim();
-            if (dto.LastName is not null) user.LastName = dto.LastName;
+            if (dto.LastName is not null) user.LastName = dto.LastName.Trim();
             if (dto.PhoneNumber is not null) user.PhoneNumber = dto.PhoneNumber;
             if (dto.IsActive.HasValue) user.IsActive = dto.IsActive.Value;
 
             await _userManager.UpdateAsync(user);
+
+            if (dto.Role is not null)
+            {
+                if (callerRole != "SuperAdmin")
+                    throw new UnauthorizedAccessException("Only SuperAdmin can change user roles.");
+
+                if (!ValidRoles.Contains(dto.Role))
+                    throw new ArgumentException($"'{dto.Role}' is not a valid role.");
+
+                var currentRoles = await _userManager.GetRolesAsync(user);
+
+                // Prevent removing the last SuperAdmin
+                if (currentRoles.Contains("SuperAdmin") && dto.Role != "SuperAdmin")
+                {
+                    var superAdmins = await _userManager.GetUsersInRoleAsync("SuperAdmin");
+                    if (superAdmins.Count <= 1)
+                        throw new InvalidOperationException("Cannot demote the last SuperAdmin.");
+                }
+
+                if (currentRoles.Any())
+                    await _userManager.RemoveFromRolesAsync(user, currentRoles);
+                await _userManager.AddToRoleAsync(user, dto.Role);
+            }
 
             var roles = await _userManager.GetRolesAsync(user);
             var userDto = _mapper.Map<UserResponseDto>(user);
@@ -431,6 +464,53 @@ namespace THESISMATESystem.Server.Services
             }
 
             return dtos;
+        }
+
+        public async Task AdminForceSetPasswordAsync(string userId, string newPassword)
+        {
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new KeyNotFoundException("User not found.");
+
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var result = await _userManager.ResetPasswordAsync(user, token, newPassword);
+            if (!result.Succeeded)
+                throw new InvalidOperationException(string.Join("; ", result.Errors.Select(e => e.Description)));
+        }
+
+        public async Task<UserResponseDto> AdminSetEmailAsync(string userId, string newEmail)
+        {
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new KeyNotFoundException("User not found.");
+
+            var existing = await _userManager.FindByEmailAsync(newEmail);
+            if (existing is not null && existing.Id != userId)
+                throw new InvalidOperationException("Email is already in use by another account.");
+
+            await _userManager.SetEmailAsync(user, newEmail);
+            await _userManager.SetUserNameAsync(user, newEmail);
+            user.EmailConfirmed = true;
+            await _userManager.UpdateAsync(user);
+
+            var roles = await _userManager.GetRolesAsync(user);
+            var dto = _mapper.Map<UserResponseDto>(user);
+            dto.Role = roles.FirstOrDefault() ?? string.Empty;
+            return dto;
+        }
+
+        public async Task AdminDisableTwoFactorAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new KeyNotFoundException("User not found.");
+            await _userManager.SetTwoFactorEnabledAsync(user, false);
+        }
+
+        public async Task AdminEnableTwoFactorAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new KeyNotFoundException("User not found.");
+            if (!user.EmailConfirmed)
+                throw new InvalidOperationException("Cannot enable 2FA for a user whose email is not confirmed.");
+            await _userManager.SetTwoFactorEnabledAsync(user, true);
         }
 
         private async Task WriteAuditAsync(string? userId, string action, string entityName, string? entityId, bool success)
