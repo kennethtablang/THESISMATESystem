@@ -14,6 +14,8 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string? ManuscriptVersion { get; set; }
         public string? SystemVersion { get; set; }
         public string? SystemLogoUrl { get; set; }
+        public DateTime? ManuscriptDueDate { get; set; }
+        public DateTime? SystemFeaturesDueDate { get; set; }
         public UserSummaryDto Adviser { get; set; } = null!;
         public List<UserSummaryDto> Members { get; set; } = [];
         public MilestoneProgressDto? MilestoneProgress { get; set; }
@@ -24,6 +26,7 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string Id { get; set; } = string.Empty;
         public string FullName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
+        public string? StudentId { get; set; }
     }
 
     public class MilestoneProgressDto

@@ -9,7 +9,9 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string GroupName { get; set; } = string.Empty;
         public string AcademicYear { get; set; } = string.Empty;
         public DateTime ScheduledDateTime { get; set; }
+        public int DurationMinutes { get; set; }
         public string Venue { get; set; } = string.Empty;
+        public DefensePhase Phase { get; set; }
         public DefenseStatus Status { get; set; }
         public bool IsRatingOpen { get; set; }
         public DateTime CreatedAt { get; set; }

@@ -13,9 +13,10 @@ namespace THESISMATESystem.Server.DTOs.Request
         [Required] public string FirstName { get; set; } = string.Empty;
         public string? MiddleName { get; set; }
         [Required] public string LastName { get; set; } = string.Empty;
+        [Required] public string StudentId { get; set; } = string.Empty;
         [Required, EmailAddress] public string Email { get; set; } = string.Empty;
         [Required, MinLength(8)] public string Password { get; set; } = string.Empty;
-        [Required] public string Role { get; set; } = string.Empty; // Student | Adviser | Panel | FacultyIC | Admin | SuperAdmin
+        [Required] public string Role { get; set; } = string.Empty; // Student | Faculty | Admin | SuperAdmin
     }
 
     public class ChangePasswordRequestDto

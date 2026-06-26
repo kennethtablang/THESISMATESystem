@@ -24,4 +24,15 @@ namespace THESISMATESystem.Server.DTOs.Request
         public string? ManuscriptVersion { get; set; }
         public string? SystemVersion { get; set; }
     }
+
+    public class AddMemberRequestDto
+    {
+        [Required] public string UserId { get; set; } = string.Empty;
+    }
+
+    public class SetGroupDeadlinesRequestDto
+    {
+        public DateTime? ManuscriptDueDate { get; set; }
+        public DateTime? SystemFeaturesDueDate { get; set; }
+    }
 }

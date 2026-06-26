@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using THESISMATESystem.Server.Enums;
 
 namespace THESISMATESystem.Server.DTOs.Request
 {
@@ -6,14 +7,18 @@ namespace THESISMATESystem.Server.DTOs.Request
     {
         [Required] public int CapstoneGroupId { get; set; }
         [Required] public DateTime ScheduledDateTime { get; set; }
+        public int DurationMinutes { get; set; } = 60;
         [Required] public string Venue { get; set; } = string.Empty;
+        public DefensePhase Phase { get; set; } = DefensePhase.TitleDefense;
         public List<string> PanelistIds { get; set; } = [];
     }
 
     public class UpdateDefenseScheduleRequestDto
     {
         public DateTime? ScheduledDateTime { get; set; }
+        public int? DurationMinutes { get; set; }
         public string? Venue { get; set; }
+        public DefensePhase? Phase { get; set; }
         public List<string>? PanelistIds { get; set; }
     }
 

@@ -25,4 +25,16 @@ namespace THESISMATESystem.Server.DTOs.Request
         [Required] public int GroupId { get; set; }
         [Required] public List<string> StudentIds { get; set; } = [];
     }
+
+    public class InviteStudentsRequestDto
+    {
+        [Required] public List<string> StudentIds { get; set; } = [];
+    }
+
+    public class CreateGroupInClassroomRequestDto
+    {
+        [Required] public string GroupName { get; set; } = string.Empty;
+        public string? AdviserId { get; set; }
+        public List<string> MemberIds { get; set; } = [];
+    }
 }
