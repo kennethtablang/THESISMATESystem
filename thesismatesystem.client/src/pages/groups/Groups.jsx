@@ -31,7 +31,7 @@ export default function Groups() {
 
   const [showEditModal, setShowEditModal] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
-  const [editForm, setEditForm] = useState({ groupName: '', projectTitle: '' })
+  const [editForm, setEditForm] = useState({ groupName: '', projectTitle: '', adviserId: '' })
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -44,22 +44,30 @@ export default function Groups() {
 
   function openEditModal(group) {
     setEditTarget(group)
-    setEditForm({ groupName: group.groupName ?? '', projectTitle: group.projectTitle ?? '' })
+    setEditForm({
+      groupName:  group.groupName   ?? '',
+      projectTitle: group.projectTitle ?? '',
+      adviserId:  group.adviser?.id ?? '',
+    })
     setEditError('')
     setShowEditModal(true)
+    if (advisers.length === 0) {
+      authService.allUsers()
+        .then(users => setAdvisers(users.filter(u => u.role === 'Faculty')))
+        .catch(() => {})
+    }
   }
 
   async function handleEditSave() {
-    if (!editForm.groupName.trim()) {
-      setEditError('Group name is required.')
-      return
-    }
+    if (!editForm.groupName.trim()) { setEditError('Group name is required.'); return }
+    if (!editForm.adviserId)        { setEditError('Please select an adviser.'); return }
     setEditSaving(true)
     setEditError('')
     try {
       const updated = await groupService.update(editTarget.id, {
-        groupName: editForm.groupName.trim(),
+        groupName:    editForm.groupName.trim(),
         projectTitle: editForm.projectTitle.trim() || null,
+        adviserId:    editForm.adviserId,
       })
       setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))
       setShowEditModal(false)
@@ -115,7 +123,7 @@ export default function Groups() {
     setShowModal(true)
     if (advisers.length === 0) {
       authService.allUsers()
-        .then(users => setAdvisers(users.filter(u => u.role === 'Adviser')))
+        .then(users => setAdvisers(users.filter(u => u.role === 'Faculty')))
         .catch(() => {})
     }
   }
@@ -151,7 +159,7 @@ export default function Groups() {
   return (
     <div>
       <TopBar
-        title={isAdmin ? 'Manage Groups' : user?.role === 'Adviser' ? 'My Advisees' : user?.role === 'Student' ? 'My Group' : 'Groups'}
+        title={isAdmin ? 'Manage Groups' : user?.role === 'Faculty' ? 'My Groups' : user?.role === 'Student' ? 'My Group' : 'Groups'}
         subtitle={`${groups.length} capstone group${groups.length !== 1 ? 's' : ''}`}
       />
       <div className="p-4 sm:p-8">
@@ -231,6 +239,22 @@ export default function Groups() {
               onChange={e => setEditForm(f => ({ ...f, groupName: e.target.value }))}
             />
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Short identifier for the group.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Adviser *</label>
+            <select
+              className="form-input"
+              value={editForm.adviserId}
+              onChange={e => setEditForm(f => ({ ...f, adviserId: e.target.value }))}
+            >
+              <option value="">Select an adviser</option>
+              {advisers.map(a => (
+                <option key={a.id} value={a.id}>{a.fullName}</option>
+              ))}
+            </select>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              A faculty member can advise multiple groups simultaneously.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Research Title</label>

@@ -169,20 +169,60 @@ function AlgorithmInfo() {
 
       {open && (
         <div
-          className="mt-2 rounded-xl px-4 py-3 text-xs leading-relaxed"
+          className="mt-2 rounded-xl px-4 py-4 text-xs leading-relaxed space-y-3"
           style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.18)', color: 'var(--text-secondary)' }}
         >
-          Each group's <strong style={{ color: 'var(--text-primary)' }}>Health Score (0–100)</strong> is a weighted composite of four dimensions:
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
-            {DIMENSION_LABELS.map(d => (
-              <div key={d.key} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DIM_COLORS[d.key] }} />
-                <span>{d.label}</span>
-                <span className="font-bold ml-auto" style={{ color: 'var(--text-primary)' }}>{d.weight}</span>
+          <p>
+            Each group's <strong style={{ color: 'var(--text-primary)' }}>Health Score (0–100)</strong> is a weighted composite of four dimensions:
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="rounded-lg p-2.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DIM_COLORS.chapterScore }} />
+                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Chapters</span>
+                <span className="ml-auto font-bold" style={{ color: DIM_COLORS.chapterScore }}>35%</span>
               </div>
-            ))}
+              <p style={{ color: 'var(--text-muted)' }}>Approved ×20 pts · Under Revision ×10 · Pending ×6</p>
+              <p className="mt-0.5" style={{ color: 'var(--text-muted)' }}>5 approved chapters = 100 pts (capped at 100)</p>
+            </div>
+
+            <div className="rounded-lg p-2.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DIM_COLORS.systemFeatureScore }} />
+                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>System Features</span>
+                <span className="ml-auto font-bold" style={{ color: DIM_COLORS.systemFeatureScore }}>25%</span>
+              </div>
+              <p style={{ color: 'var(--text-muted)' }}>Average completion across all tracked features:</p>
+              <p className="mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                Completed=100 · In Progress=50 · Needs Revision=25 · Not Started=0
+              </p>
+            </div>
+
+            <div className="rounded-lg p-2.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DIM_COLORS.manuscriptScore }} />
+                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Manuscript</span>
+                <span className="ml-auto font-bold" style={{ color: DIM_COLORS.manuscriptScore }}>25%</span>
+              </div>
+              <p style={{ color: 'var(--text-muted)' }}>Sections with content ({'>'} 100 words) ÷ 6 × 100</p>
+              <p className="mt-0.5" style={{ color: 'var(--text-muted)' }}>All 6 sections filled = 100 pts</p>
+            </div>
+
+            <div className="rounded-lg p-2.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DIM_COLORS.consultationScore }} />
+                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Consultations</span>
+                <span className="ml-auto font-bold" style={{ color: DIM_COLORS.consultationScore }}>15%</span>
+              </div>
+              <p style={{ color: 'var(--text-muted)' }}>Based on sessions in the last 30 / 60 days:</p>
+              <p className="mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                ≥2 in 30 days=100 · 1 in 30 days=75 · 1 in 60 days=50 · any=25 · none=0
+              </p>
+            </div>
           </div>
-          <p className="mt-2">
+
+          <p>
             Risk levels: <span style={{ color: '#ef4444' }}>At Risk</span> &lt;40 ·{' '}
             <span style={{ color: '#f59e0b' }}>Needs Attention</span> 40–59 ·{' '}
             <span style={{ color: '#3b82f6' }}>On Track</span> 60–79 ·{' '}
