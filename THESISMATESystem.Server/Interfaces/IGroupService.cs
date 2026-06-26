@@ -17,5 +17,8 @@ namespace THESISMATESystem.Server.Interfaces
         Task<CapstoneGroupResponseDto> UpdateVersionAsync(string studentId, UpdateVersionRequestDto dto);
         Task<CapstoneGroupResponseDto> UploadLogoAsync(int groupId, IFormFile file, string callerId, string callerRole);
         Task<(byte[] bytes, string contentType)?> GetLogoAsync(int groupId);
+        Task<CapstoneGroupResponseDto> AddMemberAsync(int groupId, string userId);
+        Task<CapstoneGroupResponseDto> RemoveMemberAsync(int groupId, string userId);
+        Task<CapstoneGroupResponseDto> SetDeadlinesAsync(int groupId, SetGroupDeadlinesRequestDto dto);
     }
 }

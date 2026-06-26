@@ -103,17 +103,18 @@ namespace THESISMATESystem.Server.Hubs
 
             bool authorized = role switch
             {
-                "Adviser" => await db.CapstoneGroups
-                    .AnyAsync(g => g.Id == groupId && g.AdviserId == userId),
+                "Admin" or "SuperAdmin" => true,
 
-                "Panel" => await db.PanelAssignments
-                    .AnyAsync(pa => pa.PanelistId == userId &&
-                        pa.DefenseSchedule.CapstoneGroupId == groupId),
-
-                "FacultyIC" => await db.ClassroomEnrollments
-                    .AnyAsync(ce => ce.Classroom.FacultyICId == userId &&
-                        ce.StudentId != null &&
-                        db.GroupMembers.Any(gm => gm.CapstoneGroupId == groupId && gm.UserId == ce.StudentId)),
+                "Faculty" =>
+                    await db.CapstoneGroups
+                        .AnyAsync(g => g.Id == groupId && g.AdviserId == userId) ||
+                    await db.PanelAssignments
+                        .AnyAsync(pa => pa.PanelistId == userId &&
+                            pa.DefenseSchedule.CapstoneGroupId == groupId) ||
+                    await db.ClassroomEnrollments
+                        .AnyAsync(ce => ce.Classroom.FacultyICId == userId &&
+                            ce.StudentId != null &&
+                            db.GroupMembers.Any(gm => gm.CapstoneGroupId == groupId && gm.UserId == ce.StudentId)),
 
                 "Student" => await db.GroupMembers
                     .AnyAsync(gm => gm.CapstoneGroupId == groupId &&

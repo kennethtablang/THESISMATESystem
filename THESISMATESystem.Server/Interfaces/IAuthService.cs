@@ -12,9 +12,13 @@ namespace THESISMATESystem.Server.Interfaces
         Task<bool> ForgotPasswordAsync(string email);
         Task<bool> ResetPasswordAsync(ResetPasswordRequestDto dto);
         Task<UserResponseDto?> GetProfileAsync(string userId);
-        Task<UserResponseDto> UpdateUserAsync(string userId, UpdateUserRequestDto dto);
+        Task<UserResponseDto> UpdateUserAsync(string userId, UpdateUserRequestDto dto, string callerRole);
         Task<bool> DeactivateUserAsync(string userId);
         Task<IEnumerable<UserResponseDto>> GetAllUsersAsync();
+        Task AdminForceSetPasswordAsync(string userId, string newPassword);
+        Task<UserResponseDto> AdminSetEmailAsync(string userId, string newEmail);
+        Task AdminDisableTwoFactorAsync(string userId);
+        Task AdminEnableTwoFactorAsync(string userId);
         // 2FA
         Task<bool> GetTwoFactorStatusAsync(string userId);
         Task EnableTwoFactorSendCodeAsync(string userId);

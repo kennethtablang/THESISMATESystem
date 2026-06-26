@@ -16,5 +16,11 @@ namespace THESISMATESystem.Server.Interfaces
         Task<IEnumerable<AnnouncementResponseDto>> GetStudentAnnouncementsAsync(string studentId);
         Task AssignStudentsToGroupAsync(string facultyICId, AssignStudentsToGroupRequestDto dto);
         Task RegenerateJoinCodeAsync(int classroomId, string facultyICId);
+        Task<CapstoneGroupResponseDto> CreateGroupInClassroomAsync(int classroomId, string callerId, string callerRole, CreateGroupInClassroomRequestDto dto);
+        Task<IEnumerable<ClassroomResponseDto>> GetAllClassroomsAsync();
+        Task InviteStudentsAsync(int classroomId, InviteStudentsRequestDto dto);
+        Task AcceptInvitationAsync(int enrollmentId, string studentId);
+        Task<IEnumerable<ClassroomInvitationDto>> GetMyInvitationsAsync(string studentId);
+        Task<IEnumerable<UserSummaryDto>> GetActiveEnrolledStudentsAsync();
     }
 }

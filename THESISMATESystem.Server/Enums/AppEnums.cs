@@ -4,10 +4,8 @@ namespace THESISMATESystem.Server.Enums
     {
         SuperAdmin,
         Admin,
-        Adviser,
-        FacultyIC,
+        Faculty,
         Student,
-        Panel
     }
 
     public enum ChapterStatus
@@ -31,6 +29,8 @@ namespace THESISMATESystem.Server.Enums
         Completed
     }
 
+    public enum EnrollmentStatus { Active, Invited }
+
     public enum NotificationType
     {
         ChapterSubmitted,
@@ -46,7 +46,15 @@ namespace THESISMATESystem.Server.Enums
         ConsultationRequested,
         ConsultationRequestResponded,
         ClassroomAnnouncement,
+        ClassroomInvitation,
         ManuscriptUpdated
+    }
+
+    public enum DefensePhase
+    {
+        TitleDefense,
+        ProposalDefense,
+        FinalDefense
     }
 
     public enum GroupStatus
