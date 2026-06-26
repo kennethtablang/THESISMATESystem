@@ -18,7 +18,9 @@ import Profile from './pages/profile/Profile'
 import Reports from './pages/reports/Reports'
 import Consultations from './pages/consultations/Consultations'
 import Defenses from './pages/defenses/Defenses'
+import DefenseScheduler from './pages/defenses/DefenseScheduler'
 import Groups from './pages/groups/Groups'
+import GroupDetail from './pages/groups/GroupDetail'
 import Chapters from './pages/chapters/Chapters'
 
 // Student pages
@@ -43,6 +45,8 @@ import ManuscriptViewer from './pages/adviser/ManuscriptViewer'
 
 // Admin pages
 import UserManagement from './pages/admin/UserManagement'
+import Advisers from './pages/admin/Advisers'
+import ClassroomAdmin from './pages/admin/ClassroomAdmin'
 
 // Monitoring
 import MonitoringDashboard from './pages/monitoring/MonitoringDashboard'
@@ -55,15 +59,12 @@ function DocumentsPage() {
   const { user } = useAuth()
   const role = user?.role
   if (role === 'Student') return <DocumentUpload />
-  if (['Adviser', 'Admin', 'SuperAdmin'].includes(role)) return <ManuscriptReview />
+  if (['Faculty', 'Admin', 'SuperAdmin'].includes(role)) return <ManuscriptReview />
   return <Navigate to="/dashboard" replace />
 }
 
 function CalendarPage() {
   const { user } = useAuth()
-  if (['FacultyIC', 'Admin', 'SuperAdmin'].includes(user?.role)) {
-    return <Navigate to="/consultation-manager" replace />
-  }
   return <ConsultationCalendar />
 }
 
@@ -71,14 +72,14 @@ function ManuscriptPage() {
   const { user } = useAuth()
   const role = user?.role
   if (role === 'Student') return <ManuscriptEditor />
-  if (['Adviser', 'Panel', 'FacultyIC', 'Admin', 'SuperAdmin'].includes(role)) return <ManuscriptViewer />
+  if (['Faculty', 'Admin', 'SuperAdmin'].includes(role)) return <ManuscriptViewer />
   return <Navigate to="/dashboard" replace />
 }
 
 function SystemFeaturesPage() {
   const { user } = useAuth()
   const role = user?.role
-  if (['Adviser', 'Admin', 'SuperAdmin'].includes(role)) return <AdviserSystemTracker />
+  if (['Faculty', 'Admin', 'SuperAdmin'].includes(role)) return <AdviserSystemTracker />
   return <StudentSystemTracker />
 }
 
@@ -147,7 +148,7 @@ export default function App() {
           <Route path="system-features" element={<SystemFeaturesPage />} />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="classroom" element={
-            <RoleGuard roles={['FacultyIC']}>
+            <RoleGuard roles={['Faculty', 'Admin', 'SuperAdmin']}>
               <ClassroomManager />
             </RoleGuard>
           } />
@@ -157,13 +158,23 @@ export default function App() {
             </RoleGuard>
           } />
           <Route path="consultation-manager" element={
-            <RoleGuard roles={['FacultyIC', 'Admin', 'SuperAdmin']}>
+            <RoleGuard roles={['Faculty', 'Admin', 'SuperAdmin']}>
               <ConsultationManager />
             </RoleGuard>
           } />
           <Route path="users" element={
             <RoleGuard roles={['Admin', 'SuperAdmin']}>
               <UserManagement />
+            </RoleGuard>
+          } />
+          <Route path="advisers" element={
+            <RoleGuard roles={['Admin', 'SuperAdmin']}>
+              <Advisers />
+            </RoleGuard>
+          } />
+          <Route path="classrooms" element={
+            <RoleGuard roles={['Admin', 'SuperAdmin']}>
+              <ClassroomAdmin />
             </RoleGuard>
           } />
 
@@ -173,12 +184,13 @@ export default function App() {
 
           {/* Shared routes */}
           <Route path="groups" element={<Groups />} />
-          <Route path="groups/:id" element={<Groups />} />
+          <Route path="groups/:id" element={<GroupDetail />} />
           <Route path="chapters" element={<Chapters />} />
           <Route path="consultations" element={<Consultations />} />
           <Route path="defenses" element={<Defenses />} />
+          <Route path="defense-scheduler" element={<DefenseScheduler />} />
           <Route path="ratings" element={
-            <RoleGuard roles={['Panel']}>
+            <RoleGuard roles={['Faculty']}>
               <Ratings />
             </RoleGuard>
           } />

@@ -40,8 +40,8 @@ async function request(method, path, body) {
     throw new Error(message)
   }
 
-  if (res.status === 204) return null
-  return res.json()
+  const text = await res.text()
+  return text ? JSON.parse(text) : null
 }
 
 async function requestMultipart(method, path, formData) {
@@ -68,8 +68,8 @@ async function requestMultipart(method, path, formData) {
     throw new Error(message)
   }
 
-  if (res.status === 204) return null
-  return res.json()
+  const text = await res.text()
+  return text ? JSON.parse(text) : null
 }
 
 const api = {
@@ -98,6 +98,10 @@ export const authService = {
   allUsers: () => api.get('/auth/users'),
   updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
   deactivate: (id) => api.patch(`/auth/users/${id}/deactivate`),
+  adminResetPassword: (id, newPassword) => api.post(`/auth/users/${id}/reset-password`, { newPassword }),
+  adminSetEmail: (id, email) => api.patch(`/auth/users/${id}/email`, { email }),
+  adminDisable2fa: (id) => api.patch(`/auth/users/${id}/2fa/disable`),
+  adminEnable2fa: (id) => api.patch(`/auth/users/${id}/2fa/enable`),
 }
 
 export const defenseService = {
@@ -125,6 +129,8 @@ export const groupService = {
   update: (id, data) => api.put(`/groups/${id}`, data),
   archive: (id) => api.patch(`/groups/${id}/archive`),
   members: (id) => api.get(`/groups/${id}/members`),
+  addMember: (id, userId) => api.post(`/groups/${id}/members`, { userId }),
+  removeMember: (id, userId) => api.delete(`/groups/${id}/members/${userId}`),
   updateVersion: (data) => api.patch('/groups/my-group/version', data),
   uploadLogo: (id, file) => {
     const fd = new FormData()
@@ -132,6 +138,7 @@ export const groupService = {
     return requestMultipart('POST', `/groups/${id}/logo`, fd)
   },
   logoUrl: (id) => `${BASE_URL}/groups/${id}/logo`,
+  setDeadlines: (id, data) => api.patch(`/groups/${id}/deadlines`, data),
 }
 
 export const manuscriptService = {
@@ -275,6 +282,12 @@ export const classroomService = {
   myAnnouncements: () => api.get('/classrooms/announcements/my'),
   assignGroup: (data) => api.post('/classrooms/assign-group', data),
   regenerateCode: (id) => api.post(`/classrooms/${id}/regenerate-code`),
+  createGroup: (classroomId, data) => api.post(`/classrooms/${classroomId}/groups`, data),
+  allClassrooms: () => api.get('/classrooms/all'),
+  invite: (id, data) => api.post(`/classrooms/${id}/invite`, data),
+  myInvitations: () => api.get('/classrooms/invitations/my'),
+  acceptInvitation: (id) => api.post(`/classrooms/invitations/${id}/accept`),
+  activeStudents: () => api.get('/classrooms/active-students'),
 }
 
 export const monitoringService = {
