@@ -43,21 +43,29 @@ export default function Defenses() {
   const [critError, setCritError] = useState('')
 
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
-  const isFacultyIC = user?.role === 'FacultyIC'
-  const isPanel = user?.role === 'Panel'
+  const isFaculty = user?.role === 'Faculty'
 
   useEffect(() => {
     async function load() {
       try {
         let defs = []
-        if (isAdmin || isFacultyIC) {
+        if (isAdmin) {
           defs = await defenseService.list()
-        } else if (isPanel) {
-          defs = await defenseService.mySchedules()
-        } else if (user?.role === 'Adviser') {
-          const grps = await groupService.list().catch(() => [])
-          const nested = await Promise.all(grps.map(g => defenseService.byGroup(g.id).catch(() => [])))
-          defs = nested.flat()
+        } else if (isFaculty) {
+          // Faculty may be panelist AND/OR adviser — load both and deduplicate
+          const [panelDefs, grps] = await Promise.all([
+            defenseService.mySchedules().catch(() => []),
+            groupService.list().catch(() => []),
+          ])
+          const adviserDefs = (await Promise.all(
+            grps.map(g => defenseService.byGroup(g.id).catch(() => []))
+          )).flat()
+          const seen = new Set()
+          defs = [...panelDefs, ...adviserDefs].filter(d => {
+            if (seen.has(d.id)) return false
+            seen.add(d.id)
+            return true
+          })
         } else {
           const grp = await groupService.myGroup().catch(() => null)
           if (grp) defs = await defenseService.byGroup(grp.id).catch(() => [])
@@ -71,11 +79,8 @@ export default function Defenses() {
             defenseService.criteria().catch(() => []),
           ])
           setGroups(grps)
-          setPanelUsers(allUsers.filter(u => u.role === 'Panel'))
+          setPanelUsers(allUsers.filter(u => u.role === 'Faculty'))
           setCriteriaList(crit)
-        }
-        if (isFacultyIC) {
-          defenseService.criteria().then(setCriteriaList).catch(() => {})
         }
       } catch {
         setDefenses([])
@@ -84,7 +89,7 @@ export default function Defenses() {
       }
     }
     load()
-  }, [isAdmin, isFacultyIC, isPanel, user?.role])
+  }, [isAdmin, isFaculty, user?.role])
 
   async function handleCreate(e) {
     e.preventDefault()
@@ -209,14 +214,12 @@ export default function Defenses() {
       />
       <div className="p-4 sm:p-8">
 
-        {/* FacultyIC / Admin info banner */}
-        {(isAdmin || isFacultyIC) && (
+        {/* Admin info banner */}
+        {isAdmin && (
           <div className="mb-5 p-4 rounded-xl text-sm flex items-start gap-3" style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
             <ToggleRight size={16} style={{ color: '#c9a84c', marginTop: 2, flexShrink: 0 }} />
             <span style={{ color: 'var(--text-secondary)' }}>
-              {isFacultyIC
-                ? 'Toggle the rating lock on each defense. When open, Panel members can submit/edit ratings. When locked, all submitted grades are immutable.'
-                : 'Admins can schedule defenses and assign panelists. Criteria set the rubric used by panel members for rating.'}
+              Admins can schedule defenses, assign panelists, and toggle the rating lock. When open, Faculty panelists can submit ratings. When locked, submitted grades are immutable.
             </span>
           </div>
         )}
@@ -342,8 +345,8 @@ export default function Defenses() {
           </div>
         )}
 
-        {/* Criteria summary for FacultyIC */}
-        {isFacultyIC && criteriaList.length > 0 && (
+        {/* Criteria summary for Faculty */}
+        {isFaculty && criteriaList.length > 0 && (
           <div className="mb-5 text-xs flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
             <Scale size={12} />
             {criteriaList.length} rating criteria configured · total weight {(criteriaList.reduce((s, c) => s + Number(c.weight), 0)).toFixed(0)}%
@@ -381,8 +384,8 @@ export default function Defenses() {
                     <DefenseCard
                       key={d.id}
                       defense={d}
-                      isPanel={isPanel}
-                      isFacultyIC={isFacultyIC || isAdmin}
+                      isFaculty={isFaculty}
+                      isFacultyIC={isAdmin}
                       isAdmin={isAdmin}
                       toggling={togglingId === d.id}
                       onView={() => setSelected(d)}
@@ -405,8 +408,8 @@ export default function Defenses() {
                     <DefenseCard
                       key={d.id}
                       defense={d}
-                      isPanel={isPanel}
-                      isFacultyIC={isFacultyIC || isAdmin}
+                      isFaculty={isFaculty}
+                      isFacultyIC={isAdmin}
                       isAdmin={isAdmin}
                       toggling={togglingId === d.id}
                       onView={() => setSelected(d)}
@@ -489,7 +492,7 @@ export default function Defenses() {
 
             <div className="flex items-center justify-between pt-2">
               <Badge variant={statusVariant(selected.status)} size="md">{selected.status}</Badge>
-              {isPanel && selected.isRatingOpen && (
+              {isFaculty && selected.isRatingOpen && (
                 <button className="btn-primary" onClick={() => { setSelected(null); navigate('/ratings') }}>
                   <Star size={14} /> Rate Defense
                 </button>
@@ -650,7 +653,7 @@ export default function Defenses() {
   )
 }
 
-function DefenseCard({ defense, isPanel, isFacultyIC, isAdmin, toggling, onView, onToggleRating, onRate, onEdit }) {
+function DefenseCard({ defense, isFaculty, isFacultyIC, isAdmin, toggling, onView, onToggleRating, onRate, onEdit }) {
   const isCompleted = !['Scheduled', 'Rescheduled'].includes(defense.status)
   const dateStr = defense.scheduledDateTime
     ? new Date(defense.scheduledDateTime).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
@@ -737,7 +740,7 @@ function DefenseCard({ defense, isPanel, isFacultyIC, isAdmin, toggling, onView,
               {defense.isRatingOpen ? <><Lock size={12} /> Lock</> : <><Unlock size={12} /> Open Rating</>}
             </button>
           )}
-          {isPanel && !isCompleted && (
+          {isFaculty && !isCompleted && (
             defense.isRatingOpen
               ? <button className="btn-primary text-xs px-3 py-1.5" onClick={e => { e.stopPropagation(); onRate() }}><Star size={13} /> Rate</button>
               : <span className="text-xs italic" style={{ color: 'var(--text-muted)' }}>Locked</span>
