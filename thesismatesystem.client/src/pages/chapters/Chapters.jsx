@@ -32,7 +32,7 @@ export default function Chapters() {
   const [chapterHistory, setChapterHistory] = useState([])
   const fileRef = useRef()
 
-  const isAdviser = user?.role === 'Adviser'
+  const isAdviser = user?.role === 'Faculty'
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
   const isStudent = user?.role === 'Student'
 
@@ -99,6 +99,10 @@ export default function Chapters() {
   async function handleReview(e) {
     e.preventDefault()
     if (!selected) return
+    if (reviewForm.status === 'UnderRevision' && !reviewForm.note.trim()) {
+      setReviewError('Please provide revision notes so the student knows what to fix.')
+      return
+    }
     setSaving(true)
     setReviewError('')
     try {
