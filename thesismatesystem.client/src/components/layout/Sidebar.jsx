@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, FileText, MessageSquare, Calendar,
   Bell, BarChart3, UserCircle, Star, Upload, Cpu, CalendarClock,
   ShieldCheck, BookOpen, School, Megaphone, PenLine, LogOut, Activity,
-  ChevronLeft, ChevronRight, GraduationCap, Building2,
+  ChevronLeft, ChevronRight, GraduationCap, Building2, CalendarRange,
 } from 'lucide-react'
 
 // ── Role config ───────────────────────────────────────────────────────
@@ -26,8 +26,9 @@ const navByRole = {
     { label: 'Manage Groups',    icon: Users,           to: '/groups' },
     { label: 'All Documents',    icon: FileText,        to: '/documents' },
     { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
-    { label: 'Defense Schedules',icon: Calendar,        to: '/defenses' },
-    { label: 'Reports',          icon: BarChart3,       to: '/reports' },
+    { label: 'Defense Schedules',  icon: Calendar,      to: '/defenses' },
+    { label: 'Defense Scheduler',  icon: CalendarRange, to: '/defense-scheduler' },
+    { label: 'Reports',            icon: BarChart3,     to: '/reports' },
   ],
   Admin: [
     { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
@@ -38,8 +39,9 @@ const navByRole = {
     { label: 'Chapters',         icon: FileText,        to: '/chapters' },
     { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
     { label: 'Consultations',    icon: MessageSquare,   to: '/consultations' },
-    { label: 'Defense Schedules',icon: Calendar,        to: '/defenses' },
-    { label: 'Reports',          icon: BarChart3,       to: '/reports' },
+    { label: 'Defense Schedules',  icon: Calendar,      to: '/defenses' },
+    { label: 'Defense Scheduler',  icon: CalendarRange, to: '/defense-scheduler' },
+    { label: 'Reports',            icon: BarChart3,     to: '/reports' },
   ],
   Faculty: [
     { label: 'Dashboard',             icon: LayoutDashboard, to: '/dashboard' },
