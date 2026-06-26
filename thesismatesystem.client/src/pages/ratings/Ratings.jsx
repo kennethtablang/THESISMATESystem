@@ -6,8 +6,10 @@ import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
 import Badge, { statusVariant } from '../../components/ui/Badge'
 import { defenseService } from '../../services/api'
+import { useAuth } from '../../contexts/AuthContext'
 
 export default function Ratings() {
+  const { user } = useAuth()
   const [defenses, setDefenses] = useState([])
   const [criteria, setCriteria] = useState([])
   const [loading, setLoading] = useState(true)
@@ -29,10 +31,15 @@ export default function Ratings() {
       const existing = await defenseService.getRatings(defense.id)
       const scores = {}
       const comments = {}
-      ;(existing ?? []).forEach(r => {
-        scores[r.criterion.id] = r.score.toString()
-        comments[r.criterion.id] = r.comments ?? ''
-      })
+      // Only pre-fill the current panelist's own previously submitted scores.
+      // getRatings returns all panelists' ratings; filtering by user.id prevents
+      // accidentally displaying (and re-submitting) another panelist's scores.
+      ;(existing ?? [])
+        .filter(r => r.panelist?.id === user?.id)
+        .forEach(r => {
+          scores[r.criterion.id] = r.score.toString()
+          comments[r.criterion.id] = r.comments ?? ''
+        })
       setRating(r => ({ ...r, scores, comments, loadingRatings: false }))
     } catch {
       setRating(r => ({ ...r, loadingRatings: false }))

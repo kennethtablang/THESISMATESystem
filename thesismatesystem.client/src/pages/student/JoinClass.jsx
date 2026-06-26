@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Megaphone, CheckCircle, ArrowRight } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Megaphone, CheckCircle, ArrowRight, Mail, Clock } from 'lucide-react'
 import TopBar from '../../components/layout/TopBar'
 import { classroomService } from '../../services/api'
 
@@ -8,18 +7,40 @@ export default function JoinClass() {
   const [code, setCode] = useState('')
   const [classroom, setClassroom] = useState(null)
   const [announcements, setAnnouncements] = useState([])
+  const [invitations, setInvitations] = useState([])
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
   const [error, setError] = useState('')
+  const [acceptingId, setAcceptingId] = useState(null)
 
   useEffect(() => {
-    classroomService.myClass().then(data => {
-      if (data) {
-        setClassroom(data)
+    Promise.all([
+      classroomService.myClass().catch(() => null),
+      classroomService.myInvitations().catch(() => []),
+    ]).then(([cls, invs]) => {
+      if (cls) {
+        setClassroom(cls)
         classroomService.myAnnouncements().then(setAnnouncements).catch(() => {})
       }
-    }).catch(() => {}).finally(() => setChecking(false))
+      setInvitations(Array.isArray(invs) ? invs : [])
+    }).finally(() => setChecking(false))
   }, [])
+
+  async function handleAccept(inv) {
+    setAcceptingId(inv.enrollmentId)
+    try {
+      await classroomService.acceptInvitation(inv.enrollmentId)
+      // Now load the classroom they just joined
+      const cls = await classroomService.myClass()
+      setClassroom(cls)
+      setInvitations(prev => prev.filter(i => i.enrollmentId !== inv.enrollmentId))
+      classroomService.myAnnouncements().then(setAnnouncements).catch(() => {})
+    } catch (err) {
+      setError(err.message || 'Failed to accept invitation.')
+    } finally {
+      setAcceptingId(null)
+    }
+  }
 
   async function handleJoin(e) {
     e.preventDefault()
@@ -52,6 +73,52 @@ export default function JoinClass() {
       <div className="p-4 sm:p-8 max-w-3xl">
         {!classroom ? (
           <>
+            {/* Pending invitations */}
+            {invitations.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-heading)' }}>
+                  <Mail size={15} style={{ color: '#c9a84c' }} /> Class Invitations
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                    style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+                    {invitations.length}
+                  </span>
+                </h3>
+                <div className="space-y-3">
+                  {invitations.map(inv => (
+                    <div key={inv.enrollmentId}
+                      className="rounded-2xl p-4 flex items-center gap-4"
+                      style={{ background: 'var(--bg-card)', border: '1px solid rgba(201,168,76,0.2)' }}
+                    >
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.2)' }}>
+                        <Clock size={18} style={{ color: '#c9a84c' }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-heading)' }}>
+                          {inv.className}
+                        </p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {inv.academicYear} · FIC: {inv.facultyIC?.fullName}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleAccept(inv)}
+                        disabled={acceptingId === inv.enrollmentId}
+                        className="btn-primary text-xs px-4 py-2 flex items-center gap-1.5 shrink-0"
+                      >
+                        {acceptingId === inv.enrollmentId ? 'Accepting…' : <><CheckCircle size={13} /> Accept</>}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="my-5 flex items-center gap-3">
+                  <div className="flex-1 h-px" style={{ background: 'var(--border-light)' }} />
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>or join with a code</span>
+                  <div className="flex-1 h-px" style={{ background: 'var(--border-light)' }} />
+                </div>
+              </div>
+            )}
+
             <div className="mb-6">
               <h2 className="page-title">Join a Class</h2>
               <p className="page-subtitle">Enter the code your Faculty-In-Charge shared with you</p>
