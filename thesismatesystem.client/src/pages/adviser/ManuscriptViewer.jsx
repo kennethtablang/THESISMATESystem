@@ -24,9 +24,7 @@ const SECTIONS = [
 
 // Role → color palette for comment avatars and badges
 const ROLE_PALETTE = {
-  Adviser:    { color: '#16a34a', bg: 'rgba(34,197,94,0.15)',  label: 'Adviser'    },
-  Panel:      { color: '#7c3aed', bg: 'rgba(139,92,246,0.15)', label: 'Panel Member' },
-  FacultyIC:  { color: '#0891b2', bg: 'rgba(6,182,212,0.15)',  label: 'Faculty IC' },
+  Faculty:    { color: '#16a34a', bg: 'rgba(34,197,94,0.15)',  label: 'Faculty'    },
   Admin:      { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', label: 'Admin'      },
   SuperAdmin: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)',  label: 'SuperAdmin' },
 }
@@ -200,8 +198,8 @@ function RevisionHistory({ history }) {
 
 export default function ManuscriptViewer() {
   const { user } = useAuth()
-  const canReview      = ['Adviser', 'FacultyIC', 'Panel'].includes(user?.role)
-  const canOpenRevision = ['Adviser', 'FacultyIC'].includes(user?.role)
+  const canReview      = ['Faculty', 'Admin', 'SuperAdmin'].includes(user?.role)
+  const canOpenRevision = ['Faculty', 'Admin', 'SuperAdmin'].includes(user?.role)
 
   const [groups,            setGroups]            = useState([])
   const [selectedGroup,     setSelectedGroup]     = useState(null)

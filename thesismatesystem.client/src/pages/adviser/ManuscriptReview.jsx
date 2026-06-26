@@ -72,7 +72,7 @@ function CommentPanel({ docId }) {
           {comments.map(c => (
             <li key={c.id} className="flex gap-3">
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                style={{ background: c.authorRole === 'Adviser' ? 'linear-gradient(135deg,#c9a84c,#d4b565)' : 'linear-gradient(135deg,#0a1628,#162238)', color: c.authorRole === 'Adviser' ? '#0a1628' : '#c9a84c' }}>
+                style={{ background: (c.authorRole === 'Faculty' || c.authorRole === 'Adviser') ? 'linear-gradient(135deg,#c9a84c,#d4b565)' : 'linear-gradient(135deg,#0a1628,#162238)', color: (c.authorRole === 'Faculty' || c.authorRole === 'Adviser') ? '#0a1628' : '#c9a84c' }}>
                 {c.author?.fullName?.[0] ?? '?'}
               </div>
               <div className="flex-1 p-3 rounded-xl" style={{ background: 'var(--bg-subtle)' }}>
