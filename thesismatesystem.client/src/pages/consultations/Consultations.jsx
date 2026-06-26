@@ -18,7 +18,7 @@ export default function Consultations() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const canLog = user?.role === 'Adviser'
+  const canLog = user?.role === 'Faculty'
 
   useEffect(() => {
     const loads = [consultationService.list().catch(() => [])]
