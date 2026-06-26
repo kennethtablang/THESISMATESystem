@@ -7,7 +7,7 @@ import {
   Users, FileText, Calendar, AlertCircle, ArrowRight, Plus,
   BarChart3, GraduationCap, MessageSquare, Upload, Cpu,
   CalendarClock, ShieldCheck, CheckCircle2, Star, BookOpen,
-  TrendingUp, Clock, ChevronRight,
+  TrendingUp, Clock, ChevronRight, School,
 } from 'lucide-react'
 import {
   groupService, chapterService, consultationService,
@@ -17,7 +17,7 @@ import {
 
 // ─── Shared UI ───────────────────────────────────────────────────────────────
 
-function WelcomeBanner({ badge, badgeColor, name, sub, gradient, extra }) {
+function WelcomeBanner({ badge, badgeColor, name, sub, gradient, extra, tags }) {
   const today = new Date()
   const day   = today.getDate()
   const month = today.toLocaleDateString('en-PH', { month: 'short' })
@@ -33,23 +33,28 @@ function WelcomeBanner({ badge, badgeColor, name, sub, gradient, extra }) {
 
       {/* Dot grid pattern */}
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 pointer-events-none"
         style={{
-          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.055) 1px, transparent 1px)',
           backgroundSize: '28px 28px',
         }}
       />
 
-      {/* Glow orb */}
+      {/* Large glow orb — right side */}
       <div
-        className="absolute -right-20 -bottom-20 w-72 h-72 rounded-full pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(201,168,76,0.1) 0%, transparent 65%)' }}
+        className="absolute -right-16 -top-16 w-80 h-80 rounded-full pointer-events-none"
+        style={{ background: `radial-gradient(circle, rgba(${badgeColor}, 0.08) 0%, transparent 65%)` }}
+      />
+      {/* Small gold orb — bottom left */}
+      <div
+        className="absolute -left-8 -bottom-12 w-48 h-48 rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(201,168,76,0.07) 0%, transparent 65%)' }}
       />
 
       {/* Content */}
       <div className="relative z-10 px-6 pt-6 pb-7 sm:px-8 sm:pt-7">
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             {/* Role badge */}
             <div
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg mb-4"
@@ -68,7 +73,7 @@ function WelcomeBanner({ badge, badgeColor, name, sub, gradient, extra }) {
             </div>
 
             <h2
-              className="font-display font-bold text-white truncate"
+              className="font-display font-bold text-white"
               style={{ fontSize: 'clamp(1.4rem, 3vw, 1.9rem)', letterSpacing: '-0.5px', lineHeight: 1.2 }}
             >
               {name}
@@ -76,12 +81,38 @@ function WelcomeBanner({ badge, badgeColor, name, sub, gradient, extra }) {
             <p className="mt-1.5 text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
               {sub}
             </p>
+
+            {/* Optional info tags (e.g. group name, project title) */}
+            {tags && tags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {tags.map((t) => (
+                  <div
+                    key={t.label}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                    style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                    }}
+                  >
+                    {t.icon && <t.icon size={11} style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }} />}
+                    <span className="text-xs" style={{ color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap' }}>
+                      {t.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Calendar widget */}
           <div
             className="hidden sm:flex flex-col items-center shrink-0 px-4 py-3 rounded-xl"
-            style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 72 }}
+            style={{
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              minWidth: 72,
+              backdropFilter: 'blur(8px)',
+            }}
           >
             <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.4)' }}>
               {month}
@@ -117,11 +148,21 @@ function StatCard({ icon: Icon, label, value, sub, color, onClick }) {
         style={{ background: color.icon }}
       />
 
-      <div className="pl-2">
-        <div className="flex items-start justify-between mb-4">
+      {/* Subtle top gradient wash */}
+      <div
+        className="absolute inset-x-0 top-0 h-16 pointer-events-none"
+        style={{ background: `linear-gradient(180deg, ${color.bg} 0%, transparent 100%)`, opacity: 0.6 }}
+      />
+
+      <div className="pl-2 relative">
+        <div className="flex items-start justify-between mb-3">
           <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{ background: color.bg }}
+            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+            style={{
+              background: color.bg,
+              border: `1px solid ${color.icon}25`,
+              boxShadow: `0 0 12px ${color.icon}20`,
+            }}
           >
             <Icon size={18} style={{ color: color.icon }} strokeWidth={1.75} />
           </div>
@@ -134,7 +175,7 @@ function StatCard({ icon: Icon, label, value, sub, color, onClick }) {
 
         <p
           className="font-display font-bold leading-none mb-2"
-          style={{ color: 'var(--text-heading)', fontSize: '2rem', letterSpacing: '-1.5px' }}
+          style={{ color: 'var(--text-heading)', fontSize: '1.9rem', letterSpacing: '-1.5px' }}
         >
           {value}
         </p>
@@ -319,6 +360,26 @@ function ProgressBanner({ approved, total, needsRevision }) {
 
 // ─── Student Dashboard ────────────────────────────────────────────────────────
 
+function NextEventBadge({ label, value, color, icon: Icon }) {
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-3 rounded-xl"
+      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+    >
+      <div
+        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+        style={{ background: `${color}18`, border: `1px solid ${color}30` }}
+      >
+        <Icon size={16} style={{ color }} strokeWidth={1.75} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{label}</p>
+        <p className="text-sm font-bold truncate" style={{ color: 'var(--text-heading)' }}>{value}</p>
+      </div>
+    </div>
+  )
+}
+
 function StudentDashboard({ user }) {
   const navigate = useNavigate()
   const [group, setGroup] = useState(null)
@@ -348,12 +409,26 @@ function StudentDashboard({ user }) {
 
   if (loading) return <DashboardLoader />
 
-  const approved     = chapters.filter((c) => c.status === 'Approved').length
+  const approved      = chapters.filter((c) => c.status === 'Approved').length
   const needsRevision = chapters.filter((c) => c.status === 'UnderRevision').length
-  const nextDefense  = defenses.find((d) => d.status !== 'Cancelled')
+  const nextDefense   = defenses.find((d) => d.status !== 'Cancelled')
   const nextDefenseDate = nextDefense
-    ? new Date(nextDefense.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
-    : '—'
+    ? new Date(nextDefense.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null
+
+  // Banner info tags
+  const bannerTags = []
+  if (group) {
+    bannerTags.push({ icon: Users, label: group.groupName ?? group.name ?? 'My Group' })
+    if (group.projectTitle || group.thesisTitle) {
+      bannerTags.push({ icon: BookOpen, label: group.projectTitle ?? group.thesisTitle })
+    }
+    if (group.classroomName) {
+      bannerTags.push({ icon: School, label: group.classroomName })
+    }
+  }
+
+  const hasUpcoming = nextDefense || consultations.length > 0
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
@@ -364,9 +439,10 @@ function StudentDashboard({ user }) {
         name={user?.firstName ?? user?.fullName?.split(' ')[0] ?? 'Student'}
         sub={
           group
-            ? `${group.groupName ?? group.name} — Keep progressing on your capstone.`
-            : 'You are not yet assigned to a capstone group.'
+            ? 'Keep progressing on your capstone. Your adviser is tracking your submissions.'
+            : 'You are not yet assigned to a capstone group. Contact your adviser.'
         }
+        tags={bannerTags}
         extra={
           chapters.length > 0 && (
             <ProgressBanner approved={approved} total={chapters.length} needsRevision={needsRevision} />
@@ -374,7 +450,8 @@ function StudentDashboard({ user }) {
         }
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <StatCard
           icon={FileText}
           label="Chapters Submitted"
@@ -402,13 +479,47 @@ function StudentDashboard({ user }) {
         <StatCard
           icon={Calendar}
           label="Next Defense"
-          value={nextDefenseDate}
-          sub={nextDefense ? 'Scheduled' : 'Not yet set'}
+          value={nextDefenseDate ?? '—'}
+          sub={nextDefense ? nextDefense.venue ?? 'Scheduled' : 'Not yet set'}
           color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
           onClick={() => navigate('/defenses')}
         />
       </div>
 
+      {/* Upcoming highlights strip */}
+      {hasUpcoming && (
+        <div className="mb-6">
+          <SectionHeader title="Upcoming" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {nextDefense && (
+              <NextEventBadge
+                icon={Calendar}
+                label="Next Defense"
+                value={nextDefenseDate}
+                color="#7c3aed"
+              />
+            )}
+            {consultations.length > 0 && (
+              <NextEventBadge
+                icon={MessageSquare}
+                label="Total Consultations This Semester"
+                value={`${consultations.length} session${consultations.length !== 1 ? 's' : ''} logged`}
+                color="#16a34a"
+              />
+            )}
+            {needsRevision > 0 && (
+              <NextEventBadge
+                icon={AlertCircle}
+                label="Action Required"
+                value={`${needsRevision} chapter${needsRevision !== 1 ? 's' : ''} need revision`}
+                color="#f59e0b"
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main content */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2">
           <SectionHeader
@@ -421,62 +532,63 @@ function StudentDashboard({ user }) {
           />
           <Card>
             {chapters.length === 0 ? (
-              <EmptyCard icon={FileText} message="No chapters submitted yet" hint="Upload your first chapter to get started" />
+              <EmptyCard
+                icon={FileText}
+                message="No chapters submitted yet"
+                hint="Upload your first chapter to get started"
+              />
             ) : (
               <div>
-                {chapters.map((c, idx) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center gap-4 px-5 py-4 transition-colors duration-100"
-                    style={{
-                      borderBottom: idx < chapters.length - 1 ? '1px solid var(--border-light)' : 'none',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    {/* Chapter number badge */}
+                {chapters.map((c, idx) => {
+                  const isApproved = c.status === 'Approved'
+                  const isRevision = c.status === 'UnderRevision'
+                  const accentColor = isApproved ? '#16a34a' : isRevision ? '#f59e0b' : 'var(--border-main)'
+                  const iconBg     = isApproved ? 'rgba(34,197,94,0.12)' : isRevision ? 'rgba(245,158,11,0.12)' : 'var(--bg-subtle)'
+                  const iconColor  = isApproved ? '#16a34a' : isRevision ? '#f59e0b' : 'var(--text-muted)'
+
+                  return (
                     <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
-                      style={{
-                        background:
-                          c.status === 'Approved'
-                            ? 'rgba(34,197,94,0.12)'
-                            : c.status === 'UnderRevision'
-                            ? 'rgba(245,158,11,0.12)'
-                            : 'var(--bg-subtle)',
-                        color:
-                          c.status === 'Approved'
-                            ? '#16a34a'
-                            : c.status === 'UnderRevision'
-                            ? '#f59e0b'
-                            : 'var(--text-muted)',
-                        border:
-                          c.status === 'Approved'
-                            ? '1px solid rgba(34,197,94,0.2)'
-                            : c.status === 'UnderRevision'
-                            ? '1px solid rgba(245,158,11,0.2)'
-                            : '1px solid var(--border-main)',
-                      }}
+                      key={c.id}
+                      className="relative flex items-center gap-4 px-5 py-4 transition-colors duration-100"
+                      style={{ borderBottom: idx < chapters.length - 1 ? '1px solid var(--border-light)' : 'none' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
-                      {c.chapterNumber ?? '—'}
-                    </div>
+                      {/* Status left stripe */}
+                      <div
+                        className="absolute left-0 inset-y-2 w-[3px] rounded-r-full"
+                        style={{ background: accentColor, opacity: isApproved || isRevision ? 0.7 : 0 }}
+                      />
 
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                        {c.title ?? c.chapterTitle ?? `Chapter ${c.chapterNumber}`}
-                      </p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                        {c.submittedAt
-                          ? new Date(c.submittedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
-                          : '—'}
-                      </p>
-                    </div>
+                      {/* Chapter number badge */}
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
+                        style={{
+                          background: iconBg,
+                          color: iconColor,
+                          border: `1px solid ${accentColor}35`,
+                        }}
+                      >
+                        {c.chapterNumber ?? '—'}
+                      </div>
 
-                    <Badge variant={statusVariant(c.status)} size="sm">
-                      {statusLabel(c.status)}
-                    </Badge>
-                  </div>
-                ))}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                          {c.title ?? c.chapterTitle ?? `Chapter ${c.chapterNumber}`}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                          {c.submittedAt
+                            ? `Submitted ${new Date(c.submittedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                            : 'Date unknown'}
+                        </p>
+                      </div>
+
+                      <Badge variant={statusVariant(c.status)} size="sm">
+                        {statusLabel(c.status)}
+                      </Badge>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </Card>
@@ -487,10 +599,10 @@ function StudentDashboard({ user }) {
           <Card>
             <QuickActions
               items={[
-                { icon: Upload,        label: 'Upload a document',   desc: 'Submit chapter or file', to: '/documents' },
-                { icon: Cpu,           label: 'System tracker',      desc: 'Monitor feature progress', to: '/system-features' },
-                { icon: CalendarClock, label: 'Consultation calendar', desc: 'View your schedule',   to: '/calendar' },
-                { icon: Calendar,      label: 'Defense schedule',    desc: 'Your upcoming defenses', to: '/defenses' },
+                { icon: Upload,        label: 'Upload a document',     desc: 'Submit chapter or file',   to: '/documents' },
+                { icon: Cpu,           label: 'System tracker',        desc: 'Monitor feature progress', to: '/system-features' },
+                { icon: CalendarClock, label: 'Consultation calendar', desc: 'View your schedule',       to: '/calendar' },
+                { icon: Calendar,      label: 'Defense schedule',      desc: 'Your upcoming defenses',   to: '/defenses' },
               ]}
             />
           </Card>
@@ -500,14 +612,16 @@ function StudentDashboard({ user }) {
   )
 }
 
-// ─── Adviser Dashboard ────────────────────────────────────────────────────────
+// ─── Faculty Dashboard ────────────────────────────────────────────────────────
 
-function AdviserDashboard({ user }) {
+function FacultyDashboard({ user }) {
   const navigate = useNavigate()
   const [groups, setGroups] = useState([])
   const [pendingChapters, setPendingChapters] = useState([])
   const [consultations, setConsultations] = useState([])
   const [panelAssignments, setPanelAssignments] = useState([])
+  const [schedules, setSchedules] = useState([])
+  const [monitoring, setMonitoring] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -515,10 +629,14 @@ function AdviserDashboard({ user }) {
       groupService.list().catch(() => []),
       consultationService.list().catch(() => []),
       defenseService.mySchedules().catch(() => []),
-    ]).then(async ([gs, co, pa]) => {
+      consultationScheduleService.all().catch(() => []),
+      monitoringService.summary().catch(() => null),
+    ]).then(async ([gs, co, pa, sc, mon]) => {
       setGroups(gs)
       setConsultations(co)
       setPanelAssignments(pa)
+      setSchedules(sc)
+      setMonitoring(mon)
       const chaptersByGroup = await Promise.all(
         gs.map((g) =>
           chapterService
@@ -542,22 +660,24 @@ function AdviserDashboard({ user }) {
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
         gradient="linear-gradient(135deg, #042e1f 0%, #064e3b 50%, #065f46 100%)"
-        badge="Adviser"
+        badge="Faculty"
         badgeColor="52,211,153"
-        name={user?.fullName ?? 'Adviser'}
+        name={user?.fullName ?? 'Faculty'}
         sub={
           pendingChapters.length > 0
             ? `${pendingChapters.length} chapter${pendingChapters.length !== 1 ? 's' : ''} awaiting your review.`
-            : 'No pending chapter reviews at this time.'
+            : upcomingPanelDefenses.length > 0
+            ? `${upcomingPanelDefenses.length} panel assignment${upcomingPanelDefenses.length !== 1 ? 's' : ''} upcoming.`
+            : 'Welcome back. All tasks are up to date.'
         }
       />
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
         <StatCard
           icon={Users}
-          label="Active Advisees"
+          label="Advised Groups"
           value={groups.length}
-          sub={groups.length === 1 ? '1 group' : `${groups.length} groups`}
+          sub="as adviser"
           color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
           onClick={() => navigate('/groups')}
         />
@@ -570,6 +690,14 @@ function AdviserDashboard({ user }) {
           onClick={() => navigate('/documents')}
         />
         <StatCard
+          icon={Star}
+          label="Panel Assignments"
+          value={upcomingPanelDefenses.length}
+          sub="upcoming defenses"
+          color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
+          onClick={() => navigate('/defenses')}
+        />
+        <StatCard
           icon={MessageSquare}
           label="Consultations"
           value={consultations.length}
@@ -577,31 +705,21 @@ function AdviserDashboard({ user }) {
           color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
           onClick={() => navigate('/consultations')}
         />
-        <StatCard
-          icon={Star}
-          label="Panel Assignments"
-          value={upcomingPanelDefenses.length}
-          sub="as panel member"
-          color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
-          onClick={() => navigate('/defenses')}
-        />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2 space-y-6">
-          <div>
-            <SectionHeader
-              title="Pending Reviews"
-              action={
-                <button className="btn-ghost text-xs" onClick={() => navigate('/documents')}>
-                  View manuscripts
-                </button>
-              }
-            />
-            <Card>
-              {pendingChapters.length === 0 ? (
-                <EmptyCard icon={CheckCircle2} message="No pending reviews" hint="All submitted chapters have been reviewed" />
-              ) : (
+          {pendingChapters.length > 0 && (
+            <div>
+              <SectionHeader
+                title="Pending Chapter Reviews"
+                action={
+                  <button className="btn-ghost text-xs" onClick={() => navigate('/chapters')}>
+                    View all
+                  </button>
+                }
+              />
+              <Card>
                 <div>
                   {pendingChapters.slice(0, 6).map((c, i) => (
                     <div
@@ -631,25 +749,76 @@ function AdviserDashboard({ user }) {
                     </div>
                   ))}
                 </div>
-              )}
+              </Card>
+            </div>
+          )}
+
+          {panelAssignments.length > 0 && (
+            <div>
+              <SectionHeader
+                title="My Panel Assignments"
+                action={
+                  <button className="btn-ghost text-xs" onClick={() => navigate('/defenses')}>
+                    View all
+                  </button>
+                }
+              />
+              <Card>
+                <div>
+                  {panelAssignments.map((d, idx) => {
+                    const isCompleted = d.status === 'Completed'
+                    return (
+                      <div
+                        key={d.id}
+                        className="flex items-center gap-4 px-5 py-4 transition-colors duration-100"
+                        style={{ borderBottom: idx < panelAssignments.length - 1 ? '1px solid var(--border-light)' : 'none' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                          style={{ background: 'rgba(124,58,237,0.12)' }}>
+                          <Star size={15} style={{ color: '#7c3aed' }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                            {d.groupName ?? '—'}
+                          </p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            {d.scheduledDateTime
+                              ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                              : '—'}
+                          </p>
+                        </div>
+                        <Badge variant={isCompleted ? 'approved' : statusVariant(d.status)} size="sm">
+                          {statusLabel(d.status)}
+                        </Badge>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {pendingChapters.length === 0 && panelAssignments.length === 0 && (
+            <Card>
+              <EmptyCard icon={CheckCircle2} message="All caught up" hint="No pending reviews or panel assignments at this time" />
             </Card>
-          </div>
+          )}
         </div>
 
         <div className="space-y-6">
-          <div>
-            <SectionHeader
-              title="My Advisees"
-              action={
-                <button className="btn-ghost text-xs" onClick={() => navigate('/groups')}>
-                  View all
-                </button>
-              }
-            />
-            <Card>
-              {groups.length === 0 ? (
-                <EmptyCard icon={Users} message="No groups assigned yet" />
-              ) : (
+          {groups.length > 0 && (
+            <div>
+              <SectionHeader
+                title="My Advised Groups"
+                action={
+                  <button className="btn-ghost text-xs" onClick={() => navigate('/groups')}>
+                    View all
+                  </button>
+                }
+              />
+              <Card>
                 <div>
                   {groups.map((g, idx) => {
                     const prog = g.milestoneProgress?.completionPercentage ?? 0
@@ -685,56 +854,23 @@ function AdviserDashboard({ user }) {
                     )
                   })}
                 </div>
-              )}
-            </Card>
-          </div>
-
-          {panelAssignments.length > 0 && (
-            <div>
-              <SectionHeader
-                title="My Panel Assignments"
-                action={
-                  <button className="btn-ghost text-xs" onClick={() => navigate('/defenses')}>
-                    View all
-                  </button>
-                }
-              />
-              <Card>
-                <div>
-                  {panelAssignments.map((d, idx) => {
-                    const isCompleted = d.status === 'Completed'
-                    return (
-                      <div
-                        key={d.id}
-                        className="flex items-center gap-4 px-5 py-4 transition-colors duration-100"
-                        style={{ borderBottom: idx < panelAssignments.length - 1 ? '1px solid var(--border-light)' : 'none' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                          style={{ background: 'rgba(124,58,237,0.12)' }}>
-                          <Star size={15} style={{ color: '#7c3aed' }} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                            {d.groupName ?? '—'}
-                          </p>
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                            {d.scheduledDateTime
-                              ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                              : '—'}
-                          </p>
-                        </div>
-                        <Badge variant={isCompleted ? 'approved' : statusVariant(d.status)} size="sm">
-                          {statusLabel(d.status)}
-                        </Badge>
-                      </div>
-                    )
-                  })}
-                </div>
               </Card>
             </div>
           )}
+
+          <div>
+            <SectionHeader title="Quick Actions" />
+            <Card>
+              <QuickActions
+                items={[
+                  { icon: BookOpen,      label: 'Review Manuscripts',    desc: 'View group manuscripts',       to: '/manuscript' },
+                  { icon: Calendar,      label: 'Defense Schedules',     desc: 'View assigned defenses',       to: '/defenses' },
+                  { icon: CalendarClock, label: 'Consultation Manager',  desc: 'Manage consultation slots',    to: '/consultation-manager' },
+                  { icon: School,        label: 'Classroom',             desc: 'Manage your classroom',        to: '/classroom' },
+                ]}
+              />
+            </Card>
+          </div>
         </div>
       </div>
     </div>
@@ -743,28 +879,99 @@ function AdviserDashboard({ user }) {
 
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 
+function MiniBarChart({ rows }) {
+  const max = Math.max(...rows.map((r) => r.count), 1)
+  return (
+    <div className="space-y-3">
+      {rows.map(({ label, count, color }) => (
+        <div key={label}>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+              <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+            </div>
+            <span className="text-xs font-bold tabular-nums" style={{ color }}>{count}</span>
+          </div>
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-subtle)' }}>
+            <div
+              className="h-2 rounded-full transition-all duration-700"
+              style={{ width: `${Math.round((count / max) * 100)}%`, background: color, opacity: 0.85 }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AlertBanner({ icon: Icon, color, title, body, action, onAction }) {
+  return (
+    <div
+      className="flex items-start gap-3 px-4 py-3 rounded-2xl mb-4"
+      style={{ background: `${color}10`, border: `1px solid ${color}30` }}
+    >
+      <Icon size={16} style={{ color, flexShrink: 0, marginTop: 2 }} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold" style={{ color }}>{title}</p>
+        <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{body}</p>
+      </div>
+      {action && (
+        <button className="btn-ghost text-xs shrink-0" onClick={onAction}>{action}</button>
+      )}
+    </div>
+  )
+}
+
 function AdminDashboard({ user }) {
   const navigate = useNavigate()
-  const [groups, setGroups] = useState([])
-  const [defenses, setDefenses] = useState([])
-  const [userCount, setUserCount] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [groups,        setGroups]        = useState([])
+  const [defenses,      setDefenses]      = useState([])
+  const [users,         setUsers]         = useState([])
+  const [consultations, setConsultations] = useState([])
+  const [monitoring,    setMonitoring]    = useState(null)
+  const [loading,       setLoading]       = useState(true)
 
   useEffect(() => {
     Promise.all([
       groupService.list().catch(() => []),
       defenseService.list().catch(() => []),
-      authService.allUsers().catch(() => null),
-    ]).then(([gs, de, us]) => {
+      authService.allUsers().catch(() => []),
+      consultationService.list().catch(() => []),
+      monitoringService.summary().catch(() => null),
+    ]).then(([gs, de, us, co, mon]) => {
       setGroups(gs)
       setDefenses(de)
-      if (us) setUserCount(us.filter(u => u.isActive).length)
+      setUsers(Array.isArray(us) ? us : [])
+      setConsultations(Array.isArray(co) ? co : [])
+      setMonitoring(mon)
     }).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <DashboardLoader />
 
-  const activeDefenses = defenses.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
+  // ── Derived ──────────────────────────────────────────────────────────────────
+  const activeUsers      = users.filter((u) => u.isActive)
+  const scheduledDefs    = defenses.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
+  const completedDefs    = defenses.filter((d) => d.status === 'Completed')
+  const cancelledDefs    = defenses.filter((d) => d.status === 'Cancelled')
+
+  const now     = new Date()
+  const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const soonDefenses = scheduledDefs
+    .filter((d) => d.scheduledDateTime && new Date(d.scheduledDateTime) >= now && new Date(d.scheduledDateTime) <= in7Days)
+    .sort((a, b) => new Date(a.scheduledDateTime) - new Date(b.scheduledDateTime))
+
+  const archivedGroups = groups.filter((g) => g.isArchived)
+  const activeGroups   = groups.filter((g) => !g.isArchived)
+
+  const monGroups   = monitoring?.groups ?? []
+  const atRiskGroups = monGroups.filter((g) => (g.consultationScore ?? 0) < 50)
+
+  // Consultations in the last 30 days
+  const cutoff30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const recentConsultations = consultations.filter(
+    (c) => c.createdAt && new Date(c.createdAt) >= cutoff30
+  )
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
@@ -773,189 +980,187 @@ function AdminDashboard({ user }) {
         badge="Administrator"
         badgeColor="165,180,252"
         name={user?.fullName ?? 'Admin'}
-        sub={`${groups.length} capstone group${groups.length !== 1 ? 's' : ''} · ${activeDefenses.length} defense${activeDefenses.length !== 1 ? 's' : ''} scheduled`}
+        sub={
+          atRiskGroups.length > 0
+            ? `${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} need attention · ${scheduledDefs.length} defense${scheduledDefs.length !== 1 ? 's' : ''} scheduled`
+            : `${groups.length} capstone group${groups.length !== 1 ? 's' : ''} · ${scheduledDefs.length} defense${scheduledDefs.length !== 1 ? 's' : ''} active`
+        }
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-        <StatCard icon={Users}         label="Total Groups"       value={groups.length}        sub="registered"         color={{ bg: 'rgba(59,130,246,0.12)',  icon: '#3b82f6' }} onClick={() => navigate('/groups')} />
-        <StatCard icon={GraduationCap} label="Active Defenses"   value={activeDefenses.length} sub="upcoming"          color={{ bg: 'rgba(34,197,94,0.12)',   icon: '#16a34a' }} onClick={() => navigate('/defenses')} />
-        <StatCard icon={ShieldCheck}   label="Active Users"      value={userCount ?? '—'}     sub="manage accounts"    color={{ bg: 'rgba(245,158,11,0.12)',  icon: '#f59e0b' }} onClick={() => navigate('/users')} />
-        <StatCard icon={BarChart3}     label="Reports"           value="Export"               sub="system reports"     color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }} onClick={() => navigate('/reports')} />
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2">
-          <SectionHeader
-            title="Defense Schedules"
-            action={
-              <button className="btn-primary text-xs px-3 py-1.5 gap-1" onClick={() => navigate('/defenses')}>
-                <Plus size={13} /> Schedule
-              </button>
-            }
-          />
-          <Card>
-            {defenses.length === 0 ? (
-              <EmptyCard icon={Calendar} message="No defenses scheduled" hint="Create a defense schedule to get started" />
-            ) : (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Group</th>
-                    <th>Date &amp; Time</th>
-                    <th className="hidden md:table-cell">Venue</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {defenses.slice(0, 8).map((d) => (
-                    <tr key={d.id}>
-                      <td className="font-semibold">{d.groupName ?? '—'}</td>
-                      <td>
-                        {d.scheduledDateTime
-                          ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', {
-                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                            })
-                          : '—'}
-                      </td>
-                      <td className="hidden md:table-cell">{d.venue ?? '—'}</td>
-                      <td>
-                        <Badge variant={statusVariant(d.status)} size="sm">
-                          {statusLabel(d.status)}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Card>
-        </div>
-
-        <div>
-          <SectionHeader title="Quick Actions" />
-          <Card>
-            <QuickActions
-              items={[
-                { icon: Plus,     label: 'Create new group',  desc: 'Add a capstone group',   to: '/groups' },
-                { icon: Calendar, label: 'Schedule defense',  desc: 'Set date, time, venue',   to: '/defenses' },
-                { icon: Users,    label: 'Manage users',      desc: 'Roles & accounts',        to: '/users' },
-                { icon: BarChart3, label: 'Generate report',  desc: 'Export system data',      to: '/reports' },
-              ]}
-            />
-          </Card>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── FacultyIC Dashboard ──────────────────────────────────────────────────────
-
-function FacultyICDashboard({ user }) {
-  const navigate = useNavigate()
-  const [schedules, setSchedules] = useState([])
-  const [defenses, setDefenses] = useState([])
-  const [panelAssignments, setPanelAssignments] = useState([])
-  const [monitoring, setMonitoring] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    Promise.all([
-      consultationScheduleService.all().catch(() => []),
-      defenseService.list().catch(() => []),
-      defenseService.mySchedules().catch(() => []),
-      monitoringService.summary().catch(() => null),
-    ]).then(([sc, de, pa, mon]) => {
-      setSchedules(sc)
-      setDefenses(de)
-      setPanelAssignments(pa)
-      setMonitoring(mon)
-    }).finally(() => setLoading(false))
-  }, [])
-
-  if (loading) return <DashboardLoader />
-
-  const activeDefenses = defenses.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
-  const monGroups = monitoring?.groups ?? []
-
-  return (
-    <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
-      <WelcomeBanner
-        gradient="linear-gradient(135deg, #032736 0%, #0c3a4f 50%, #0e4a63 100%)"
-        badge="Faculty in Charge"
-        badgeColor="34,211,238"
-        name={user?.fullName ?? 'FacultyIC'}
-        sub="Manage consultation schedules and group presentations."
-      />
-
-      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+      {/* ── Stat cards ──────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <StatCard
-          icon={CalendarClock}
-          label="Consultation Slots"
-          value={schedules.length}
-          sub="created"
-          color={{ bg: 'rgba(6,182,212,0.12)', icon: '#0891b2' }}
-          onClick={() => navigate('/consultation-manager')}
+          icon={Users}         label="Total Groups"
+          value={groups.length} sub={`${activeGroups.length} active · ${archivedGroups.length} archived`}
+          color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
+          onClick={() => navigate('/groups')}
         />
         <StatCard
-          icon={Calendar}
-          label="Scheduled Defenses"
-          value={activeDefenses.length}
-          sub="upcoming"
+          icon={GraduationCap} label="Defenses"
+          value={defenses.length} sub={`${scheduledDefs.length} upcoming`}
           color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
           onClick={() => navigate('/defenses')}
         />
         <StatCard
-          icon={Users}
-          label="Groups"
-          value={monitoring?.totalGroups ?? monGroups.length}
-          sub="capstone groups"
+          icon={ShieldCheck}   label="Active Users"
+          value={activeUsers.length} sub={`of ${users.length} total accounts`}
           color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }}
-          onClick={() => navigate('/consultation-manager')}
+          onClick={() => navigate('/users')}
+        />
+        <StatCard
+          icon={MessageSquare} label="Consultations"
+          value={consultations.length} sub={`${recentConsultations.length} in last 30 days`}
+          color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
+          onClick={() => navigate('/consultations')}
         />
       </div>
 
+      {/* ── Overview row ────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+
+        {/* Defense pipeline */}
+        <Card>
+          <CardHeader title="Defense Pipeline" />
+          <div className="px-5 py-4">
+            {defenses.length === 0 ? (
+              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>No defenses recorded</p>
+            ) : (
+              <>
+                <MiniBarChart rows={[
+                  { label: 'Scheduled',  count: scheduledDefs.length,  color: '#3b82f6' },
+                  { label: 'Completed',  count: completedDefs.length,  color: '#16a34a' },
+                  { label: 'Cancelled',  count: cancelledDefs.length,  color: '#dc2626' },
+                ]} />
+                <div
+                  className="mt-4 pt-3 flex items-center justify-between border-t"
+                  style={{ borderColor: 'var(--border-light)' }}
+                >
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Total</span>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-heading)' }}>{defenses.length}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+
+        {/* Group overview */}
+        <Card>
+          <CardHeader title="Group Overview" />
+          <div className="px-5 py-4">
+            {groups.length === 0 ? (
+              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>No groups registered</p>
+            ) : (
+              <>
+                <MiniBarChart rows={[
+                  { label: 'Active',   count: activeGroups.length,   color: '#16a34a' },
+                  { label: 'Archived', count: archivedGroups.length, color: '#6b7280' },
+                ]} />
+
+                {/* Consultation health summary */}
+                {monGroups.length > 0 && (
+                  <div
+                    className="mt-4 pt-3 border-t space-y-1"
+                    style={{ borderColor: 'var(--border-light)' }}
+                  >
+                    {[
+                      { label: 'On track (≥75%)',  count: monGroups.filter((g) => (g.consultationScore ?? 0) >= 75).length, color: '#16a34a' },
+                      { label: 'Moderate (50–74%)', count: monGroups.filter((g) => { const s = g.consultationScore ?? 0; return s >= 50 && s < 75 }).length, color: '#c9a84c' },
+                      { label: 'At risk (<50%)',    count: atRiskGroups.length, color: '#ef4444' },
+                    ].map(({ label, count, color }) => (
+                      <div key={label} className="flex justify-between items-center">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</span>
+                        </div>
+                        <span className="text-xs font-semibold tabular-nums" style={{ color }}>{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </Card>
+
+        {/* User distribution */}
+        <Card>
+          <CardHeader title="User Distribution" />
+          <div className="px-5 py-4">
+            {users.length === 0 ? (
+              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>No user data</p>
+            ) : (
+              <>
+                <RoleBreakdownBar users={users} />
+                <div
+                  className="mt-4 pt-3 flex items-center justify-between border-t"
+                  style={{ borderColor: 'var(--border-light)' }}
+                >
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Active accounts</span>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-heading)' }}>
+                    {activeUsers.length} / {users.length}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Alert banners ────────────────────────────────────────────────────── */}
+      {atRiskGroups.length > 0 && (
+        <AlertBanner
+          icon={AlertCircle}
+          color="#f59e0b"
+          title={`${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} below consultation threshold`}
+          body={atRiskGroups.slice(0, 3).map((g) => g.groupName ?? g.projectTitle).join(', ') + (atRiskGroups.length > 3 ? ` and ${atRiskGroups.length - 3} more` : '') + ' — score below 50%'}
+          action="View monitoring"
+          onAction={() => navigate('/monitoring')}
+        />
+      )}
+      {soonDefenses.length > 0 && (
+        <AlertBanner
+          icon={Calendar}
+          color="#3b82f6"
+          title={`${soonDefenses.length} defense${soonDefenses.length !== 1 ? 's' : ''} scheduled in the next 7 days`}
+          body={`Next: ${soonDefenses[0]?.groupName} on ${new Date(soonDefenses[0]?.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+          action="View all"
+          onAction={() => navigate('/defenses')}
+        />
+      )}
+
+      {/* ── Main content ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Pre-Finals Consultation Progress */}
+
+        {/* Monitoring table — 2/3 */}
         <div className="xl:col-span-2">
           <SectionHeader
-            title="Pre-Finals Consultation Progress"
+            title="Group Consultation Monitoring"
             action={
-              <button className="btn-ghost text-xs" onClick={() => navigate('/consultation-manager')}>
-                Manage slots
+              <button className="btn-ghost text-xs" onClick={() => navigate('/monitoring')}>
+                Full report
               </button>
             }
           />
           <Card>
             {monGroups.length === 0 ? (
-              <EmptyCard
-                icon={TrendingUp}
-                message="No group data available"
-                hint="Group consultation progress will appear here once groups are active."
-              />
+              <EmptyCard icon={TrendingUp} message="No monitoring data yet" hint="Data appears once groups are active and logging consultations" />
             ) : (
               <div>
                 {/* Column headers */}
                 <div
-                  className="grid grid-cols-12 gap-2 px-5 py-2 text-xs font-semibold uppercase tracking-wide"
-                  style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-light)' }}
+                  className="grid grid-cols-12 gap-2 px-5 py-2 text-xs font-semibold uppercase tracking-wide border-b"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--border-light)' }}
                 >
-                  <span className="col-span-6">Research Title</span>
+                  <span className="col-span-5">Group / Project</span>
                   <span className="col-span-2 text-center">Total</span>
                   <span className="col-span-2 text-center">Last 30d</span>
-                  <span className="col-span-2 text-right">Score</span>
+                  <span className="col-span-3 text-right">Score</span>
                 </div>
 
                 {monGroups.map((g, idx) => {
-                  const displayName = g.projectTitle || g.groupName
-                  const score = g.consultationScore ?? 0
-                  const scoreColor =
-                    score >= 75 ? '#16a34a' :
-                    score >= 50 ? '#c9a84c' : '#ef4444'
-                  const scoreBg =
-                    score >= 75 ? 'rgba(34,197,94,0.10)' :
-                    score >= 50 ? 'rgba(201,168,76,0.10)' : 'rgba(239,68,68,0.08)'
-
+                  const score      = g.consultationScore ?? 0
+                  const scoreColor = score >= 75 ? '#16a34a' : score >= 50 ? '#c9a84c' : '#ef4444'
+                  const scoreBg    = score >= 75 ? 'rgba(34,197,94,0.10)' : score >= 50 ? 'rgba(201,168,76,0.10)' : 'rgba(239,68,68,0.08)'
                   return (
                     <div
                       key={g.groupId}
@@ -965,14 +1170,12 @@ function FacultyICDashboard({ user }) {
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
                       <div className="grid grid-cols-12 gap-2 px-5 pt-3 pb-1 items-center">
-                        <div className="col-span-6 min-w-0">
+                        <div className="col-span-5 min-w-0">
                           <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                            {displayName}
+                            {g.projectTitle || g.groupName}
                           </p>
                           {g.projectTitle && (
-                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                              {g.groupName}
-                            </p>
+                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{g.groupName}</p>
                           )}
                         </div>
                         <div className="col-span-2 text-center">
@@ -985,7 +1188,7 @@ function FacultyICDashboard({ user }) {
                             {g.consultationsLast30Days ?? 0}
                           </span>
                         </div>
-                        <div className="col-span-2 flex justify-end">
+                        <div className="col-span-3 flex justify-end">
                           <span
                             className="text-xs font-bold px-2 py-0.5 rounded-lg"
                             style={{ background: scoreBg, color: scoreColor }}
@@ -994,8 +1197,6 @@ function FacultyICDashboard({ user }) {
                           </span>
                         </div>
                       </div>
-
-                      {/* Progress bar */}
                       <div className="px-5 pb-3">
                         <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
                           <div
@@ -1012,198 +1213,103 @@ function FacultyICDashboard({ user }) {
           </Card>
         </div>
 
-        {/* Quick Actions + Panel Assignments */}
+        {/* Right column — defense list + quick actions */}
         <div className="space-y-6">
+          <div>
+            <SectionHeader
+              title="Defense Schedule"
+              action={
+                <button className="btn-primary text-xs px-3 py-1.5 gap-1" onClick={() => navigate('/defenses')}>
+                  <Plus size={13} /> Add
+                </button>
+              }
+            />
+            <Card>
+              {scheduledDefs.length === 0 ? (
+                <EmptyCard icon={Calendar} message="No upcoming defenses" hint="Schedule a defense to see it here" />
+              ) : (
+                <div>
+                  {scheduledDefs.slice(0, 5).map((d, idx) => (
+                    <div
+                      key={d.id}
+                      className="flex items-center gap-3 px-5 py-3 transition-colors duration-100"
+                      style={{ borderBottom: idx < Math.min(scheduledDefs.length, 5) - 1 ? '1px solid var(--border-light)' : 'none' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ background: 'rgba(59,130,246,0.1)' }}
+                      >
+                        <Calendar size={15} style={{ color: '#3b82f6' }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                          {d.groupName ?? '—'}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                          {d.scheduledDateTime
+                            ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                            : '—'}
+                        </p>
+                      </div>
+                      <Badge variant={statusVariant(d.status)} size="sm">
+                        {statusLabel(d.status)}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+
           <div>
             <SectionHeader title="Quick Actions" />
             <Card>
               <QuickActions
                 items={[
-                  { icon: Plus,          label: 'Create consultation slot', desc: 'Open a new schedule slot', to: '/consultation-manager' },
-                  { icon: Calendar,      label: 'Manage presentations',     desc: 'Defense schedules',        to: '/defenses' },
-                  { icon: CalendarClock, label: 'View calendar',            desc: 'All scheduled events',    to: '/calendar' },
-                  { icon: BookOpen,      label: 'Classroom',                desc: 'Manage your classroom',   to: '/classroom' },
+                  { icon: Plus,      label: 'Create new group', desc: 'Add a capstone group',  to: '/groups' },
+                  { icon: Calendar,  label: 'Schedule defense', desc: 'Set date, time, venue',  to: '/defenses' },
+                  { icon: Users,     label: 'Manage users',     desc: 'Roles & accounts',       to: '/users' },
+                  { icon: BarChart3, label: 'Generate report',  desc: 'Export system data',     to: '/reports' },
                 ]}
               />
             </Card>
           </div>
-
-          {panelAssignments.length > 0 && (
-            <div>
-              <SectionHeader
-                title="My Panel Assignments"
-                action={
-                  <button className="btn-ghost text-xs" onClick={() => navigate('/defenses')}>
-                    View all
-                  </button>
-                }
-              />
-              <Card>
-                <div>
-                  {panelAssignments.map((d, idx) => {
-                    const isCompleted = d.status === 'Completed'
-                    return (
-                      <div
-                        key={d.id}
-                        className="flex items-center gap-4 px-5 py-4 transition-colors duration-100"
-                        style={{ borderBottom: idx < panelAssignments.length - 1 ? '1px solid var(--border-light)' : 'none' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                          style={{ background: 'rgba(124,58,237,0.12)' }}>
-                          <Star size={15} style={{ color: '#7c3aed' }} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                            {d.groupName ?? '—'}
-                          </p>
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                            {d.scheduledDateTime
-                              ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                              : '—'}
-                          </p>
-                        </div>
-                        <Badge variant={isCompleted ? 'approved' : statusVariant(d.status)} size="sm">
-                          {statusLabel(d.status)}
-                        </Badge>
-                      </div>
-                    )
-                  })}
-                </div>
-              </Card>
-            </div>
-          )}
         </div>
       </div>
     </div>
   )
 }
 
-// ─── Panel Dashboard ──────────────────────────────────────────────────────────
-
-function PanelDashboard({ user }) {
-  const navigate = useNavigate()
-  const [defenses, setDefenses] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    defenseService.mySchedules().catch(() => []).then(setDefenses).finally(() => setLoading(false))
-  }, [])
-
-  if (loading) return <DashboardLoader />
-
-  const completed = defenses.filter((d) => d.status === 'Completed').length
-
-  return (
-    <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
-      <WelcomeBanner
-        gradient="linear-gradient(135deg, #2e1065 0%, #4c1d95 50%, #5b21b6 100%)"
-        badge="Panel Member"
-        badgeColor="167,139,250"
-        name={user?.fullName ?? 'Panel Member'}
-        sub="Ratings open when activated by the Department Chair."
-      />
-
-      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
-        <StatCard
-          icon={Calendar}
-          label="Assigned Defenses"
-          value={defenses.length}
-          sub="total"
-          color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
-          onClick={() => navigate('/defenses')}
-        />
-        <StatCard
-          icon={CheckCircle2}
-          label="Completed"
-          value={completed}
-          sub="defenses reviewed"
-          color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
-        />
-        <StatCard
-          icon={Star}
-          label="Pending Rating"
-          value={defenses.length - completed}
-          sub="awaiting evaluation"
-          color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }}
-        />
-      </div>
-
-      <SectionHeader title="Assigned Defenses" />
-      <Card>
-        {defenses.length === 0 ? (
-          <EmptyCard
-            icon={Calendar}
-            message="No defenses assigned yet"
-            hint="Assignments will appear here once scheduled by the Faculty in Charge"
-          />
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Group</th>
-                <th className="hidden sm:table-cell">Title</th>
-                <th>Date</th>
-                <th>Rating</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {defenses.map((d) => (
-                <tr key={d.id}>
-                  <td className="font-semibold">{d.groupName ?? '—'}</td>
-                  <td className="hidden sm:table-cell" style={{ maxWidth: '200px' }}>
-                    <p className="truncate text-sm">{d.projectTitle ?? d.thesisTitle ?? '—'}</p>
-                  </td>
-                  <td>
-                    {d.scheduledDateTime
-                      ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
-                      : '—'}
-                  </td>
-                  <td>
-                    {d.isRatingOpen
-                      ? <Badge variant="approved" size="sm">Open</Badge>
-                      : <Badge variant="secondary" size="sm">Locked</Badge>}
-                  </td>
-                  <td>
-                    {d.isRatingOpen
-                      ? <button className="btn-primary text-xs px-3 py-1.5" onClick={() => navigate('/defenses')}>Rate</button>
-                      : <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Locked</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-    </div>
-  )
-}
 
 // ─── SuperAdmin Dashboard ─────────────────────────────────────────────────────
 
 const ROLE_META = {
   SuperAdmin: { color: '#dc2626', bg: 'rgba(239,68,68,0.12)' },
   Admin:      { color: '#ea580c', bg: 'rgba(249,115,22,0.12)' },
-  Adviser:    { color: '#16a34a', bg: 'rgba(34,197,94,0.12)' },
-  FacultyIC:  { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  Faculty:    { color: '#16a34a', bg: 'rgba(34,197,94,0.12)' },
   Student:    { color: '#0284c7', bg: 'rgba(14,165,233,0.12)' },
-  Panel:      { color: '#7c3aed', bg: 'rgba(139,92,246,0.12)' },
 }
 
 function RoleBreakdownBar({ users }) {
   const total = users.length
   if (total === 0) return null
-  const byRole = Object.entries(
-    users.reduce((acc, u) => { acc[u.role] = (acc[u.role] ?? 0) + 1; return acc }, {})
-  ).sort((a, b) => b[1] - a[1])
+  const countOf = (role) => users.filter((u) => u.role === role).length
+  const rows = [
+    { role: 'Student',    count: countOf('Student') },
+    { role: 'Faculty',    count: countOf('Faculty') },
+    { role: 'Admin',      count: countOf('Admin') },
+    { role: 'SuperAdmin', count: countOf('SuperAdmin') },
+  ]
+  const max = Math.max(...rows.map((r) => r.count), 1)
 
   return (
     <div className="space-y-3">
-      {byRole.map(([role, count]) => {
-        const meta = ROLE_META[role] ?? { color: '#6b7280', bg: 'rgba(107,114,128,0.12)' }
-        const pct = Math.round((count / total) * 100)
+      {rows.map(({ role, count }) => {
+        const meta = ROLE_META[role]
+        const pct  = Math.round((count / max) * 100)
+        const pctOfTotal = total > 0 ? Math.round((count / total) * 100) : 0
         return (
           <div key={role}>
             <div className="flex items-center justify-between mb-1.5">
@@ -1212,7 +1318,7 @@ function RoleBreakdownBar({ users }) {
                 <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{role}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{pct}%</span>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{pctOfTotal}%</span>
                 <span
                   className="text-xs font-semibold tabular-nums"
                   style={{ color: meta.color, minWidth: 18, textAlign: 'right' }}
@@ -1236,95 +1342,361 @@ function RoleBreakdownBar({ users }) {
 
 function SuperAdminDashboard({ user }) {
   const navigate = useNavigate()
-  const [groups, setGroups] = useState([])
-  const [users, setUsers] = useState([])
-  const [defenses, setDefenses] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [groups,        setGroups]        = useState([])
+  const [users,         setUsers]         = useState([])
+  const [defenses,      setDefenses]      = useState([])
+  const [consultations, setConsultations] = useState([])
+  const [monitoring,    setMonitoring]    = useState(null)
+  const [loading,       setLoading]       = useState(true)
 
   useEffect(() => {
     Promise.all([
       groupService.list().catch(() => []),
       authService.allUsers().catch(() => []),
       defenseService.list().catch(() => []),
-    ]).then(([gs, us, de]) => {
+      consultationService.list().catch(() => []),
+      monitoringService.summary().catch(() => null),
+    ]).then(([gs, us, de, co, mon]) => {
       setGroups(gs)
-      setUsers(us)
+      setUsers(Array.isArray(us) ? us : [])
       setDefenses(de)
+      setConsultations(Array.isArray(co) ? co : [])
+      setMonitoring(mon)
     }).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <DashboardLoader />
 
-  const activeUsers  = users.filter(u => u.isActive).length
-  const activeGroups = groups.filter(g => g.status === 'Active' || !g.status).length
-  const upcomingDefs = defenses.filter(d => d.status !== 'Cancelled' && d.status !== 'Completed').length
+  // ── Derived ──────────────────────────────────────────────────────────────────
+  const activeUsers    = users.filter((u) => u.isActive)
+  const inactiveUsers  = users.filter((u) => !u.isActive)
+  const twoFaUsers     = users.filter((u) => u.twoFactorEnabled)
+  const scheduledDefs  = defenses.filter((d) => d.status !== 'Cancelled' && d.status !== 'Completed')
+  const completedDefs  = defenses.filter((d) => d.status === 'Completed')
+  const cancelledDefs  = defenses.filter((d) => d.status === 'Cancelled')
+  const archivedGroups = groups.filter((g) => g.isArchived)
+  const activeGroups   = groups.filter((g) => !g.isArchived)
+
+  const now     = new Date()
+  const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const soonDefenses = scheduledDefs
+    .filter((d) => d.scheduledDateTime && new Date(d.scheduledDateTime) >= now && new Date(d.scheduledDateTime) <= in7Days)
+    .sort((a, b) => new Date(a.scheduledDateTime) - new Date(b.scheduledDateTime))
+
+  const cutoff30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const recentConsultations = consultations.filter((c) => c.createdAt && new Date(c.createdAt) >= cutoff30)
+
+  const monGroups    = monitoring?.groups ?? []
+  const atRiskGroups = monGroups.filter((g) => (g.consultationScore ?? 0) < 50)
+
+  const twoFaPct = users.length > 0 ? Math.round((twoFaUsers.length / users.length) * 100) : 0
+
+  // Most recently registered users (sort by id as proxy if no createdAt)
+  const recentUsers = [...users]
+    .sort((a, b) => (b.id > a.id ? 1 : -1))
+    .slice(0, 4)
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
-        gradient="linear-gradient(135deg, #111111 0%, #1c1c1c 50%, #252525 100%)"
+        gradient="linear-gradient(135deg, #0d0d0d 0%, #181818 50%, #212121 100%)"
         badge="Super Administrator"
         badgeColor="148,163,184"
         name={user?.fullName ?? 'SuperAdmin'}
-        sub={`${users.length} users · ${groups.length} groups · full system access`}
+        sub={
+          atRiskGroups.length > 0
+            ? `${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} need attention · ${users.length} users · full system access`
+            : `${users.length} users · ${groups.length} groups · full system access`
+        }
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-        <StatCard icon={Users}         label="Total Users"       value={users.length}   sub={`${activeUsers} active`}           color={{ bg: 'rgba(59,130,246,0.12)',  icon: '#3b82f6' }} onClick={() => navigate('/users')} />
-        <StatCard icon={GraduationCap} label="Capstone Groups"   value={groups.length}  sub={`${activeGroups} active`}          color={{ bg: 'rgba(34,197,94,0.12)',   icon: '#16a34a' }} onClick={() => navigate('/groups')} />
-        <StatCard icon={Calendar}      label="Upcoming Defenses" value={upcomingDefs}   sub="scheduled"                        color={{ bg: 'rgba(124,58,237,0.12)',  icon: '#7c3aed' }} onClick={() => navigate('/defenses')} />
-        <StatCard icon={BarChart3}     label="Reports"           value="Export"         sub="system-wide data"                 color={{ bg: 'rgba(245,158,11,0.12)',  icon: '#f59e0b' }} onClick={() => navigate('/reports')} />
+      {/* ── Stat cards ──────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          icon={Users}         label="Total Users"
+          value={users.length} sub={`${activeUsers.length} active · ${inactiveUsers.length} inactive`}
+          color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
+          onClick={() => navigate('/users')}
+        />
+        <StatCard
+          icon={GraduationCap} label="Capstone Groups"
+          value={groups.length} sub={`${activeGroups.length} active · ${archivedGroups.length} archived`}
+          color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
+          onClick={() => navigate('/groups')}
+        />
+        <StatCard
+          icon={Calendar}      label="Defenses"
+          value={defenses.length} sub={`${scheduledDefs.length} upcoming`}
+          color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
+          onClick={() => navigate('/defenses')}
+        />
+        <StatCard
+          icon={MessageSquare} label="Consultations"
+          value={consultations.length} sub={`${recentConsultations.length} in last 30 days`}
+          color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }}
+          onClick={() => navigate('/consultations')}
+        />
       </div>
 
+      {/* ── Overview row ────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+
+        {/* Defense pipeline */}
+        <Card>
+          <CardHeader title="Defense Pipeline" />
+          <div className="px-5 py-4">
+            {defenses.length === 0 ? (
+              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>No defenses recorded</p>
+            ) : (
+              <>
+                <MiniBarChart rows={[
+                  { label: 'Scheduled',  count: scheduledDefs.length, color: '#7c3aed' },
+                  { label: 'Completed',  count: completedDefs.length, color: '#16a34a' },
+                  { label: 'Cancelled',  count: cancelledDefs.length, color: '#dc2626' },
+                ]} />
+                <div className="mt-4 pt-3 flex items-center justify-between border-t" style={{ borderColor: 'var(--border-light)' }}>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Total</span>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-heading)' }}>{defenses.length}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+
+        {/* Group overview */}
+        <Card>
+          <CardHeader title="Group Overview" />
+          <div className="px-5 py-4">
+            {groups.length === 0 ? (
+              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>No groups registered</p>
+            ) : (
+              <>
+                <MiniBarChart rows={[
+                  { label: 'Active',   count: activeGroups.length,   color: '#16a34a' },
+                  { label: 'Archived', count: archivedGroups.length, color: '#6b7280' },
+                ]} />
+                {monGroups.length > 0 && (
+                  <div className="mt-4 pt-3 border-t space-y-1" style={{ borderColor: 'var(--border-light)' }}>
+                    {[
+                      { label: 'On track (≥75%)',   count: monGroups.filter((g) => (g.consultationScore ?? 0) >= 75).length,                                        color: '#16a34a' },
+                      { label: 'Moderate (50–74%)',  count: monGroups.filter((g) => { const s = g.consultationScore ?? 0; return s >= 50 && s < 75 }).length,        color: '#c9a84c' },
+                      { label: 'At risk (<50%)',     count: atRiskGroups.length,                                                                                     color: '#ef4444' },
+                    ].map(({ label, count, color }) => (
+                      <div key={label} className="flex justify-between items-center">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</span>
+                        </div>
+                        <span className="text-xs font-semibold tabular-nums" style={{ color }}>{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </Card>
+
+        {/* User distribution */}
+        <Card>
+          <CardHeader title="User Distribution" />
+          <div className="px-5 py-4">
+            {users.length === 0 ? (
+              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>No user data</p>
+            ) : (
+              <>
+                <RoleBreakdownBar users={users} />
+                <div className="mt-4 pt-3 border-t space-y-2" style={{ borderColor: 'var(--border-light)' }}>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Active accounts</span>
+                    <span className="text-xs font-bold" style={{ color: 'var(--text-heading)' }}>
+                      {activeUsers.length} / {users.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>2FA enabled</span>
+                    <span className="text-xs font-bold" style={{ color: twoFaPct >= 50 ? '#16a34a' : '#f59e0b' }}>
+                      {twoFaUsers.length} ({twoFaPct}%)
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Alert banners ─────────────────────────────────────────────────────── */}
+      {atRiskGroups.length > 0 && (
+        <AlertBanner
+          icon={AlertCircle}
+          color="#f59e0b"
+          title={`${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} below consultation threshold`}
+          body={atRiskGroups.slice(0, 3).map((g) => g.groupName ?? g.projectTitle).join(', ') + (atRiskGroups.length > 3 ? ` and ${atRiskGroups.length - 3} more` : '') + ' — score below 50%'}
+          action="View monitoring"
+          onAction={() => navigate('/monitoring')}
+        />
+      )}
+      {soonDefenses.length > 0 && (
+        <AlertBanner
+          icon={Calendar}
+          color="#7c3aed"
+          title={`${soonDefenses.length} defense${soonDefenses.length !== 1 ? 's' : ''} scheduled in the next 7 days`}
+          body={`Next: ${soonDefenses[0]?.groupName} on ${new Date(soonDefenses[0]?.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+          action="View all"
+          onAction={() => navigate('/defenses')}
+        />
+      )}
+      {inactiveUsers.length > 0 && (
+        <AlertBanner
+          icon={ShieldCheck}
+          color="#6b7280"
+          title={`${inactiveUsers.length} deactivated account${inactiveUsers.length !== 1 ? 's' : ''}`}
+          body="These accounts cannot log in. Review in user management if re-activation is needed."
+          action="Manage users"
+          onAction={() => navigate('/users')}
+        />
+      )}
+
+      {/* ── Main content ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+        {/* Monitoring table — 2/3 */}
         <div className="xl:col-span-2">
           <SectionHeader
-            title="Defense Schedules"
-            action={<button className="btn-ghost text-xs" onClick={() => navigate('/defenses')}>View all</button>}
+            title="Group Consultation Monitoring"
+            action={
+              <button className="btn-ghost text-xs" onClick={() => navigate('/monitoring')}>Full report</button>
+            }
           />
           <Card>
-            {defenses.length === 0 ? (
-              <EmptyCard icon={Calendar} message="No defenses scheduled" />
+            {monGroups.length === 0 ? (
+              <EmptyCard icon={TrendingUp} message="No monitoring data yet" hint="Data appears once groups are active and logging consultations" />
             ) : (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Group</th>
-                    <th>Date &amp; Time</th>
-                    <th className="hidden md:table-cell">Venue</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {defenses.slice(0, 6).map((d) => (
-                    <tr key={d.id}>
-                      <td className="font-semibold">{d.groupName ?? '—'}</td>
-                      <td>
-                        {d.scheduledDateTime
-                          ? new Date(d.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                          : '—'}
-                      </td>
-                      <td className="hidden md:table-cell">{d.venue ?? '—'}</td>
-                      <td>
-                        <Badge variant={statusVariant(d.status)} size="sm">{statusLabel(d.status)}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div>
+                <div
+                  className="grid grid-cols-12 gap-2 px-5 py-2 text-xs font-semibold uppercase tracking-wide border-b"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--border-light)' }}
+                >
+                  <span className="col-span-5">Group / Project</span>
+                  <span className="col-span-2 text-center">Total</span>
+                  <span className="col-span-2 text-center">Last 30d</span>
+                  <span className="col-span-3 text-right">Score</span>
+                </div>
+                {monGroups.map((g, idx) => {
+                  const score      = g.consultationScore ?? 0
+                  const scoreColor = score >= 75 ? '#16a34a' : score >= 50 ? '#c9a84c' : '#ef4444'
+                  const scoreBg    = score >= 75 ? 'rgba(34,197,94,0.10)' : score >= 50 ? 'rgba(201,168,76,0.10)' : 'rgba(239,68,68,0.08)'
+                  return (
+                    <div
+                      key={g.groupId}
+                      className="transition-colors duration-100"
+                      style={{ borderBottom: idx < monGroups.length - 1 ? '1px solid var(--border-light)' : 'none' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div className="grid grid-cols-12 gap-2 px-5 pt-3 pb-1 items-center">
+                        <div className="col-span-5 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                            {g.projectTitle || g.groupName}
+                          </p>
+                          {g.projectTitle && (
+                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{g.groupName}</p>
+                          )}
+                        </div>
+                        <div className="col-span-2 text-center">
+                          <span className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
+                            {g.totalConsultations ?? 0}
+                          </span>
+                        </div>
+                        <div className="col-span-2 text-center">
+                          <span className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
+                            {g.consultationsLast30Days ?? 0}
+                          </span>
+                        </div>
+                        <div className="col-span-3 flex justify-end">
+                          <span
+                            className="text-xs font-bold px-2 py-0.5 rounded-lg"
+                            style={{ background: scoreBg, color: scoreColor }}
+                          >
+                            {score}%
+                          </span>
+                        </div>
+                      </div>
+                      <div className="px-5 pb-3">
+                        <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
+                          <div
+                            className="h-1.5 rounded-full transition-all duration-500"
+                            style={{ width: `${score}%`, background: scoreColor }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </Card>
         </div>
 
+        {/* Right column */}
         <div className="space-y-6">
+
+          {/* Recent users */}
           <div>
-            <SectionHeader title="User Distribution" />
+            <SectionHeader
+              title="Recent Users"
+              action={
+                <button className="btn-ghost text-xs" onClick={() => navigate('/users')}>Manage all</button>
+              }
+            />
             <Card>
-              <div className="px-5 py-4">
-                <RoleBreakdownBar users={users} />
-              </div>
+              {recentUsers.length === 0 ? (
+                <EmptyCard icon={Users} message="No users yet" />
+              ) : (
+                <div>
+                  {recentUsers.map((u, idx) => {
+                    const roleColor = { Student: '#38bdf8', Faculty: '#34d399', Admin: '#fb923c', SuperAdmin: '#f87171' }[u.role] ?? '#c9a84c'
+                    const initials  = u.fullName?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '??'
+                    return (
+                      <div
+                        key={u.id}
+                        className="flex items-center gap-3 px-5 py-3 transition-colors duration-100"
+                        style={{ borderBottom: idx < recentUsers.length - 1 ? '1px solid var(--border-light)' : 'none' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold"
+                          style={{
+                            background: 'linear-gradient(135deg, #0a1628, #162238)',
+                            color: roleColor,
+                            border: `1.5px solid ${roleColor}40`,
+                          }}
+                        >
+                          {initials}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                            {u.fullName ?? u.email}
+                          </p>
+                          <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{u.email}</p>
+                        </div>
+                        <span
+                          className="text-xs font-medium shrink-0 px-2 py-0.5 rounded-lg"
+                          style={{ background: `${roleColor}15`, color: roleColor, border: `1px solid ${roleColor}30` }}
+                        >
+                          {u.role}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </Card>
           </div>
+
+          {/* Quick actions */}
           <div>
             <SectionHeader title="Quick Actions" />
             <Card>
@@ -1358,11 +1730,9 @@ export default function Dashboard() {
 
   const dashboards = {
     Student:    StudentDashboard,
-    Adviser:    AdviserDashboard,
+    Faculty:    FacultyDashboard,
     Admin:      AdminDashboard,
     SuperAdmin: SuperAdminDashboard,
-    FacultyIC:  FacultyICDashboard,
-    Panel:      PanelDashboard,
   }
 
   const RoleDashboard = dashboards[user?.role] ?? StudentDashboard
