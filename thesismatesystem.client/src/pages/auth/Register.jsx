@@ -77,11 +77,13 @@ export default function Register() {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [duplicateId, setDuplicateId] = useState(false)
   const [focused, setFocused] = useState('')
   const [errorKey, setErrorKey] = useState(0)
 
   function set(key, val) {
     setForm((f) => ({ ...f, [key]: val }))
+    if (key === 'studentId') setDuplicateId(false)
   }
 
   function triggerError(msg) {
@@ -92,6 +94,8 @@ export default function Register() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    setDuplicateId(false)
+    if (!form.studentId.trim()) { triggerError('Student ID is required.'); return }
     if (form.password !== form.confirmPassword) { triggerError('Passwords do not match.'); return }
     if (form.password.length < 8) { triggerError('Password must be at least 8 characters.'); return }
     if (!/[A-Z]/.test(form.password)) { triggerError('Password must contain at least one uppercase letter.'); return }
@@ -99,16 +103,22 @@ export default function Register() {
     setLoading(true)
     try {
       await register({
-        firstName: form.firstName.trim(),
+        firstName:  form.firstName.trim(),
         middleName: form.middleName.trim() || undefined,
-        lastName: form.lastName.trim(),
-        email: form.email.trim(),
-        password: form.password,
-        role: 'Student',
+        lastName:   form.lastName.trim(),
+        studentId:  form.studentId.trim(),
+        email:      form.email.trim(),
+        password:   form.password,
+        role:       'Student',
       })
       navigate(`/check-email?email=${encodeURIComponent(form.email.trim())}`)
     } catch (err) {
-      triggerError(err.message || 'Registration failed. Please try again.')
+      const msg = err.message || ''
+      if (msg.includes('DUPLICATE_STUDENT_ID')) {
+        setDuplicateId(true)
+      } else {
+        triggerError(msg || 'Registration failed. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -299,7 +309,38 @@ export default function Register() {
               </p>
             </div>
 
-            {/* Error */}
+            {/* Duplicate student ID error */}
+            {duplicateId && (
+              <div
+                key={errorKey}
+                className="mb-5 rounded-xl overflow-hidden auth-error-shake"
+                style={{ border: '1px solid rgba(220,38,38,0.25)' }}
+              >
+                <div className="px-4 py-3 flex items-start gap-2.5" style={{ background: 'rgba(220,38,38,0.07)' }}>
+                  <AlertCircle size={15} className="shrink-0 mt-0.5" style={{ color: '#dc2626' }} />
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: '#dc2626' }}>Student ID already registered</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                      This Student ID is already associated with an existing account.
+                      If you believe this is a mistake, please contact the administrator.
+                    </p>
+                  </div>
+                </div>
+                <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: 'rgba(220,38,38,0.04)', borderTop: '1px solid rgba(220,38,38,0.12)' }}>
+                  <Mail size={13} style={{ color: '#dc2626', flexShrink: 0 }} />
+                  <a
+                    href="mailto:adminthesismate@psu.edu.ph?subject=Student%20ID%20Already%20Registered"
+                    className="text-xs font-semibold hover:underline"
+                    style={{ color: '#dc2626' }}
+                  >
+                    adminthesismate@psu.edu.ph
+                  </a>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>— tap to email the administrator</span>
+                </div>
+              </div>
+            )}
+
+            {/* Generic error */}
             {error && (
               <div
                 key={errorKey}
@@ -352,7 +393,7 @@ export default function Register() {
 
                   <div>
                     <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
-                      Student ID <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
+                      Student ID
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none">
@@ -360,7 +401,8 @@ export default function Register() {
                       </div>
                       <input type="text" className="form-input pl-9" placeholder="2021-12345"
                         value={form.studentId} onChange={(e) => set('studentId', e.target.value)}
-                        onFocus={() => setFocused('studentId')} onBlur={() => setFocused('')} />
+                        onFocus={() => setFocused('studentId')} onBlur={() => setFocused('')}
+                        required />
                     </div>
                   </div>
                 </div>
