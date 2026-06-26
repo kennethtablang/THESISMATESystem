@@ -19,7 +19,7 @@ export function PageLoader() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
       <Spinner size="lg" />
-      <p className="text-sm" style={{ color: '#9ca3af' }}>Loading...</p>
+      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading...</p>
     </div>
   )
 }
