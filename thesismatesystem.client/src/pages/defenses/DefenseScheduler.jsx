@@ -170,14 +170,16 @@ export default function DefenseScheduler() {
   const progressByPhase = useMemo(() => {
     const result = {}
     PHASES.forEach(ph => {
-      const ids = new Set(defenses.filter(d => d.phase === ph.key).map(d => d.capstoneGroupId))
+      const ids = new Set(
+        defenses.filter(d => d.phase === ph.key && d.status !== 'Cancelled').map(d => d.capstoneGroupId)
+      )
       result[ph.key] = { scheduled: ids.size, total: groups.length }
     })
     return result
   }, [defenses, groups])
 
   const scheduledForPhase = useMemo(
-    () => defenses.filter(d => d.phase === activePhase),
+    () => defenses.filter(d => d.phase === activePhase && d.status !== 'Cancelled'),
     [defenses, activePhase]
   )
   const scheduledGroupIds = useMemo(
@@ -187,8 +189,8 @@ export default function DefenseScheduler() {
   const unscheduledGroups = groups.filter(g => !scheduledGroupIds.has(g.id))
   const scheduledGroups   = groups.filter(g =>  scheduledGroupIds.has(g.id))
 
-  // ── Calendar events (all phases, color-coded) ───────────────────────────────
-  const calendarEvents = defenses.map(d => ({
+  // ── Calendar events (all phases except cancelled, color-coded) ─────────────
+  const calendarEvents = defenses.filter(d => d.status !== 'Cancelled').map(d => ({
     id:              String(d.id),
     title:           d.groupName,
     start:           d.scheduledDateTime,
@@ -241,7 +243,8 @@ export default function DefenseScheduler() {
     setCancelling(true)
     try {
       await defenseService.cancel(clickedDef.id)
-      setDefenses(prev => prev.filter(d => d.id !== clickedDef.id))
+      // Mark as Cancelled (keeps history) so the group reappears as unscheduled
+      setDefenses(prev => prev.map(d => d.id === clickedDef.id ? { ...d, status: 'Cancelled' } : d))
       setClickedDef(null)
       setCancelConfirm(false)
     } catch {
