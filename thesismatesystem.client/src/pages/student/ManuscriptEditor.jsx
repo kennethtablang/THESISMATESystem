@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { manuscriptService, groupService } from '../../services/api'
+import { manuscriptService, groupService, documentService } from '../../services/api'
+import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import { PageLoader } from '../../components/ui/Spinner'
 import {
   Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Image, Table as TableIcon, Save, Lock, Users, List, ListOrdered, Strikethrough,
-  Wifi, WifiOff
+  Wifi, WifiOff, ZoomIn, ZoomOut, Download, FileText, ChevronDown,
+  Heading1, Heading2, Heading3, MessageSquare, X, Trash2, FileUp, Check,
 } from 'lucide-react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -23,11 +25,13 @@ import TableRow from '@tiptap/extension-table-row'
 import TableCell from '@tiptap/extension-table-cell'
 import TableHeader from '@tiptap/extension-table-header'
 import Collaboration from '@tiptap/extension-collaboration'
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
-import { Extension } from '@tiptap/core'
+import { Extension, Mark, mergeAttributes } from '@tiptap/core'
+import { CollaborativeCursors } from '../../lib/CollaborativeCursors'
 import * as Y from 'yjs'
-import { HubConnectionBuilder, LogLevel, HubConnectionState } from '@microsoft/signalr'
+import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import { SignalRYjsProvider } from '../../lib/SignalRYjsProvider'
+import { downloadDocx, generateDocxBlob } from '../../lib/exportDocx'
+import { GrammarCheck } from '../../lib/GrammarCheckExtension'
 
 // Custom FontSize extension (free alternative to @tiptap-pro/extension-font-size)
 const FontSize = Extension.create({
@@ -53,6 +57,31 @@ const FontSize = Extension.create({
   }
 })
 
+// Inline comment mark — stores commentId, synced via Yjs
+const CommentMark = Mark.create({
+  name: 'comment',
+  excludes: '',
+  addAttributes() {
+    return {
+      commentId: {
+        default: null,
+        parseHTML: el => el.getAttribute('data-comment-id'),
+        renderHTML: attrs => ({ 'data-comment-id': attrs.commentId }),
+      },
+    }
+  },
+  parseHTML() { return [{ tag: 'mark[data-comment-id]' }] },
+  renderHTML({ HTMLAttributes }) {
+    return ['mark', mergeAttributes({ class: 'ms-comment-mark' }, HTMLAttributes), 0]
+  },
+  addCommands() {
+    return {
+      setComment: (commentId) => ({ commands }) => commands.setMark(this.name, { commentId }),
+      unsetComment: () => ({ commands }) => commands.unsetMark(this.name),
+    }
+  },
+})
+
 const SECTIONS = [
   { key: 'chapter1', label: 'Chapter 1', subtitle: 'Introduction' },
   { key: 'chapter2', label: 'Chapter 2', subtitle: 'RRL' },
@@ -75,6 +104,20 @@ const FONT_SIZES = ['10', '11', '12', '14', '16', '18', '20', '24', '28', '32']
 
 const USER_COLORS = ['#ef4444', '#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6']
 
+const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), hi)
+
+function hexAlpha(hex, a) {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${a})`
+}
+
+function fmtPHT(isoStr) {
+  return new Date(new Date(isoStr).getTime() - 8 * 60 * 60 * 1000)
+    .toLocaleString('en-PH', { dateStyle: 'short', timeStyle: 'short' })
+}
+
 function userColor(uid) {
   let h = 0
   for (let i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) | 0
@@ -91,15 +134,6 @@ function countReferences(html) {
   return ps.length
 }
 
-// Role → accent color for reviewer comment dots in the student sidebar
-const ROLE_COLORS = {
-  Adviser:    '#16a34a',
-  Panel:      '#7c3aed',
-  FacultyIC:  '#0891b2',
-  Admin:      '#f59e0b',
-  SuperAdmin: '#ef4444',
-}
-
 export default function ManuscriptEditor() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -114,6 +148,7 @@ export default function ManuscriptEditor() {
   const [ydoc, setYdoc] = useState(null)
   const [provider, setProvider] = useState(null)
   const [hubState, setHubState] = useState('disconnected') // 'connecting'|'connected'|'disconnected'
+  const [finalizing, setFinalizing] = useState(false)
 
   const connectionRef = useRef(null)
   const providerRef = useRef(null)
@@ -149,19 +184,26 @@ export default function ManuscriptEditor() {
       .build()
 
     conn.onreconnecting(() => setHubState('connecting'))
-    conn.onreconnected(() => setHubState('connected'))
+    conn.onreconnected(async () => {
+      setHubState('connected')
+      // Re-join the section room after reconnect so the hub resumes sending updates
+      await conn.invoke('JoinSection', group.id, activeKeyRef.current).catch(console.warn)
+    })
     conn.onclose(() => setHubState('disconnected'))
 
+    let active = true  // guards against StrictMode double-mount race
     setHubState('connecting')
     conn.start()
       .then(() => {
+        if (!active) return
         setHubState('connected')
         connectionRef.current = conn
         activateProvider(group.id, activeKeyRef.current, conn)
       })
-      .catch(() => setHubState('disconnected'))
+      .catch(() => { if (active) setHubState('disconnected') })
 
     return () => {
+      active = false
       providerRef.current?.disconnect()
       providerRef.current = null
       conn.stop()
@@ -226,6 +268,31 @@ export default function ManuscriptEditor() {
       setSaveError(err.message)
     } finally {
       setVoteLoading(false)
+    }
+  }
+
+  const FINALIZABLE_SECTIONS = new Set(['chapter1','chapter2','chapter3','chapter4','chapter5','references'])
+  const activeSectionLabel = activeKey === 'references'
+    ? 'References'
+    : `Chapter ${activeKey.replace('chapter', '')}`
+
+  async function handleFinalize(html, sectionLabel) {
+    if (!group?.id || finalizing || !FINALIZABLE_SECTIONS.has(activeKey)) return
+    setFinalizing(true)
+    setSaveError('')
+    try {
+      const blob = await generateDocxBlob({
+        sections: [{ label: sectionLabel, html: html ?? '' }],
+        title: sectionLabel,
+      })
+      const fd = new FormData()
+      fd.append('file', blob, `${activeKey}.docx`)
+      await documentService.finalizeSection(group.id, activeKey, fd)
+      toast.success(`${activeSectionLabel} exported to Upload Documents.`)
+    } catch (err) {
+      setSaveError(err.message || 'Failed to export section.')
+    } finally {
+      setFinalizing(false)
     }
   }
 
@@ -490,6 +557,10 @@ export default function ManuscriptEditor() {
               sectionData={sections[activeKey]}
               onSave={(ed) => handleSave(ed, ydoc)}
               hubState={hubState}
+              allSections={sections}
+              groupName={group?.groupName ?? 'Manuscript'}
+              onFinalize={handleFinalize}
+              finalizing={finalizing}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-2"
@@ -504,13 +575,54 @@ export default function ManuscriptEditor() {
   )
 }
 
-function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData, onSave, hubState }) {
+function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData, onSave, hubState, allSections, groupName, onFinalize, finalizing }) {
   const [fontFamily, setFontFamily] = useState('')
   const [fontSize, setFontSize] = useState('12')
   const [textColor, setTextColor] = useState('#000000')
   const [imageError, setImageError] = useState('')
   const [imageUploading, setImageUploading] = useState(false)
+  const [zoom, setZoom] = useState(100)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [floatBar, setFloatBar] = useState(null)
+  const [showCommentInput, setShowCommentInput] = useState(false)
+  const [commentText, setCommentText] = useState('')
+  const [savedSelection, setSavedSelection] = useState(null)
+  const [showCommentPanel, setShowCommentPanel] = useState(true)
+  const [commentsData, setCommentsData] = useState({})
+  const [commentPositions, setCommentPositions] = useState([])
+  const [activeCommentId, setActiveCommentId] = useState(null)
+  const [paperHeight, setPaperHeight] = useState(1056)
+  const exportMenuRef = useRef(null)
+  const canvasScrollRef = useRef(null)
+  const commentInputRef = useRef(null)
+  const pageRef = useRef(null)
+  const commentStyleRef = useRef(null)
+  // Ref so document-level event closures can read the current value without re-registering
+  const commentInputOpenRef = useRef(false)
+  const [collabUsers, setCollabUsers] = useState([])
   const fileInputRef = useRef(null)
+
+  // Auto-save
+  const autoSaveTimerRef = useRef(null)
+  const savedFlashTimerRef = useRef(null)
+  const prevSavingRef = useRef(false)
+  const [recentlySaved, setRecentlySaved] = useState(false)
+
+  useEffect(() => {
+    if (!provider) return
+    const sync = () => {
+      const states = provider.awareness.getStates()
+      const others = []
+      states.forEach((state, clientId) => {
+        if (clientId !== provider.awareness.clientID && state.user)
+          others.push({ ...state.user, cursor: state.cursor ?? null })
+      })
+      setCollabUsers(others)
+    }
+    sync()
+    provider.awareness.on('change', sync)
+    return () => provider.awareness.off('change', sync)
+  }, [provider])
 
   const sectionLabel = sectionKey === 'references'
     ? 'References'
@@ -518,7 +630,9 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ history: false }),
+      // undoRedo: false → Collaboration manages its own Yjs-based undo history
+      // underline: false → we supply it explicitly below to keep the toolbar command name stable
+      StarterKit.configure({ history: false, undoRedo: false, underline: false }),
       UnderlineExt,
       TextStyle,
       FontFamily.configure({ types: ['textStyle'] }),
@@ -532,32 +646,315 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
       TableHeader,
       TableCell,
       Collaboration.configure({ document: ydoc }),
-      CollaborationCursor.configure({
-        provider,
-        user: {
-          name: provider?.awareness?.getLocalState()?.user?.name ?? 'You',
-          color: provider?.awareness?.getLocalState()?.user?.color ?? '#c9a84c',
-        },
-      }),
+      CollaborativeCursors.configure({ provider }),
+      CommentMark,
+      GrammarCheck,
     ],
     editable: !isLocked,
     editorProps: {
-      attributes: { class: 'ms-editor-body' },
+      attributes: { class: 'ms-editor-body', spellcheck: 'false' },
     },
   }, [ydoc, provider, isLocked])
 
-  // Ctrl+S / Cmd+S shortcut
+  // Ctrl+S / Cmd+S shortcut — cancel any pending debounce and save immediately
   useEffect(() => {
     if (!editor) return
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
+        clearTimeout(autoSaveTimerRef.current)
         onSave(editor)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [editor, onSave])
+
+  // Auto-save: 2-second debounce after every content change
+  useEffect(() => {
+    if (!editor || !onSave || isLocked) return
+    const handleUpdate = () => {
+      setRecentlySaved(false)
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = setTimeout(() => onSave(editor), 2000)
+    }
+    editor.on('update', handleUpdate)
+    return () => {
+      editor.off('update', handleUpdate)
+      clearTimeout(autoSaveTimerRef.current)
+    }
+  }, [editor, onSave, isLocked])
+
+  // Flash "All changes saved" for 3 s whenever a save completes
+  useEffect(() => {
+    if (prevSavingRef.current && !saving) {
+      setRecentlySaved(true)
+      clearTimeout(savedFlashTimerRef.current)
+      savedFlashTimerRef.current = setTimeout(() => setRecentlySaved(false), 3000)
+    }
+    prevSavingRef.current = saving
+  }, [saving])
+
+  // Track paper's layout height so the wrapper can be correctly sized for transform: scale()
+  useEffect(() => {
+    const el = pageRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setPaperHeight(entry.contentRect.height))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Keep the ref in sync so stale closures below can read the live value
+  useEffect(() => { commentInputOpenRef.current = showCommentInput }, [showCommentInput])
+
+  // Floating mini-toolbar: trigger on mouseup/keyup (selectionUpdate fires before
+  // the browser commits window.getSelection, so rect would be zero-width there)
+  useEffect(() => {
+    if (!editor) return
+
+    const showIfSelected = () => {
+      // Don't disturb the toolbar while the comment textarea has focus
+      if (commentInputOpenRef.current) return
+      requestAnimationFrame(() => {
+        if (commentInputOpenRef.current) return
+        if (!editor || editor.state.selection.empty) { setFloatBar(null); return }
+        const sel = window.getSelection()
+        if (!sel || sel.rangeCount === 0) { setFloatBar(null); return }
+        const rect = sel.getRangeAt(0).getBoundingClientRect()
+        if (!rect.width || !rect.height) { setFloatBar(null); return }
+        setFloatBar({ x: rect.left + rect.width / 2, y: rect.top })
+      })
+    }
+
+    const collapseHide = () => {
+      if (commentInputOpenRef.current) return
+      if (editor.state.selection.empty) setFloatBar(null)
+    }
+
+    document.addEventListener('mouseup', showIfSelected)
+    document.addEventListener('keyup', showIfSelected)
+    editor.on('selectionUpdate', collapseHide)
+
+    return () => {
+      document.removeEventListener('mouseup', showIfSelected)
+      document.removeEventListener('keyup', showIfSelected)
+      editor.off('selectionUpdate', collapseHide)
+      setFloatBar(null)
+    }
+  }, [editor])
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    if (!showExportMenu) return
+    const handler = (e) => { if (!exportMenuRef.current?.contains(e.target)) setShowExportMenu(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showExportMenu])
+
+  // Comments — stored in Yjs ydoc.getMap('comments') for real-time sync
+  const commentsMap = useMemo(() => ydoc?.getMap('comments') ?? null, [ydoc])
+
+  useEffect(() => {
+    if (!commentsMap) return
+    const sync = () => setCommentsData(Object.fromEntries(commentsMap.entries()))
+    sync()
+    commentsMap.observe(sync)
+    return () => commentsMap.unobserve(sync)
+  }, [commentsMap])
+
+  // Calculate comment bubble positions relative to the paper div
+  const calcCommentPositions = useCallback(() => {
+    if (!showCommentPanel || !pageRef.current) { setCommentPositions([]); return }
+    requestAnimationFrame(() => {
+      if (!pageRef.current) return
+      const pageEl = pageRef.current
+      const pageRect = pageEl.getBoundingClientRect()
+      // getBoundingClientRect already returns viewport/scaled coordinates with transform: scale(),
+      // and the wrapper has no zoom — so the difference is directly usable as wrapper layout pixels.
+      const raw = Object.entries(commentsData).flatMap(([id, comment]) => {
+        const markEl = pageEl.querySelector(`mark[data-comment-id="${id}"]`)
+        if (!markEl) return []
+        const r = markEl.getBoundingClientRect()
+        return [{ id, top: r.top - pageRect.top, comment }]
+      })
+
+      raw.sort((a, b) => a.top - b.top)
+      let nextMin = 0
+      const resolved = raw.map(pos => {
+        const top = Math.max(pos.top, nextMin)
+        nextMin = top + 90
+        return { ...pos, top }
+      })
+      setCommentPositions(resolved)
+    })
+  }, [showCommentPanel, commentsData, zoom])
+
+  useEffect(() => { calcCommentPositions() }, [calcCommentPositions])
+
+  useEffect(() => {
+    if (!editor) return
+    editor.on('update', calcCommentPositions)
+    return () => editor.off('update', calcCommentPositions)
+  }, [editor, calcCommentPositions])
+
+  // Ctrl+scroll anywhere in the editor pane → zoom (prevents browser page zoom)
+  useEffect(() => {
+    const el = canvasScrollRef.current
+    if (!el) return
+    const onWheel = (e) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      setZoom(z => clamp(z + (e.deltaY < 0 ? 10 : -10), 50, 200))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // Per-comment color highlights + active ring + numbered badge injected as a dynamic <style>
+  useEffect(() => {
+    let el = commentStyleRef.current
+    if (!el) {
+      el = document.createElement('style')
+      document.head.appendChild(el)
+      commentStyleRef.current = el
+    }
+    const indexMap = {}
+    commentPositions.forEach(({ id }, i) => { indexMap[id] = i + 1 })
+    el.textContent = Object.entries(commentsData).map(([id, c]) => {
+      const color = /^#[0-9a-f]{6}$/i.test(c.authorColor ?? '') ? c.authorColor : '#c9a84c'
+      const active = id === activeCommentId
+      const idx    = indexMap[id] ?? ''
+      const ring  = active
+        ? `outline: 2px solid ${hexAlpha(color, 0.5)}; outline-offset: 1px;`
+        : 'outline: none;'
+      const badge = idx
+        ? `mark[data-comment-id="${id}"]::after { content: "${idx}"; display: inline-block; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: ${color}; color: #fff; font-size: 8px; font-weight: 700; text-align: center; line-height: 14px; margin-left: 2px; vertical-align: super; box-sizing: border-box; opacity: ${active ? 1 : 0.75}; }`
+        : ''
+      return [
+        `mark[data-comment-id="${id}"] { background: transparent !important; border-bottom: 2px solid ${color} !important; ${ring} }`,
+        `mark[data-comment-id="${id}"]:hover { background: ${hexAlpha(color, 0.12)} !important; }`,
+        badge,
+      ].join('\n')
+    }).join('\n')
+  }, [commentsData, activeCommentId, commentPositions])
+
+  useEffect(() => () => { commentStyleRef.current?.remove() }, [])
+
+  // Focus comment textarea when it appears
+  useEffect(() => {
+    if (showCommentInput) {
+      setTimeout(() => commentInputRef.current?.focus(), 50)
+    }
+  }, [showCommentInput])
+
+  function cancelComment() {
+    setShowCommentInput(false)
+    setCommentText('')
+    setSavedSelection(null)
+    setFloatBar(null)
+  }
+
+  function addComment(text) {
+    if (!editor || !commentsMap || !text.trim()) return
+    const sel = savedSelection
+    if (!sel || sel.from === sel.to) return  // nothing was selected
+
+    const user = JSON.parse(sessionStorage.getItem('tm_user') || '{}')
+    const commentId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const author = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Student'
+    const authorColor = userColor(user.id ?? 'x')
+
+    // Restore the selection that was saved before the textarea stole focus
+    editor.chain().focus().setTextSelection({ from: sel.from, to: sel.to }).setComment(commentId).run()
+    commentsMap.set(commentId, { text: text.trim(), author, authorColor, createdAt: new Date().toISOString() })
+
+    setShowCommentInput(false)
+    setCommentText('')
+    setSavedSelection(null)
+    setFloatBar(null)
+    setActiveCommentId(commentId)
+    setShowCommentPanel(true)
+  }
+
+  function deleteComment(commentId) {
+    if (!commentsMap) return
+    commentsMap.delete(commentId)
+
+    if (editor) {
+      const { state } = editor
+      const { doc, schema } = state
+      const commentMarkType = schema.marks.comment
+      if (commentMarkType) {
+        const tr = state.tr
+        let modified = false
+        doc.descendants((node, pos) => {
+          if (!node.isText) return
+          const hasMark = node.marks.some(
+            m => m.type === commentMarkType && m.attrs.commentId === commentId
+          )
+          if (hasMark) {
+            tr.removeMark(pos, pos + node.nodeSize, commentMarkType)
+            modified = true
+          }
+        })
+        if (modified) editor.view.dispatch(tr)
+      }
+    }
+
+    if (activeCommentId === commentId) setActiveCommentId(null)
+  }
+
+  function jumpToComment(commentId) {
+    if (!editor) return
+    const { doc } = editor.state
+    let found = null
+    doc.descendants((node, pos) => {
+      if (found) return false
+      if (node.isText && node.marks.some(m => m.type.name === 'comment' && m.attrs.commentId === commentId)) {
+        found = pos
+        return false
+      }
+    })
+    if (found !== null) {
+      editor.chain().setTextSelection(found).scrollIntoView().run()
+    }
+    setActiveCommentId(commentId)
+    requestAnimationFrame(() => {
+      pageRef.current?.querySelector(`mark[data-comment-id="${commentId}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+    })
+  }
+
+  function jumpToUser(cursor) {
+    if (!editor || !cursor) return
+    const pos = clamp(cursor.from, 0, editor.state.doc.content.size)
+    editor.chain().setTextSelection(pos).scrollIntoView().run()
+  }
+
+  async function handleExportSection() {
+    setShowExportMenu(false)
+    const html = editor?.getHTML() ?? ''
+    const sec = SECTIONS.find(s => s.key === sectionKey)
+    await downloadDocx({
+      sections: [{ label: sec?.label ?? sectionKey, html }],
+      filename: `${sectionKey}.docx`,
+      title: sec?.label ?? sectionKey,
+    })
+  }
+
+  async function handleExportAll() {
+    setShowExportMenu(false)
+    const liveHtml = editor?.getHTML() ?? ''
+    const secs = SECTIONS.map(s => ({
+      label: s.label,
+      html: s.key === sectionKey ? liveHtml : (allSections?.[s.key]?.content ?? ''),
+    }))
+    await downloadDocx({
+      sections: secs,
+      filename: `${(groupName ?? 'Manuscript').replace(/[^a-z0-9]/gi, '_')}_manuscript.docx`,
+      title: groupName ?? 'Thesis Manuscript',
+    })
+  }
 
   async function handleImageFile(e) {
     const file = e.target.files?.[0]
@@ -586,7 +983,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
   const connected = hubState === 'connected'
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div ref={canvasScrollRef} className="flex-1 flex flex-col overflow-hidden" style={{ minWidth: 0 }}>
       {/* Toolbar */}
       {!isLocked && (
         <div className="flex items-center gap-1 flex-wrap px-3 py-2 shrink-0 border-b"
@@ -687,6 +1084,75 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
 
           <div className="flex-1" />
 
+          {/* Export dropdown */}
+          <div ref={exportMenuRef} style={{ position: 'relative' }} className="shrink-0">
+            <button onClick={() => setShowExportMenu(v => !v)}
+              className="text-xs flex items-center gap-1 py-1.5 px-2.5 rounded-lg border transition-all"
+              style={{
+                borderColor: 'var(--border-main)',
+                background: showExportMenu ? 'var(--bg-subtle)' : 'transparent',
+                color: 'var(--text-secondary)',
+              }}>
+              <Download size={11} />
+              Export
+              <ChevronDown size={10} />
+            </button>
+            {showExportMenu && (
+              <div style={{
+                position: 'absolute', right: 0, top: 'calc(100% + 4px)',
+                background: 'var(--bg-card)', border: '1px solid var(--border-main)',
+                borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                minWidth: 210, zIndex: 60, overflow: 'hidden',
+              }}>
+                <button onClick={handleExportSection}
+                  className="w-full text-left flex items-center gap-2.5 px-3.5 py-2.5 text-xs transition-colors"
+                  style={{ color: 'var(--text-primary)', background: 'transparent' }}
+                  onMouseEnter={e => e.currentTarget.style.background='var(--bg-subtle)'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                  <FileText size={12} style={{ color: '#c9a84c', flexShrink: 0 }} />
+                  <div>
+                    <div className="font-medium">Export This Section</div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>Current chapter only · .docx</div>
+                  </div>
+                </button>
+                <div style={{ height: 1, background: 'var(--border-main)', margin: '0 12px' }} />
+                <button onClick={handleExportAll}
+                  className="w-full text-left flex items-center gap-2.5 px-3.5 py-2.5 text-xs transition-colors"
+                  style={{ color: 'var(--text-primary)', background: 'transparent' }}
+                  onMouseEnter={e => e.currentTarget.style.background='var(--bg-subtle)'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                  <Download size={12} style={{ color: '#c9a84c', flexShrink: 0 }} />
+                  <div>
+                    <div className="font-medium">Export Full Manuscript</div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>All chapters · Save first · .docx</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!isLocked && onFinalize && (
+            <button
+              className="text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0 rounded-lg font-medium transition-all"
+              onClick={() => {
+                const html = editor?.getHTML() ?? ''
+                const sec = SECTIONS.find(s => s.key === sectionKey)
+                onFinalize(html, sec?.label ?? sectionKey)
+              }}
+              disabled={finalizing || saving}
+              title="Export this section to Upload Documents for adviser review"
+              style={{
+                background: 'rgba(99,102,241,0.1)',
+                color: '#6366f1',
+                border: '1px solid rgba(99,102,241,0.25)',
+                opacity: (finalizing || saving) ? 0.6 : 1,
+              }}>
+              {finalizing
+                ? <span className="w-3 h-3 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
+                : <FileUp size={12} />}
+              {finalizing ? 'Exporting…' : 'Finalize'}
+            </button>
+          )}
           <button
             className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0"
             onClick={() => onSave(editor)}
@@ -712,9 +1178,19 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
         style={{ background: 'var(--bg-subtle)', borderColor: 'var(--border-main)', color: 'var(--text-muted)' }}>
         <span>{sectionData?.wordCount?.toLocaleString() ?? 0} words</span>
 
-        {sectionData?.updatedAt ? (
+        {saving ? (
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 border-2 border-current border-t-transparent rounded-full animate-spin opacity-60" />
+            Saving…
+          </span>
+        ) : recentlySaved ? (
+          <span className="flex items-center gap-1" style={{ color: '#16a34a' }}>
+            <Check size={10} />
+            All changes saved
+          </span>
+        ) : sectionData?.updatedAt ? (
           <span>
-            Saved {new Date(sectionData.updatedAt).toLocaleString('en-PH', { dateStyle: 'short', timeStyle: 'short' })}
+            Saved {fmtPHT(sectionData.updatedAt)}
             {sectionData.updatedBy?.fullName ? ` by ${sectionData.updatedBy.fullName}` : ''}
           </span>
         ) : (
@@ -727,21 +1203,337 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
               <Lock size={10} /> Read-only
             </span>
           )}
+
+          {/* Co-editor presence avatars — click to jump to their cursor */}
+          {collabUsers.length > 0 && (
+            <span className="flex items-center gap-1.5">
+              <Users size={10} style={{ color: 'var(--text-muted)' }} />
+              <span className="flex -space-x-1">
+                {collabUsers.map((u, i) => (
+                  <span key={i}
+                    onClick={() => jumpToUser(u.cursor)}
+                    title={u.cursor ? `Jump to ${u.name}'s cursor` : u.name}
+                    style={{
+                      width: 20, height: 20, borderRadius: '50%',
+                      background: u.color, border: '2px solid #fff',
+                      fontSize: 9, fontWeight: 700, color: '#fff',
+                      display: 'inline-flex', alignItems: 'center',
+                      justifyContent: 'center', flexShrink: 0,
+                      cursor: u.cursor ? 'pointer' : 'default',
+                      boxShadow: `0 0 0 1.5px ${u.color}55`,
+                    }}>
+                    {(u.name?.[0] ?? '?').toUpperCase()}
+                  </span>
+                ))}
+              </span>
+              <span
+                onClick={() => collabUsers.length === 1 && jumpToUser(collabUsers[0].cursor)}
+                style={{
+                  color: 'var(--text-muted)', fontSize: 10,
+                  cursor: collabUsers.length === 1 && collabUsers[0].cursor ? 'pointer' : 'default',
+                  textDecoration: collabUsers.length === 1 && collabUsers[0].cursor ? 'underline' : 'none',
+                  textUnderlineOffset: 2,
+                }}>
+                {collabUsers.length === 1
+                  ? `${collabUsers[0].name} is here`
+                  : `${collabUsers.length} others editing`}
+              </span>
+            </span>
+          )}
+
           <span className="flex items-center gap-1" style={{ color: connected ? '#16a34a' : '#f59e0b' }}
             title={connected ? 'Collaboration active' : 'Reconnecting…'}>
             {connected ? <Wifi size={10} /> : <WifiOff size={10} />}
             {connected ? 'Live' : 'Reconnecting…'}
           </span>
+
+          {/* Comment annotations toggle */}
+          <button
+            onClick={() => setShowCommentPanel(v => !v)}
+            className="flex items-center gap-1.5 transition-all"
+            title={showCommentPanel ? 'Hide comment annotations' : 'Show comment annotations'}
+            style={{
+              color: showCommentPanel ? '#c9a84c' : 'var(--text-muted)',
+              fontSize: 11, padding: '2px 7px', borderRadius: 5,
+              background: showCommentPanel ? 'rgba(201,168,76,0.12)' : 'transparent',
+              border: `1px solid ${showCommentPanel ? 'rgba(201,168,76,0.3)' : 'transparent'}`,
+            }}>
+            <MessageSquare size={10} />
+            <span>Comments</span>
+            {Object.keys(commentsData).length > 0 && (
+              <span style={{
+                background: '#c9a84c', color: '#0a1628', fontSize: 9, fontWeight: 700,
+                borderRadius: 8, padding: '0 4px', lineHeight: '14px',
+              }}>
+                {Object.keys(commentsData).length}
+              </span>
+            )}
+          </button>
+
+          {/* Word-style zoom slider — bottom-right */}
+          <span className="flex items-center gap-1.5 border-l pl-3 ml-1"
+            style={{ borderColor: 'var(--border-main)' }}>
+            <button onClick={() => setZoom(z => Math.max(50, z - 10))} title="Zoom out"
+              className="flex items-center justify-center w-4 h-4 rounded transition-colors"
+              style={{ color: 'var(--text-muted)' }}>
+              <ZoomOut size={11} />
+            </button>
+            <input
+              type="range" min={50} max={200} step={10} value={zoom}
+              onChange={e => setZoom(Number(e.target.value))}
+              style={{ width: 72, accentColor: '#c9a84c', cursor: 'pointer', margin: 0 }}
+              title={`Zoom: ${zoom}%`}
+            />
+            <button onClick={() => setZoom(z => Math.min(200, z + 10))} title="Zoom in"
+              className="flex items-center justify-center w-4 h-4 rounded transition-colors"
+              style={{ color: 'var(--text-muted)' }}>
+              <ZoomIn size={11} />
+            </button>
+            <button onClick={() => setZoom(100)} title="Reset to 100%"
+              style={{
+                fontSize: 10, color: 'var(--text-muted)', minWidth: 34,
+                textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+              }}>
+              {zoom}%
+            </button>
+          </span>
         </div>
       </div>
 
-      {/* Editor canvas */}
-      <div className="flex-1 overflow-y-auto" style={{ background: 'var(--bg-subtle)' }}>
-        <div className="max-w-4xl mx-auto my-6 rounded-xl shadow-sm"
-          style={{ background: '#fff', minHeight: 640, padding: '56px 72px' }}>
-          <EditorContent editor={editor} />
+      {/* Canvas — gray Word-style background, scrollable */}
+      <div className="flex-1 overflow-auto" style={{ background: '#525659', minWidth: 0 }}>
+        {/*
+          minWidth: max-content prevents the centering flex container from ever being
+          narrower than its content. Without this, justify-content: center produces a
+          negative margin-left when content is wider than the viewport, which causes
+          left-side overflow that bleeds upward through the flex tree and breaks the
+          toolbar / navbar. With max-content, overflow is always to the RIGHT and the
+          scroll container handles it with scrollbars — the toolbar stays untouched.
+        */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+          padding: '28px 24px',
+          minHeight: '100%',
+          minWidth: 'max-content',
+        }}>
+          <div style={{
+            position: 'relative',
+            width: 816 * (zoom / 100),
+            height: paperHeight * (zoom / 100),
+            flexShrink: 0,
+          }}>
+            {/* Paper — scaled via CSS transform, not CSS zoom */}
+            <div ref={pageRef}
+              style={{
+                background: '#fff',
+                width: 816,
+                minHeight: 1056,
+                padding: '96px 96px 96px 114px',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                transformOrigin: 'top left',
+                transform: `scale(${zoom / 100})`,
+              }}
+              onClick={(e) => {
+                const el = e.target.closest('mark[data-comment-id]')
+                if (el) {
+                  const commentId = el.getAttribute('data-comment-id')
+                  setActiveCommentId(commentId)
+                  setShowCommentPanel(true)
+                  requestAnimationFrame(() => {
+                    const pos = commentPositions.find(p => p.id === commentId)
+                    if (pos && canvasScrollRef.current) {
+                      const target = 28 + pos.top - canvasScrollRef.current.clientHeight / 2 + 45
+                      canvasScrollRef.current.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+                    }
+                  })
+                }
+              }}>
+              <EditorContent editor={editor} />
+            </div>
+
+            {/* Word-style comment bubbles — natural size, anchored to wrapper layout coords */}
+            {showCommentPanel && commentPositions.map(({ id, top, comment }, commentIdx) => {
+              const clr = comment.authorColor ?? '#c9a84c'
+              const isActive = activeCommentId === id
+              const displayIdx = commentIdx + 1
+              return (
+              <div key={id} style={{
+                position: 'absolute',
+                top,
+                left: 816 * (zoom / 100) + 20,
+                width: 210,
+              }}>
+                <div style={{
+                  position: 'absolute', top: 14, left: -20, width: 20, height: 0,
+                  borderTop: `1.5px dashed ${clr}`,
+                  opacity: isActive ? 1 : 0.5,
+                  transition: 'opacity 0.15s',
+                }} />
+                <div
+                  onClick={() => jumpToComment(id)}
+                  style={{
+                    background: '#fff',
+                    border: `1px solid ${isActive ? hexAlpha(clr, 0.4) : 'rgba(0,0,0,0.13)'}`,
+                    borderLeft: `3px solid ${clr}`,
+                    borderRadius: 6,
+                    padding: '8px 10px',
+                    cursor: 'pointer',
+                    boxShadow: isActive
+                      ? `0 0 0 2.5px ${hexAlpha(clr, 0.35)}, 0 4px 16px ${hexAlpha(clr, 0.2)}`
+                      : '0 1px 4px rgba(0,0,0,0.1)',
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.boxShadow = `0 0 0 1.5px ${hexAlpha(clr, 0.25)}, 0 2px 8px rgba(0,0,0,0.1)` }}
+                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.1)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        minWidth: 16, height: 16, padding: '0 4px',
+                        borderRadius: 8, background: clr, color: '#fff',
+                        fontSize: 9, fontWeight: 700, flexShrink: 0,
+                        boxSizing: 'border-box', lineHeight: 1,
+                      }}>
+                        {displayIdx}
+                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: clr, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {comment.author}
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteComment(id) }}
+                      style={{ color: '#ccc', background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0, marginLeft: 4 }}
+                      onMouseEnter={e => e.currentTarget.style.color='#ef4444'}
+                      onMouseLeave={e => e.currentTarget.style.color='#ccc'}>
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 11, color: '#333', lineHeight: 1.55, margin: 0 }}>{comment.text}</p>
+                  <p style={{ fontSize: 10, color: '#999', marginTop: 5, marginBottom: 0 }}>
+                    {fmtPHT(comment.createdAt)}
+                  </p>
+                </div>
+              </div>
+              )
+            })}
+          </div>
         </div>
       </div>
+
+      {/* Floating mini-toolbar — appears above selected text */}
+      {floatBar && !isLocked && editor && (
+        <div
+          onMouseDown={e => e.preventDefault()}
+          style={{
+            position: 'fixed',
+            left: floatBar.x,
+            top: floatBar.y - 8,
+            transform: 'translate(-50%, -100%)',
+            background: 'linear-gradient(145deg, #1e3d6e 0%, #112952 50%, #0a1f3d 100%)',
+            border: '1px solid rgba(100,160,255,0.18)',
+            borderRadius: 10,
+            padding: showCommentInput ? '6px 8px' : '3px 5px',
+            display: 'flex',
+            flexDirection: showCommentInput ? 'column' : 'row',
+            alignItems: showCommentInput ? 'stretch' : 'center',
+            gap: showCommentInput ? 6 : 2,
+            zIndex: 100,
+            boxShadow: '0 6px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(100,160,255,0.08)',
+            minWidth: showCommentInput ? 220 : undefined,
+          }}>
+          {showCommentInput ? (
+            /* Comment input mode */
+            <>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <MessageSquare size={11} style={{ color: '#c9a84c', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#c9a84c' }}>Add Comment</span>
+                <button
+                  onClick={cancelComment}
+                  style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.5)', lineHeight: 1 }}>
+                  <X size={11} />
+                </button>
+              </div>
+              <textarea
+                ref={commentInputRef}
+                value={commentText}
+                onChange={e => setCommentText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(commentText) }
+                  if (e.key === 'Escape') { cancelComment() }
+                }}
+                placeholder="Type a comment… (Enter to save)"
+                rows={3}
+                style={{
+                  background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 6, padding: '5px 8px', fontSize: 12, color: '#fff',
+                  resize: 'vertical', outline: 'none', width: '100%', lineHeight: 1.5,
+                }}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={cancelComment}
+                  style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', padding: '3px 8px', borderRadius: 5,
+                    border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button
+                  onClick={() => addComment(commentText)}
+                  disabled={!commentText.trim()}
+                  style={{ fontSize: 11, color: commentText.trim() ? '#0a1628' : 'rgba(255,255,255,0.3)',
+                    padding: '3px 10px', borderRadius: 5, fontWeight: 600,
+                    background: commentText.trim() ? '#c9a84c' : 'rgba(201,168,76,0.15)',
+                    border: 'none', cursor: commentText.trim() ? 'pointer' : 'not-allowed', flex: 1 }}>
+                  Add Comment
+                </button>
+              </div>
+            </>
+          ) : (
+            /* Default mini-toolbar mode */
+            <>
+              <TB active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold">
+                <Bold size={13} />
+              </TB>
+              <TB active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic">
+                <Italic size={13} />
+              </TB>
+              <TB active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline">
+                <UnderlineIcon size={13} />
+              </TB>
+              <TB active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough">
+                <Strikethrough size={13} />
+              </TB>
+              <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
+              <TB active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} title="Heading 1">
+                <Heading1 size={13} />
+              </TB>
+              <TB active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="Heading 2">
+                <Heading2 size={13} />
+              </TB>
+              <TB active={editor.isActive('heading', { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} title="Heading 3">
+                <Heading3 size={13} />
+              </TB>
+              <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
+              <TB
+                active={false}
+                onClick={() => {
+                  // Must capture selection NOW — textarea focus will clear it
+                  const { from, to } = editor.state.selection
+                  if (from === to) return  // nothing selected
+                  setSavedSelection({ from, to })
+                  setShowCommentInput(true)
+                }}
+                title="Add comment">
+                <MessageSquare size={13} />
+              </TB>
+            </>
+          )}
+        </div>
+      )}
 
       <style>{`
         .ms-editor-body {
@@ -750,7 +1542,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           font-size: 12px;
           line-height: 2;
           color: #1a1a1a;
-          min-height: 520px;
+          min-height: 800px;
         }
         .ms-editor-body p { margin: 0 0 0.6em; }
         .ms-editor-body ul, .ms-editor-body ol { padding-left: 1.5em; margin: 0.5em 0; }
@@ -765,16 +1557,23 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           color: #bbb; content: attr(data-placeholder);
           float: left; height: 0; pointer-events: none; font-style: italic;
         }
-        .collaboration-cursor__caret {
-          border-left: 1px solid; border-right: 1px solid;
-          margin-left: -1px; margin-right: -1px;
-          position: relative; word-break: normal; pointer-events: none;
+        /* Allow cursor name labels to float above the text without clipping */
+        .ProseMirror { overflow: visible; }
+        .collab-selection { border-radius: 1px; }
+        /* Inline comment highlight — color + active ring injected dynamically per comment */
+        .ms-comment-mark {
+          border-radius: 2px;
+          cursor: pointer;
+          transition: background 0.15s, outline 0.15s;
         }
-        .collaboration-cursor__label {
-          border-radius: 3px 3px 3px 0; color: #fff; font-size: 10px;
-          font-weight: 600; left: -1px; line-height: normal;
-          padding: 0.1rem 0.3rem; position: absolute; top: -1.4em;
-          user-select: none; white-space: nowrap; pointer-events: none;
+        /* LanguageTool grammar/spelling underlines */
+        .lt-spelling {
+          text-decoration: underline wavy #ef4444;
+          text-decoration-skip-ink: none;
+        }
+        .lt-grammar {
+          text-decoration: underline wavy #3b82f6;
+          text-decoration-skip-ink: none;
         }
       `}</style>
     </div>
