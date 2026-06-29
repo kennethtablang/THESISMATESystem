@@ -62,6 +62,13 @@ namespace THESISMATESystem.Server.Hubs
             {
                 if (!_pendingUpdates.TryGetValue(roomKey, out var list))
                     _pendingUpdates[roomKey] = list = [];
+
+                // A large update (paste) is sent as a full Yjs state by the client,
+                // making every prior incremental entry in the replay queue redundant.
+                // Replace them so new joiners don't replay stale deltas.
+                if (base64Update.Length > 16_000) // ~12 KB decoded → full-state threshold
+                    list.Clear();
+
                 list.Add(base64Update);
             }
             await Clients.OthersInGroup(roomKey).SendAsync("ReceiveDocUpdate", base64Update);
