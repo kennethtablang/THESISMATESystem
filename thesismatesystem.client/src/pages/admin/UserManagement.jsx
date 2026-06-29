@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Users, UserCheck, UserX, Search, Pencil, Eye, EyeOff } from 'lucide-react'
+import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
@@ -7,8 +8,6 @@ import { PageLoader } from '../../components/ui/Spinner'
 import { authService } from '../../services/api'
 import { useSort, SortIcon } from '../../hooks/useSort.jsx'
 import { useAuth } from '../../contexts/AuthContext'
-
-const PAGE_SIZE = 10
 
 const roleColors = {
   SuperAdmin: { bg: 'rgba(239,68,68,0.1)',   text: '#dc2626' },
@@ -32,7 +31,8 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('All')
-  const [page, setPage] = useState(1)
+  const [page,     setPage]     = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const [confirmTarget, setConfirmTarget] = useState(null)
   const [toggling, setToggling] = useState(false)
@@ -71,10 +71,13 @@ export default function UserManagement() {
       } else {
         await authService.updateUser(confirmTarget.id, { isActive: true })
       }
+      const wasActive = confirmTarget.isActive
       setUsers(prev => prev.map(u => u.id === confirmTarget.id ? { ...u, isActive: !u.isActive } : u))
       setConfirmTarget(null)
+      toast.success(wasActive ? 'User deactivated.' : 'User activated.')
     } catch (err) {
       setToggleError(err.message)
+      toast.error(err.message || 'Failed to update user status.')
     } finally {
       setToggling(false)
     }
@@ -122,8 +125,10 @@ export default function UserManagement() {
 
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
       setEditTarget(null)
+      toast.success('User updated.')
     } catch (err) {
       setEditError(err.message || 'Failed to update user.')
+      toast.error(err.message || 'Failed to update user.')
     } finally {
       setEditSaving(false)
     }
@@ -142,8 +147,10 @@ export default function UserManagement() {
       await authService.adminResetPassword(editTarget.id, pwForm.newPassword)
       setPwForm({ newPassword: '', confirm: '' })
       setPwSuccess(true)
+      toast.success('Password reset successfully.')
     } catch (err) {
       setPwError(err.message || 'Failed to reset password.')
+      toast.error(err.message || 'Failed to reset password.')
     } finally {
       setPwSaving(false)
     }
@@ -163,8 +170,10 @@ export default function UserManagement() {
       const next = { ...editTarget, twoFactorEnabled: enabling }
       setUsers(prev => prev.map(u => u.id === editTarget.id ? { ...u, twoFactorEnabled: enabling } : u))
       setEditTarget(next)
+      toast.success(`2FA ${enabling ? 'enabled' : 'disabled'}.`)
     } catch (err) {
       setTwoFaError(err.message || `Failed to ${enabling ? 'enable' : 'disable'} 2FA.`)
+      toast.error(err.message || `Failed to ${enabling ? 'enable' : 'disable'} 2FA.`)
     } finally {
       setTwoFaDisabling(false)
     }
@@ -180,8 +189,8 @@ export default function UserManagement() {
   })
 
   const { sorted: sortedUsers, sortKey, sortDir, toggle } = useSort(filtered, 'fullName')
-  const totalPages = Math.ceil(sortedUsers.length / PAGE_SIZE)
-  const paginated = sortedUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.ceil(sortedUsers.length / pageSize)
+  const paginated  = sortedUsers.slice((page - 1) * pageSize, page * pageSize)
 
   const stats = {
     total:    users.length,
@@ -397,9 +406,10 @@ export default function UserManagement() {
           <Pagination
             page={page}
             totalPages={totalPages}
-            totalItems={filtered.length}
-            pageSize={PAGE_SIZE}
+            totalItems={sortedUsers.length}
+            pageSize={pageSize}
             onPageChange={setPage}
+            onPageSizeChange={n => { setPageSize(n); setPage(1) }}
           />
         </div>
       </div>

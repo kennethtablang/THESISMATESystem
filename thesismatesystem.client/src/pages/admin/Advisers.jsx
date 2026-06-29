@@ -257,7 +257,7 @@ export default function Advisers() {
         setGroups(grps)
         setFaculty(users.filter(u => u.role === 'Faculty'))
       })
-      .catch(console.error)
+      .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
@@ -277,7 +277,7 @@ export default function Advisers() {
         map[f.id] = { adviser: { id: f.id, fullName: f.fullName, email: f.email }, groups: [] }
       }
     })
-    return Object.values(map).sort((a, b) => a.adviser.fullName.localeCompare(b.adviser.fullName))
+    return Object.values(map).sort((a, b) => (a.adviser.fullName ?? '').localeCompare(b.adviser.fullName ?? ''))
   }, [groups, faculty])
 
   const filtered = useMemo(() => {

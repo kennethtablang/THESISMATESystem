@@ -8,6 +8,7 @@ import {
   School, Plus, Copy, Check, Users, Search, Mail, RefreshCw,
   Clock, CheckCircle2, AlertCircle, ChevronRight, UserPlus,
 } from 'lucide-react'
+import { toast } from '../../utils/toast'
 
 // ── Copy-to-clipboard button ──────────────────────────────────────────────────
 function CopyBtn({ text }) {
@@ -138,8 +139,10 @@ export default function ClassroomAdmin() {
       setShowCreate(false)
       setCreateForm({ className: '', academicYear: '' })
       selectClassroom(cls)
+      toast.success('Classroom created.')
     } catch (err) {
       setCreateError(err.message || 'Failed to create classroom.')
+      toast.error(err.message || 'Failed to create classroom.')
     } finally {
       setCreating(false)
     }
@@ -175,12 +178,13 @@ export default function ClassroomAdmin() {
     setInviteMsg('')
     try {
       await classroomService.invite(selected.id, { studentIds: [student.id] })
-      // Refresh enrollment list
       const data = await classroomService.enrollments(selected.id)
       setEnrollments(Array.isArray(data) ? data : [])
       setInviteMsg(`Invitation sent to ${student.fullName}`)
+      toast.success(`Invitation sent to ${student.fullName}.`)
     } catch (err) {
       setInviteMsg(`Error: ${err.message}`)
+      toast.error(err.message || 'Failed to send invitation.')
     } finally {
       setInviting(null)
     }
