@@ -97,6 +97,58 @@ namespace THESISMATESystem.Server.Controllers
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
         }
 
+        [HttpGet("{id:int}/deadline-list")]
+        public async Task<IActionResult> GetDeadlines(int id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            if (!await _groups.CanAccessGroupAsync(userId, role, id))
+                return Forbid();
+            return Ok(await _groups.GetDeadlinesAsync(id));
+        }
+
+        [HttpPost("{id:int}/deadline-list")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        public async Task<IActionResult> CreateDeadline(int id, [FromBody] CreateGroupDeadlineRequestDto dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try
+            {
+                return Ok(await _groups.CreateDeadlineAsync(userId, role, id, dto));
+            }
+            catch (KeyNotFoundException ex)          { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException)     { return Forbid(); }
+        }
+
+        [HttpPatch("{id:int}/deadline-list/{deadlineId:int}")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        public async Task<IActionResult> UpdateDeadline(int id, int deadlineId, [FromBody] UpdateGroupDeadlineRequestDto dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try
+            {
+                return Ok(await _groups.UpdateDeadlineAsync(userId, role, id, deadlineId, dto));
+            }
+            catch (KeyNotFoundException ex)      { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException)  { return Forbid(); }
+        }
+
+        [HttpDelete("{id:int}/deadline-list/{deadlineId:int}")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        public async Task<IActionResult> DeleteDeadline(int id, int deadlineId)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try
+            {
+                var deleted = await _groups.DeleteDeadlineAsync(userId, role, id, deadlineId);
+                return deleted ? Ok() : NotFound();
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+        }
+
         [HttpPatch("{id:int}/archive")]
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> Archive(int id)
@@ -132,6 +184,22 @@ namespace THESISMATESystem.Server.Controllers
             var result = await _groups.GetLogoAsync(id);
             if (result is null) return NotFound();
             return File(result.Value.bytes, result.Value.contentType);
+        }
+
+        [HttpGet("panel-groups")]
+        [Authorize(Roles = "Faculty")]
+        public async Task<IActionResult> GetPanelGroups()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            return Ok(await _groups.GetGroupsByPanelistAsync(userId));
+        }
+
+        [HttpPatch("{id:int}/defense-outcome")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> SetDefenseOutcome(int id, [FromBody] SetGroupDefenseOutcomeRequestDto dto)
+        {
+            try { return Ok(await _groups.SetDefenseOutcomeAsync(id, dto)); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
         }
     }
 }

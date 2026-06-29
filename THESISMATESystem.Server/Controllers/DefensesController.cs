@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using THESISMATESystem.Server.DTOs.Request;
+using THESISMATESystem.Server.Enums;
 using THESISMATESystem.Server.Interfaces;
 
 namespace THESISMATESystem.Server.Controllers
@@ -42,8 +43,8 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> Create(CreateDefenseScheduleRequestDto dto)
         {
-            var result = await _defenses.CreateScheduleAsync(dto);
-            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+            try { var result = await _defenses.CreateScheduleAsync(dto); return CreatedAtAction(nameof(GetById), new { id = result.Id }, result); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPut("{id:int}")]
@@ -51,7 +52,8 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> Update(int id, UpdateDefenseScheduleRequestDto dto)
         {
             try { return Ok(await _defenses.UpdateScheduleAsync(id, dto)); }
-            catch (KeyNotFoundException) { return NotFound(); }
+            catch (KeyNotFoundException)          { return NotFound(); }
+            catch (InvalidOperationException ex)  { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPatch("{id:int}/cancel")]
@@ -100,13 +102,30 @@ namespace THESISMATESystem.Server.Controllers
             return success ? Ok() : BadRequest(new { message = "No pending ratings to finalize." });
         }
 
-        // Criteria
+        // Criteria / Rubric
         [HttpGet("criteria")]
-        public async Task<IActionResult> GetCriteria() => Ok(await _defenses.GetCriteriaAsync());
+        public async Task<IActionResult> GetCriteria([FromQuery] DefensePhase? phase)
+            => Ok(await _defenses.GetCriteriaAsync(phase));
 
         [HttpPost("criteria")]
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> CreateCriterion(CreateCriterionRequestDto dto)
             => Ok(await _defenses.CreateCriterionAsync(dto));
+
+        [HttpPut("criteria/{id:int}")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> UpdateCriterion(int id, UpdateCriterionRequestDto dto)
+        {
+            try { return Ok(await _defenses.UpdateCriterionAsync(id, dto)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
+        [HttpDelete("criteria/{id:int}")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> DeleteCriterion(int id)
+        {
+            var success = await _defenses.DeleteCriterionAsync(id);
+            return success ? Ok() : NotFound();
+        }
     }
 }

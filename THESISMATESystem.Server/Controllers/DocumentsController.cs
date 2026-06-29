@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using THESISMATESystem.Server.DTOs.Request;
+using THESISMATESystem.Server.Enums;
 using THESISMATESystem.Server.Interfaces;
 
 namespace THESISMATESystem.Server.Controllers
@@ -112,6 +113,67 @@ namespace THESISMATESystem.Server.Controllers
             try { return Ok(await _documents.GetVersionsAsync(id, userId, role)); }
             catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
+        }
+
+        [HttpPatch("{id:int}/status")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateDocumentStatusRequestDto dto)
+        {
+            var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var callerRole = User.FindFirstValue(ClaimTypes.Role)!;
+            try
+            {
+                var result = await _documents.UpdateDocumentStatusAsync(id, callerId, callerRole, dto.Status);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+        }
+
+        [HttpPost("{id:int}/submit")]
+        [Authorize(Roles = "Student")]
+        public async Task<IActionResult> SubmitForReview(int id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try
+            {
+                var result = await _documents.SubmitForReviewAsync(id, userId);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+        }
+
+        [HttpPost("groups/{groupId:int}/sections/{sectionKey}/finalize")]
+        [Authorize(Roles = "Student")]
+        public async Task<IActionResult> FinalizeSection(int groupId, string sectionKey, IFormFile file)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try
+            {
+                var result = await _documents.FinalizeSectionToDocumentAsync(groupId, sectionKey, userId, file);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return UnprocessableEntity(new { message = ex.Message }); }
+            catch (ArgumentOutOfRangeException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpPost("groups/{groupId:int}/chapters/{chapterNumber:int}/finalize")]
+        [Authorize(Roles = "Student")]
+        public async Task<IActionResult> FinalizeChapter(int groupId, int chapterNumber)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try
+            {
+                var result = await _documents.FinalizeChapterToDocumentAsync(groupId, chapterNumber, userId);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (FileNotFoundException ex) { return UnprocessableEntity(new { message = ex.Message }); }
+            catch (ArgumentOutOfRangeException ex) { return BadRequest(new { message = ex.Message }); }
         }
     }
 }
