@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using THESISMATESystem.Server.Data;
 
@@ -11,9 +12,11 @@ using THESISMATESystem.Server.Data;
 namespace THESISMATESystem.Server.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260628112423_MultipleScreenshots_AutoComments_DeleteComment")]
+    partial class MultipleScreenshots_AutoComments_DeleteComment
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -183,9 +186,6 @@ namespace THESISMATESystem.Server.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
-
-                    b.Property<DateTime?>("LastActiveAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<string>("LastName")
                         .IsRequired()
@@ -1096,9 +1096,6 @@ namespace THESISMATESystem.Server.Migrations
                         .HasColumnType("int");
 
                     b.Property<int?>("RelatedGroupId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("RelatedSystemFeatureId")
                         .HasColumnType("int");
 
                     b.Property<int>("Type")

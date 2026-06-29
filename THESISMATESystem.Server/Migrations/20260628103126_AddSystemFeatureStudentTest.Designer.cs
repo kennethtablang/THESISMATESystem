@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using THESISMATESystem.Server.Data;
 
@@ -11,9 +12,11 @@ using THESISMATESystem.Server.Data;
 namespace THESISMATESystem.Server.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260628103126_AddSystemFeatureStudentTest")]
+    partial class AddSystemFeatureStudentTest
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -183,9 +186,6 @@ namespace THESISMATESystem.Server.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
-
-                    b.Property<DateTime?>("LastActiveAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<string>("LastName")
                         .IsRequired()
@@ -1098,9 +1098,6 @@ namespace THESISMATESystem.Server.Migrations
                     b.Property<int?>("RelatedGroupId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("RelatedSystemFeatureId")
-                        .HasColumnType("int");
-
                     b.Property<int>("Type")
                         .HasColumnType("int");
 
@@ -1217,6 +1214,9 @@ namespace THESISMATESystem.Server.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
+                    b.Property<string>("StudentScreenshotPath")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("StudentTestNote")
                         .HasColumnType("nvarchar(max)");
 
@@ -1255,9 +1255,6 @@ namespace THESISMATESystem.Server.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<bool>("IsSystemComment")
-                        .HasColumnType("bit");
-
                     b.Property<int>("SystemFeatureId")
                         .HasColumnType("int");
 
@@ -1268,31 +1265,6 @@ namespace THESISMATESystem.Server.Migrations
                     b.HasIndex("SystemFeatureId");
 
                     b.ToTable("SystemFeatureComments");
-                });
-
-            modelBuilder.Entity("THESISMATESystem.Server.Models.SystemFeatureScreenshot", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Path")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("SystemFeatureId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("UploadedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SystemFeatureId");
-
-                    b.ToTable("SystemFeatureScreenshots");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -1773,17 +1745,6 @@ namespace THESISMATESystem.Server.Migrations
                     b.Navigation("SystemFeature");
                 });
 
-            modelBuilder.Entity("THESISMATESystem.Server.Models.SystemFeatureScreenshot", b =>
-                {
-                    b.HasOne("THESISMATESystem.Server.Models.SystemFeature", "SystemFeature")
-                        .WithMany("Screenshots")
-                        .HasForeignKey("SystemFeatureId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("SystemFeature");
-                });
-
             modelBuilder.Entity("THESISMATESystem.Server.Models.ApplicationUser", b =>
                 {
                     b.Navigation("AdvisedGroups");
@@ -1859,8 +1820,6 @@ namespace THESISMATESystem.Server.Migrations
             modelBuilder.Entity("THESISMATESystem.Server.Models.SystemFeature", b =>
                 {
                     b.Navigation("Comments");
-
-                    b.Navigation("Screenshots");
                 });
 #pragma warning restore 612, 618
         }
