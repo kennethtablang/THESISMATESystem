@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { exportDefenseGrid } from '../../lib/exportDefenseGrid'
 import { useAuth } from '../../contexts/AuthContext'
 import { defenseService, groupService, authService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
@@ -12,8 +12,10 @@ import interactionPlugin, { Draggable } from '@fullcalendar/interaction'
 import listPlugin from '@fullcalendar/list'
 import {
   GripVertical, AlertCircle, CheckCircle2, CalendarDays, MapPin,
-  Users, Clock, Trash2, ChevronRight, Info,
+  Users, Clock, Trash2, ChevronRight, Info, Pencil, X, RefreshCw, GraduationCap,
+  Download,
 } from 'lucide-react'
+import { toast } from '../../utils/toast'
 
 // ── Phase config ──────────────────────────────────────────────────────────────
 const PHASES = [
@@ -44,9 +46,26 @@ const PHASES = [
     bg:     'rgba(34,197,94,0.10)',
     border: 'rgba(34,197,94,0.25)',
   },
+  {
+    key:    'ReDefense',
+    label:  'Re-Defense',
+    short:  'RD',
+    desc:   'Re-evaluation after failed Final Defense',
+    color:  '#dc2626',
+    bg:     'rgba(239,68,68,0.10)',
+    border: 'rgba(239,68,68,0.25)',
+  },
 ]
 
 function phaseOf(key) { return PHASES.find(p => p.key === key) ?? PHASES[0] }
+
+function getCurrentSchoolYear() {
+  const now   = new Date()
+  const month = now.getMonth() + 1   // 1–12
+  const year  = now.getFullYear()
+  // Philippines: school year runs June – May
+  return month >= 6 ? `${year}-${year + 1}` : `${year - 1}-${year}`
+}
 
 // ── Draggable group chip (unscheduled) ────────────────────────────────────────
 function UnscheduledChip({ group, phase }) {
@@ -76,9 +95,26 @@ function UnscheduledChip({ group, phase }) {
 }
 
 // ── Scheduled group chip ──────────────────────────────────────────────────────
+function parseUtc(str) {
+  if (!str) return new Date(NaN)
+  return new Date(str)
+}
+
+// Returns an error message if the time window is outside 6 AM – 7 PM, otherwise null.
+const SCHED_START_MIN = 6 * 60   // 6:00 AM = 360 min
+const SCHED_END_MIN   = 19 * 60  // 7:00 PM = 1140 min
+
+function getAllowedHoursError(startDate, durationMins = 60) {
+  const startMin = startDate.getHours() * 60 + startDate.getMinutes()
+  const endMin   = startMin + (durationMins || 60)
+  if (startMin < SCHED_START_MIN) return 'Defenses cannot be scheduled before 6:00 AM.'
+  if (endMin > SCHED_END_MIN)     return 'Defenses cannot extend past 7:00 PM. Choose an earlier time or shorten the duration.'
+  return null
+}
+
 function ScheduledChip({ group, defense, onView }) {
   const p = phaseOf(defense.phase)
-  const time = new Date(defense.scheduledDateTime).toLocaleString('en-PH', {
+  const time = parseUtc(defense.scheduledDateTime).toLocaleString('en-PH', {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   })
   return (
@@ -102,16 +138,18 @@ function ScheduledChip({ group, defense, onView }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function DefenseScheduler() {
   const { user } = useAuth()
-  const navigate  = useNavigate()
   const calendarRef  = useRef(null)
   const draggableRef = useRef(null)
   const sidebarRef   = useRef(null)
 
-  const [groups,      setGroups]      = useState([])
-  const [defenses,    setDefenses]    = useState([])
-  const [faculty,     setFaculty]     = useState([])
-  const [loading,     setLoading]     = useState(true)
-  const [activePhase, setActivePhase] = useState('TitleDefense')
+  const [groups,       setGroups]       = useState([])
+  const [defenses,     setDefenses]     = useState([])
+  const [faculty,      setFaculty]      = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [loadError,    setLoadError]    = useState(null)
+  const [loadKey,      setLoadKey]      = useState(0)
+  const [activePhase,  setActivePhase]  = useState('TitleDefense')
+  const [selectedYear, setSelectedYear] = useState(() => getCurrentSchoolYear())
 
   // Drop → confirm modal
   const [dropInfo,   setDropInfo]   = useState(null)
@@ -120,34 +158,49 @@ export default function DefenseScheduler() {
   const [saveError,  setSaveError]  = useState('')
 
   // Event detail modal
-  const [clickedDef,   setClickedDef]   = useState(null)
+  const [clickedDef,    setClickedDef]    = useState(null)
   const [cancelConfirm, setCancelConfirm] = useState(false)
   const [cancelling,    setCancelling]    = useState(false)
 
+  // Edit mode inside the detail modal
+  const [editingDef,   setEditingDef]   = useState(false)
+  const [editDefForm,  setEditDefForm]  = useState({ venue: '', scheduledDateTime: '', durationMinutes: 60, panelistIds: [] })
+  const [editDefSaving,setEditDefSaving]= useState(false)
+  const [editDefError, setEditDefError] = useState('')
+
+  // Defense outcome tags form (Final/Re-defense completed)
+  const [outcomeForm,   setOutcomeForm]   = useState({ defenseOutcome: '', revisionLevel: '', requiresReDefense: false })
+  const [outcomeSaving, setOutcomeSaving] = useState(false)
+
   const canSchedule = ['Admin', 'SuperAdmin', 'Faculty'].includes(user?.role)
+  const canModify   = ['Admin', 'SuperAdmin'].includes(user?.role)
 
   // ── Load ────────────────────────────────────────────────────────────────────
   useEffect(() => {
+    setLoading(true)
+    setLoadError(null)
     async function load() {
       try {
         const [grps, defs, users] = await Promise.all([
-          groupService.list().catch(() => []),
-          defenseService.list().catch(() => []),
+          groupService.list(),
+          defenseService.list(),
           authService.allUsers().catch(() => []),
         ])
         setGroups(Array.isArray(grps)  ? grps.filter(g => g.status === 'Active') : [])
         setDefenses(Array.isArray(defs) ? defs : [])
         setFaculty(Array.isArray(users) ? users.filter(u => u.role === 'Faculty') : [])
+      } catch (err) {
+        setLoadError(err?.message || 'Failed to load scheduler data. Please try again.')
       } finally {
         setLoading(false)
       }
     }
     load()
-  }, [])
+  }, [loadKey])
 
   // ── Wire external draggable ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!sidebarRef.current || !canSchedule) return
+    if (!sidebarRef.current || !canModify) return
     draggableRef.current = new Draggable(sidebarRef.current, {
       itemSelector: '[data-group-id]',
       eventData(el) {
@@ -164,45 +217,83 @@ export default function DefenseScheduler() {
       },
     })
     return () => draggableRef.current?.destroy()
-  }, [canSchedule, loading])
+  }, [canModify, loading])
+
+  // ── School-year filtering ────────────────────────────────────────────────────
+  const availableYears = useMemo(() => {
+    const years = new Set([
+      getCurrentSchoolYear(),
+      ...groups.map(g => g.academicYear),
+      ...defenses.map(d => d.academicYear),
+    ].filter(Boolean))
+    return [...years].sort().reverse()
+  }, [groups, defenses])
+
+  // Auto-snap to the most recent year that actually has data when the
+  // computed school year has no groups/defenses (e.g. seeded data is "2025-2026"
+  // but today's computed year is "2026-2027").
+  useEffect(() => {
+    if (!loading && availableYears.length > 0 && !availableYears.includes(selectedYear)) {
+      const bestYear = availableYears.find(y =>
+        groups.some(g => g.academicYear === y) || defenses.some(d => d.academicYear === y)
+      ) ?? availableYears[0]
+      setSelectedYear(bestYear)
+    }
+  }, [loading, availableYears]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const yearGroups   = useMemo(() => groups.filter(g => g.academicYear === selectedYear),   [groups, selectedYear])
+  const yearDefenses = useMemo(() => defenses.filter(d => d.academicYear === selectedYear), [defenses, selectedYear])
 
   // ── Derived state ───────────────────────────────────────────────────────────
   const progressByPhase = useMemo(() => {
     const result = {}
     PHASES.forEach(ph => {
       const ids = new Set(
-        defenses.filter(d => d.phase === ph.key && d.status !== 'Cancelled').map(d => d.capstoneGroupId)
+        yearDefenses
+          .filter(d => String(d.phase) === ph.key && String(d.status) !== 'Cancelled')
+          .map(d => Number(d.capstoneGroupId))
       )
-      result[ph.key] = { scheduled: ids.size, total: groups.length }
+      result[ph.key] = { scheduled: ids.size, total: yearGroups.length }
     })
     return result
-  }, [defenses, groups])
+  }, [yearDefenses, yearGroups])
 
   const scheduledForPhase = useMemo(
-    () => defenses.filter(d => d.phase === activePhase && d.status !== 'Cancelled'),
-    [defenses, activePhase]
+    () => yearDefenses.filter(d => String(d.phase) === activePhase && String(d.status) !== 'Cancelled'),
+    [yearDefenses, activePhase]
   )
   const scheduledGroupIds = useMemo(
-    () => new Set(scheduledForPhase.map(d => d.capstoneGroupId)),
+    () => new Set(scheduledForPhase.map(d => Number(d.capstoneGroupId))),
     [scheduledForPhase]
   )
-  const unscheduledGroups = groups.filter(g => !scheduledGroupIds.has(g.id))
-  const scheduledGroups   = groups.filter(g =>  scheduledGroupIds.has(g.id))
+  const unscheduledGroups = yearGroups.filter(g => !scheduledGroupIds.has(Number(g.id)))
+  const scheduledGroups   = yearGroups.filter(g =>  scheduledGroupIds.has(Number(g.id)))
 
-  // ── Calendar events (all phases except cancelled, color-coded) ─────────────
-  const calendarEvents = defenses.filter(d => d.status !== 'Cancelled').map(d => ({
-    id:              String(d.id),
-    title:           d.groupName,
-    start:           d.scheduledDateTime,
-    end:             new Date(new Date(d.scheduledDateTime).getTime() + (d.durationMinutes ?? 60) * 60000).toISOString(),
-    backgroundColor: phaseOf(d.phase).color,
-    borderColor:     phaseOf(d.phase).color,
-    extendedProps:   { defense: d },
-  }))
+  // ── Calendar events (current year, all phases, excluding cancelled) ─────────
+  // Both start and end MUST be UTC ISO strings so FullCalendar applies the same
+  // timezone treatment to both. Passing d.scheduledDateTime directly risks
+  // a no-Z string being interpreted as LOCAL time while the end (computed via
+  // parseUtc) is UTC — the mismatch creates phantom multi-hour event blocks.
+  const calendarEvents = yearDefenses.filter(d => String(d.status) !== 'Cancelled').map(d => {
+    const canEdit   = d.status === 'Scheduled' || d.status === 'Rescheduled'
+    const startDate = parseUtc(d.scheduledDateTime)
+    return {
+      id:              String(d.id),
+      title:           d.groupName,
+      start:           startDate.toISOString(),
+      end:             new Date(startDate.getTime() + (d.durationMinutes ?? 60) * 60000).toISOString(),
+      backgroundColor: canEdit ? phaseOf(d.phase).color : '#6b7280',
+      borderColor:     canEdit ? phaseOf(d.phase).color : '#6b7280',
+      editable:        canEdit,
+      extendedProps:   { defense: d },
+    }
+  })
 
   // ── Drop from sidebar ───────────────────────────────────────────────────────
   const handleEventReceive = useCallback((info) => {
     info.revert()
+    const timeErr = getAllowedHoursError(info.event.start, 60)
+    if (timeErr) { toast.error(timeErr); return }
     const { groupId, groupName, projectTitle, phase } = info.event.extendedProps
     setDropInfo({ groupId, groupName, projectTitle, phase, start: info.event.start })
     setForm({ venue: '', panelistIds: [], durationMinutes: 60 })
@@ -212,6 +303,8 @@ export default function DefenseScheduler() {
   // ── Save new defense ────────────────────────────────────────────────────────
   async function handleConfirmSchedule() {
     if (!form.venue.trim()) { setSaveError('Please enter a venue or room.'); return }
+    const timeErr = getAllowedHoursError(dropInfo.start, form.durationMinutes)
+    if (timeErr) { setSaveError(timeErr); return }
     setSaving(true); setSaveError('')
     try {
       const created = await defenseService.create({
@@ -224,8 +317,10 @@ export default function DefenseScheduler() {
       })
       setDefenses(prev => [...prev, created])
       setDropInfo(null)
+      toast.success('Defense scheduled.')
     } catch (err) {
       setSaveError(err.message || 'Failed to save defense schedule.')
+      toast.error(err.message || 'Failed to save defense schedule.')
     } finally {
       setSaving(false)
     }
@@ -233,9 +328,29 @@ export default function DefenseScheduler() {
 
   // ── Click existing event ────────────────────────────────────────────────────
   const handleEventClick = useCallback((info) => {
-    setClickedDef(info.event.extendedProps.defense)
+    const defense = info.event.extendedProps.defense
+    setClickedDef(defense)
     setCancelConfirm(false)
+    setOutcomeForm({ defenseOutcome: '', revisionLevel: '', requiresReDefense: false })
   }, [])
+
+  // ── Set defense outcome ─────────────────────────────────────────────────────
+  async function handleSetOutcome() {
+    if (!clickedDef) return
+    setOutcomeSaving(true)
+    try {
+      await groupService.setDefenseOutcome(clickedDef.capstoneGroupId, {
+        defenseOutcome:    outcomeForm.defenseOutcome   || undefined,
+        revisionLevel:     outcomeForm.revisionLevel    || undefined,
+        requiresReDefense: outcomeForm.requiresReDefense,
+      })
+      toast.success('Defense outcome saved.')
+    } catch {
+      toast.error('Failed to save outcome.')
+    } finally {
+      setOutcomeSaving(false)
+    }
+  }
 
   // ── Cancel defense ──────────────────────────────────────────────────────────
   async function handleCancelDefense() {
@@ -247,42 +362,130 @@ export default function DefenseScheduler() {
       setDefenses(prev => prev.map(d => d.id === clickedDef.id ? { ...d, status: 'Cancelled' } : d))
       setClickedDef(null)
       setCancelConfirm(false)
-    } catch {
-      // silently restore
+      toast.success('Defense cancelled.')
+    } catch (err) {
+      toast.error(err?.message || 'Failed to cancel defense.')
     } finally {
       setCancelling(false)
+    }
+  }
+
+  // ── Open edit mode ──────────────────────────────────────────────────────────
+  function openEditMode(d) {
+    const dt2 = new Date(d.scheduledDateTime ?? '')
+    const pad = n => String(n).padStart(2, '0')
+    const localDT = `${dt2.getFullYear()}-${pad(dt2.getMonth()+1)}-${pad(dt2.getDate())}T${pad(dt2.getHours())}:${pad(dt2.getMinutes())}`
+    setEditDefForm({
+      venue:             d.venue ?? '',
+      scheduledDateTime: localDT,
+      durationMinutes:   d.durationMinutes ?? 60,
+      panelistIds:       d.panelists?.map(p => p.id) ?? [],
+    })
+    setEditingDef(true)
+    setEditDefError('')
+    setCancelConfirm(false)
+  }
+
+  // ── Save edits ───────────────────────────────────────────────────────────────
+  async function handleSaveEdit() {
+    if (!editDefForm.venue.trim()) { setEditDefError('Venue is required.'); return }
+    if (!editDefForm.scheduledDateTime) { setEditDefError('Date & time is required.'); return }
+    // datetime-local strings parse as LOCAL time in the browser — correct for schedule validation
+    const newDt   = new Date(editDefForm.scheduledDateTime)
+    const timeErr = getAllowedHoursError(newDt, editDefForm.durationMinutes)
+    if (timeErr) { setEditDefError(timeErr); return }
+
+    // Only include scheduledDateTime when it actually changed to avoid spurious
+    // "Rescheduled" status and notifications for venue/panelist-only edits.
+    const oldDt      = parseUtc(clickedDef.scheduledDateTime)
+    const dtChanged  = Math.abs(newDt - oldDt) > 30000   // >30 s difference
+    setEditDefSaving(true); setEditDefError('')
+    try {
+      const updated = await defenseService.update(clickedDef.id, {
+        venue:           editDefForm.venue.trim(),
+        durationMinutes: editDefForm.durationMinutes,
+        panelistIds:     editDefForm.panelistIds,
+        ...(dtChanged ? { scheduledDateTime: newDt.toISOString() } : {}),
+      })
+      setDefenses(prev => prev.map(d => d.id === clickedDef.id ? updated : d))
+      setClickedDef(updated)
+      setEditingDef(false)
+      toast.success('Defense updated.')
+    } catch (err) {
+      setEditDefError(err.message || 'Failed to save changes.')
+      toast.error(err.message || 'Failed to save changes.')
+    } finally {
+      setEditDefSaving(false)
     }
   }
 
   // ── Drag existing event to reschedule ───────────────────────────────────────
   const handleEventDrop = useCallback(async (info) => {
     const def = info.event.extendedProps.defense
+    const timeErr = getAllowedHoursError(info.event.start, def.durationMinutes ?? 60)
+    if (timeErr) { info.revert(); toast.error(timeErr); return }
     try {
       const updated = await defenseService.update(def.id, {
         scheduledDateTime: info.event.start.toISOString(),
       })
       setDefenses(prev => prev.map(d => d.id === def.id ? updated : d))
-    } catch { info.revert() }
+      toast.success('Defense rescheduled.')
+    } catch (err) {
+      info.revert()
+      toast.error(err?.message || 'Failed to reschedule defense.')
+    }
   }, [])
 
   // ── Resize to change duration ───────────────────────────────────────────────
   const handleEventResize = useCallback(async (info) => {
     const def = info.event.extendedProps.defense
     const mins = Math.round((info.event.end - info.event.start) / 60000)
+    const timeErr = getAllowedHoursError(info.event.start, mins)
+    if (timeErr) { info.revert(); toast.error(timeErr); return }
     try {
       const updated = await defenseService.update(def.id, { durationMinutes: mins })
       setDefenses(prev => prev.map(d => d.id === def.id ? updated : d))
-    } catch { info.revert() }
+      toast.success('Duration updated.')
+    } catch (err) {
+      info.revert()
+      toast.error(err?.message || 'Failed to update duration.')
+    }
   }, [])
+
+  // ── XLSX schedule grid export ────────────────────────────────────────────────
+  async function handleExportGrid() {
+    try {
+      const ok = await exportDefenseGrid(yearDefenses, yearGroups, selectedYear)
+      if (ok) toast.success('Schedule grid exported.')
+      else toast.error('No scheduled defenses to export.')
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to export schedule grid.')
+    }
+  }
 
   if (loading) return <><TopBar title="Defense Scheduler" /><PageLoader /></>
 
-  const p    = phaseOf(activePhase)
-  const prog = progressByPhase[activePhase] ?? { scheduled: 0, total: 0 }
+  const p = phaseOf(activePhase)
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 68px)', overflow: 'hidden' }}>
       <TopBar title="Defense Scheduler" />
+
+      {/* ── Load error banner ────────────────────────────────────────────── */}
+      {loadError && (
+        <div className="mx-5 mt-3 px-4 py-3 rounded-xl flex items-center gap-3 shrink-0"
+          style={{ background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.2)' }}>
+          <AlertCircle size={14} style={{ color: '#dc2626', flexShrink: 0 }} />
+          <span className="text-sm flex-1" style={{ color: '#dc2626' }}>{loadError}</span>
+          <button
+            onClick={() => setLoadKey(k => k + 1)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0"
+            style={{ background: 'rgba(220,38,38,0.12)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
+            <RefreshCw size={12} /> Retry
+          </button>
+        </div>
+      )}
 
       {/* ── Phase tabs ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-5 pt-3 pb-3 shrink-0"
@@ -334,14 +537,43 @@ export default function DefenseScheduler() {
           <span className="text-xs" style={{ color: p.color }}>{p.desc}</span>
         </div>
 
-        {/* Drag hint */}
-        {canSchedule && unscheduledGroups.length > 0 && (
-          <div className="ml-auto flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl"
-            style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)', border: '1px solid var(--border-light)' }}>
-            <GripVertical size={12} />
-            Drag groups onto the calendar
+        {/* Year selector + drag hint */}
+        <div className="ml-auto flex items-center gap-2">
+          {/* School-year picker */}
+          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
+            style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-main)' }}>
+            <GraduationCap size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <select
+              value={selectedYear}
+              onChange={e => setSelectedYear(e.target.value)}
+              style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 12,
+                       fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>
+              {availableYears.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
           </div>
-        )}
+          {yearDefenses.some(d => d.status !== 'Cancelled') && (
+            <button
+              onClick={handleExportGrid}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150"
+              style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)', border: '1px solid var(--border-main)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-card)'; e.currentTarget.style.color = 'var(--text-primary)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+              title="Export schedule as Excel spreadsheet"
+            >
+              <Download size={12} />
+              Export XLSX
+            </button>
+          )}
+          {canModify && unscheduledGroups.length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl"
+              style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)', border: '1px solid var(--border-light)' }}>
+              <GripVertical size={12} />
+              Drag groups onto the calendar
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -386,7 +618,7 @@ export default function DefenseScheduler() {
               </div>
               <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1.5">
                 {scheduledGroups.map(g => {
-                  const def = scheduledForPhase.find(d => d.capstoneGroupId === g.id)
+                  const def = scheduledForPhase.find(d => Number(d.capstoneGroupId) === Number(g.id))
                   return (
                     <ScheduledChip
                       key={g.id}
@@ -440,8 +672,8 @@ export default function DefenseScheduler() {
               snapDuration="00:15:00"
               allDaySlot={false}
               nowIndicator
-              editable={canSchedule}
-              droppable={canSchedule}
+              editable={canModify}
+              droppable={canModify}
               eventResizableFromStart={false}
               events={calendarEvents}
               eventReceive={handleEventReceive}
@@ -451,7 +683,7 @@ export default function DefenseScheduler() {
               eventContent={renderEventContent}
               eventDidMount={styleEvent}
               dayMaxEvents={3}
-              businessHours={{ daysOfWeek: [1, 2, 3, 4, 5], startTime: '08:00', endTime: '18:00' }}
+              businessHours={{ startTime: '06:00', endTime: '19:00' }}
             />
           </div>
         </main>
@@ -593,50 +825,181 @@ export default function DefenseScheduler() {
         })()}
       </Modal>
 
-      {/* ── Event detail modal ────────────────────────────────────────────────── */}
+      {/* ── Event detail / edit modal ─────────────────────────────────────────── */}
       <Modal
         open={!!clickedDef}
-        onClose={() => { setClickedDef(null); setCancelConfirm(false) }}
-        title="Defense Details"
-        size="sm"
-        footer={
-          cancelConfirm ? (
+        onClose={() => { setClickedDef(null); setCancelConfirm(false); setEditingDef(false) }}
+        title={editingDef ? 'Edit Defense' : 'Defense Details'}
+        size="md"
+        footer={(() => {
+          const isActive = clickedDef?.status === 'Scheduled' || clickedDef?.status === 'Rescheduled'
+          if (editingDef) return (
             <>
-              <span className="text-xs mr-auto" style={{ color: 'var(--text-muted)' }}>Remove this defense schedule?</span>
+              <button className="btn-secondary" onClick={() => { setEditingDef(false); setEditDefError('') }}
+                disabled={editDefSaving}>
+                Discard
+              </button>
+              <button className="btn-primary" onClick={handleSaveEdit} disabled={editDefSaving}>
+                {editDefSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </>
+          )
+          if (cancelConfirm) return (
+            <>
+              <span className="text-xs mr-auto" style={{ color: 'var(--text-muted)' }}>Remove this schedule?</span>
               <button className="btn-secondary" onClick={() => setCancelConfirm(false)} disabled={cancelling}>Keep</button>
-              <button
-                onClick={handleCancelDefense}
-                disabled={cancelling}
-                className="px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+              <button onClick={handleCancelDefense} disabled={cancelling}
+                className="px-4 py-2 rounded-xl text-sm font-semibold"
                 style={{ background: '#dc2626', color: '#fff' }}>
                 {cancelling ? 'Removing…' : 'Yes, Remove'}
               </button>
             </>
-          ) : (
+          )
+          return (
             <>
-              {canSchedule && (
-                <button
-                  onClick={() => setCancelConfirm(true)}
-                  className="mr-auto flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+              {canModify && isActive && (
+                <button onClick={() => setCancelConfirm(true)}
+                  className="mr-auto flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
                   style={{ color: '#dc2626', background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.15)' }}>
                   <Trash2 size={12} /> Cancel Defense
                 </button>
               )}
               <button className="btn-secondary" onClick={() => setClickedDef(null)}>Close</button>
-              <button className="btn-primary" onClick={() => { navigate('/defenses'); setClickedDef(null) }}>
-                Manage
-              </button>
+              {canModify && isActive && (
+                <button className="btn-primary flex items-center gap-1.5" onClick={() => openEditMode(clickedDef)}>
+                  <Pencil size={13} /> Edit
+                </button>
+              )}
             </>
           )
-        }
+        })()}
       >
         {clickedDef && (() => {
           const ph = phaseOf(clickedDef.phase)
           const d  = clickedDef
-          const dt = new Date(d.scheduledDateTime)
+          const dt = parseUtc(d.scheduledDateTime)
+
+          // ── Edit form ──────────────────────────────────────────────────────
+          if (editingDef) return (
+            <div className="space-y-4">
+              {/* Group + phase header */}
+              <div className="rounded-xl p-3.5 flex items-center gap-3"
+                style={{ background: ph.bg, border: `1px solid ${ph.border}` }}>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: ph.color }}>
+                  <CalendarDays size={16} color="#fff" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold truncate" style={{ color: ph.color }}>{d.groupName}</p>
+                  <p className="text-xs font-semibold" style={{ color: ph.color }}>{ph.label}</p>
+                </div>
+              </div>
+
+              {editDefError && (
+                <div className="px-3 py-2.5 rounded-xl text-sm flex items-center gap-2"
+                  style={{ background: 'rgba(220,38,38,0.07)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
+                  <AlertCircle size={13} /> {editDefError}
+                </div>
+              )}
+
+              {/* Date & Time */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                  Date &amp; Time <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  className="form-input"
+                  value={editDefForm.scheduledDateTime}
+                  onChange={e => setEditDefForm(f => ({ ...f, scheduledDateTime: e.target.value }))}
+                />
+              </div>
+
+              {/* Venue */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                  Venue / Room <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  autoFocus
+                  placeholder="e.g. Room 301, Conference Hall"
+                  value={editDefForm.venue}
+                  onChange={e => setEditDefForm(f => ({ ...f, venue: e.target.value }))}
+                />
+              </div>
+
+              {/* Duration */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Duration</label>
+                <div className="flex gap-2">
+                  {[30, 45, 60, 90, 120].map(m => (
+                    <button key={m} type="button"
+                      onClick={() => setEditDefForm(f => ({ ...f, durationMinutes: m }))}
+                      className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-150"
+                      style={{
+                        background: editDefForm.durationMinutes === m ? ph.color : 'var(--bg-subtle)',
+                        color:      editDefForm.durationMinutes === m ? '#fff'    : 'var(--text-secondary)',
+                        border:     `1px solid ${editDefForm.durationMinutes === m ? ph.color : 'var(--border-light)'}`,
+                      }}>
+                      {m < 60 ? `${m}m` : `${m / 60}h`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Panelists */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                  Panelists
+                  {editDefForm.panelistIds.length > 0 && (
+                    <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded-md"
+                      style={{ background: ph.bg, color: ph.color }}>
+                      {editDefForm.panelistIds.length} selected
+                    </span>
+                  )}
+                </label>
+                <div className="rounded-xl overflow-hidden"
+                  style={{ border: '1px solid var(--border-light)', maxHeight: 180, overflowY: 'auto' }}>
+                  {faculty.length === 0
+                    ? <p className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>No faculty found.</p>
+                    : faculty.map((f, idx) => {
+                      const checked = editDefForm.panelistIds.includes(f.id)
+                      return (
+                        <label key={f.id}
+                          className="flex items-center gap-3 px-4 py-2.5 cursor-pointer"
+                          style={{
+                            borderBottom: idx < faculty.length - 1 ? '1px solid var(--border-light)' : 'none',
+                            background:   checked ? ph.bg : 'transparent',
+                            transition:   'background 0.1s',
+                          }}>
+                          <input type="checkbox" checked={checked}
+                            style={{ accentColor: ph.color }}
+                            onChange={() => setEditDefForm(prev => ({
+                              ...prev,
+                              panelistIds: checked
+                                ? prev.panelistIds.filter(id => id !== f.id)
+                                : [...prev.panelistIds, f.id],
+                            }))} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                              {f.fullName}
+                            </p>
+                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{f.email}</p>
+                          </div>
+                          {checked && <CheckCircle2 size={14} style={{ color: ph.color, flexShrink: 0 }} />}
+                        </label>
+                      )
+                    })
+                  }
+                </div>
+              </div>
+            </div>
+          )
+
+          // ── View mode ──────────────────────────────────────────────────────
           return (
             <div className="space-y-4">
-              {/* Header */}
               <div className="rounded-xl p-4" style={{ background: ph.bg, border: `1px solid ${ph.border}` }}>
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -650,7 +1013,6 @@ export default function DefenseScheduler() {
                 </div>
               </div>
 
-              {/* Detail rows */}
               <div className="space-y-3">
                 <DetailRow icon={<CalendarDays size={14} />}
                   label="Date & Time"
@@ -664,17 +1026,17 @@ export default function DefenseScheduler() {
                 <DetailRow icon={<MapPin size={14} />}
                   label="Venue"
                   value={d.venue || '—'} />
-                {d.panelists?.length > 0 && (
-                  <DetailRow icon={<Users size={14} />}
-                    label="Panelists"
-                    value={
-                      <div className="space-y-0.5">
-                        {d.panelists.map(pan => (
-                          <p key={pan.id} className="text-sm" style={{ color: 'var(--text-primary)' }}>{pan.fullName}</p>
-                        ))}
-                      </div>
-                    } />
-                )}
+                <DetailRow icon={<Users size={14} />}
+                  label="Panelists"
+                  value={
+                    d.panelists?.length > 0
+                      ? <div className="space-y-0.5">
+                          {d.panelists.map(pan => (
+                            <p key={pan.id} className="text-sm" style={{ color: 'var(--text-primary)' }}>{pan.fullName}</p>
+                          ))}
+                        </div>
+                      : <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No panelists assigned</p>
+                  } />
               </div>
 
               {cancelConfirm && (
@@ -682,6 +1044,74 @@ export default function DefenseScheduler() {
                   style={{ background: 'rgba(220,38,38,0.07)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
                   <AlertCircle size={13} />
                   This will remove the scheduled defense. Panelists and the group will be notified.
+                </div>
+              )}
+
+              {/* ── Defense outcome tags (Final/Re-defense completed) ── */}
+              {canModify && d.status === 'Completed' && (d.phase === 'FinalDefense' || d.phase === 'ReDefense') && (
+                <div className="rounded-xl p-4 space-y-4" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-light)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                    Set Group Outcome
+                  </p>
+
+                  <div>
+                    <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Defense Result</p>
+                    <div className="flex gap-2">
+                      {[
+                        { value: 'Defended',    label: 'Defended',     color: '#16a34a', bg: 'rgba(34,197,94,0.12)' },
+                        { value: 'NotDefended', label: 'Not Defended', color: '#dc2626', bg: 'rgba(239,68,68,0.12)' },
+                      ].map(opt => (
+                        <button key={opt.value} type="button"
+                          onClick={() => setOutcomeForm(f => ({ ...f, defenseOutcome: f.defenseOutcome === opt.value ? '' : opt.value }))}
+                          className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all"
+                          style={{
+                            background: outcomeForm.defenseOutcome === opt.value ? opt.bg : 'var(--bg-card)',
+                            color: outcomeForm.defenseOutcome === opt.value ? opt.color : 'var(--text-secondary)',
+                            border: `1px solid ${outcomeForm.defenseOutcome === opt.value ? opt.color : 'var(--border-main)'}`,
+                          }}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Revision Level</p>
+                    <div className="flex gap-2">
+                      {[
+                        { value: 'None',           label: 'No Revisions',    color: '#6b7280', bg: 'rgba(107,114,128,0.12)' },
+                        { value: 'MinorRevisions', label: 'Minor Revisions', color: '#ca8a04', bg: 'rgba(234,179,8,0.12)' },
+                        { value: 'MajorRevisions', label: 'Major Revisions', color: '#dc2626', bg: 'rgba(239,68,68,0.12)' },
+                      ].map(opt => (
+                        <button key={opt.value} type="button"
+                          onClick={() => setOutcomeForm(f => ({ ...f, revisionLevel: f.revisionLevel === opt.value ? '' : opt.value }))}
+                          className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all"
+                          style={{
+                            background: outcomeForm.revisionLevel === opt.value ? opt.bg : 'var(--bg-card)',
+                            color: outcomeForm.revisionLevel === opt.value ? opt.color : 'var(--text-secondary)',
+                            border: `1px solid ${outcomeForm.revisionLevel === opt.value ? opt.color : 'var(--border-main)'}`,
+                          }}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox"
+                        checked={outcomeForm.requiresReDefense}
+                        onChange={e => setOutcomeForm(f => ({ ...f, requiresReDefense: e.target.checked }))}
+                        className="w-4 h-4 rounded"
+                        style={{ accentColor: '#dc2626' }} />
+                      <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Requires Re-Defense</span>
+                    </label>
+                  </div>
+
+                  <button onClick={handleSetOutcome} disabled={outcomeSaving || (!outcomeForm.defenseOutcome && !outcomeForm.revisionLevel && !outcomeForm.requiresReDefense)}
+                    className="btn-primary text-xs w-full">
+                    {outcomeSaving ? 'Saving...' : 'Save Outcome Tags'}
+                  </button>
                 </div>
               )}
             </div>

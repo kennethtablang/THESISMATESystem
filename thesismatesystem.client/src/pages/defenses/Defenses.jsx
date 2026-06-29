@@ -12,6 +12,7 @@ import {
   ToggleRight, Pencil, ChevronDown, ChevronUp, Scale, Trash2,
   AlertCircle,
 } from 'lucide-react'
+import { toast } from '../../utils/toast'
 
 // ── Phase config ──────────────────────────────────────────────────────────────
 const PHASES = {
@@ -158,6 +159,9 @@ export default function Defenses() {
           setGroups(grps.filter(g => g.status === 'Active'))
           setPanelUsers(allUsers.filter(u => u.role === 'Faculty'))
           setCriteriaList(crit)
+        } else if (isFaculty) {
+          const crit = await defenseService.criteria().catch(() => [])
+          setCriteriaList(crit)
         }
       } catch {
         setDefenses([])
@@ -202,8 +206,10 @@ export default function Defenses() {
       setDefenses(prev => [...prev, created])
       setShowCreate(false)
       setForm({ groupId: '', date: '', time: '', venue: '', phase: 'TitleDefense', durationMinutes: 60, panelistIds: [] })
+      toast.success('Defense scheduled.')
     } catch (err) {
       setCreateError(err.message || 'Failed to schedule defense.')
+      toast.error(err.message || 'Failed to schedule defense.')
     } finally {
       setCreating(false)
     }
@@ -215,7 +221,7 @@ export default function Defenses() {
     const dt = defense.scheduledDateTime ? new Date(defense.scheduledDateTime) : null
     setEditTarget(defense)
     setEditForm({
-      date:            dt ? dt.toISOString().slice(0, 10) : '',
+      date:            dt ? dt.toLocaleDateString('en-CA') : '',
       time:            dt ? dt.toTimeString().slice(0, 5)  : '',
       venue:           defense.venue ?? '',
       phase:           defense.phase ?? 'TitleDefense',
@@ -243,8 +249,10 @@ export default function Defenses() {
       })
       setDefenses(prev => prev.map(d => d.id === updated.id ? updated : d))
       setShowEdit(false)
+      toast.success('Defense updated.')
     } catch (err) {
       setEditError(err.message || 'Failed to update.')
+      toast.error(err.message || 'Failed to update defense.')
     } finally {
       setEditSaving(false)
     }
@@ -259,8 +267,9 @@ export default function Defenses() {
       setDefenses(prev => prev.map(d => d.id === cancelTarget.id ? { ...d, status: 'Cancelled' } : d))
       if (selected?.id === cancelTarget.id) setSelected(s => ({ ...s, status: 'Cancelled' }))
       setCancelTarget(null)
-    } catch {
-      // revert silently
+      toast.success('Defense cancelled.')
+    } catch (err) {
+      toast.error(err?.message || 'Failed to cancel defense.')
     } finally {
       setCancelling(false)
     }
@@ -270,12 +279,14 @@ export default function Defenses() {
   async function toggleRating(defense, e) {
     e.stopPropagation()
     setTogglingId(defense.id)
+    const wasOpen = defense.isRatingOpen
     try {
-      await defenseService.setRatingStatus(defense.id, !defense.isRatingOpen)
+      await defenseService.setRatingStatus(defense.id, !wasOpen)
       setDefenses(prev => prev.map(d => d.id === defense.id ? { ...d, isRatingOpen: !d.isRatingOpen } : d))
       if (selected?.id === defense.id) setSelected(s => ({ ...s, isRatingOpen: !s.isRatingOpen }))
-    } catch {
-      // silent
+      toast.success(wasOpen ? 'Rating locked.' : 'Rating opened.')
+    } catch (err) {
+      toast.error(err?.message || 'Failed to toggle rating status.')
     } finally {
       setTogglingId(null)
     }
@@ -299,8 +310,10 @@ export default function Defenses() {
       })
       setCriteriaList(prev => [...prev, created])
       setNewCrit({ name: '', description: '', weight: '', maxScore: '100' })
+      toast.success('Criterion added.')
     } catch (err) {
       setCritError(err.message || 'Failed to create criterion.')
+      toast.error(err.message || 'Failed to add criterion.')
     } finally {
       setCritSaving(false)
     }
