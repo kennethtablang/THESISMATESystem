@@ -56,6 +56,10 @@ export default defineConfig({
                 secure: false,
                 ws: true
             },
+            '^/uploads': {
+                target,
+                secure: false
+            },
             '^/weatherforecast': {
                 target,
                 secure: false
