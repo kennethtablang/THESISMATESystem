@@ -16,32 +16,27 @@ import Dashboard from './pages/dashboard/Dashboard'
 import Notifications from './pages/notifications/Notifications'
 import Profile from './pages/profile/Profile'
 import Reports from './pages/reports/Reports'
-import Consultations from './pages/consultations/Consultations'
 import Defenses from './pages/defenses/Defenses'
 import DefenseScheduler from './pages/defenses/DefenseScheduler'
-import Groups from './pages/groups/Groups'
+import RubricManager from './pages/defenses/RubricManager'
+import GroupsLayout from './pages/groups/GroupsLayout'
 import GroupDetail from './pages/groups/GroupDetail'
 import Chapters from './pages/chapters/Chapters'
 
 // Student pages
 import DocumentUpload from './pages/student/DocumentUpload'
-import ConsultationCalendar from './pages/student/ConsultationCalendar'
 import StudentSystemTracker from './pages/student/StudentSystemTracker'
 
 // Adviser pages
 import ManuscriptReview from './pages/adviser/ManuscriptReview'
 import AdviserSystemTracker from './pages/adviser/AdviserSystemTracker'
 
-// FacultyIC pages
-import ConsultationManager from './pages/facultyic/ConsultationManager'
-import ClassroomManager from './pages/facultyic/ClassroomManager'
-
 // Student pages (additional)
 import JoinClass from './pages/student/JoinClass'
 import ManuscriptEditor from './pages/student/ManuscriptEditor'
 
 // Adviser/monitor pages
-import ManuscriptViewer from './pages/adviser/ManuscriptViewer'
+import DocumentReview from './pages/adviser/DocumentReview'
 
 // Admin pages
 import UserManagement from './pages/admin/UserManagement'
@@ -63,16 +58,11 @@ function DocumentsPage() {
   return <Navigate to="/dashboard" replace />
 }
 
-function CalendarPage() {
-  const { user } = useAuth()
-  return <ConsultationCalendar />
-}
-
 function ManuscriptPage() {
   const { user } = useAuth()
   const role = user?.role
   if (role === 'Student') return <ManuscriptEditor />
-  if (['Faculty', 'Admin', 'SuperAdmin'].includes(role)) return <ManuscriptViewer />
+  if (['Faculty', 'Admin', 'SuperAdmin'].includes(role)) return <Navigate to="/documents" replace />
   return <Navigate to="/dashboard" replace />
 }
 
@@ -145,21 +135,11 @@ export default function App() {
 
           {/* New role-specific features */}
           <Route path="documents" element={<DocumentsPage />} />
+          <Route path="documents/review/:id" element={<DocumentReview />} />
           <Route path="system-features" element={<SystemFeaturesPage />} />
-          <Route path="calendar" element={<CalendarPage />} />
-          <Route path="classroom" element={
-            <RoleGuard roles={['Faculty', 'Admin', 'SuperAdmin']}>
-              <ClassroomManager />
-            </RoleGuard>
-          } />
           <Route path="my-class" element={
             <RoleGuard roles={['Student']}>
               <JoinClass />
-            </RoleGuard>
-          } />
-          <Route path="consultation-manager" element={
-            <RoleGuard roles={['Faculty', 'Admin', 'SuperAdmin']}>
-              <ConsultationManager />
             </RoleGuard>
           } />
           <Route path="users" element={
@@ -183,12 +163,13 @@ export default function App() {
           <Route path="monitoring" element={<MonitoringDashboard />} />
 
           {/* Shared routes */}
-          <Route path="groups" element={<Groups />} />
-          <Route path="groups/:id" element={<GroupDetail />} />
+          <Route path="groups" element={<GroupsLayout />}>
+            <Route path=":id" element={<GroupDetail />} />
+          </Route>
           <Route path="chapters" element={<Chapters />} />
-          <Route path="consultations" element={<Consultations />} />
           <Route path="defenses" element={<Defenses />} />
           <Route path="defense-scheduler" element={<DefenseScheduler />} />
+          <Route path="rubric-manager" element={<RubricManager />} />
           <Route path="ratings" element={
             <RoleGuard roles={['Faculty']}>
               <Ratings />
