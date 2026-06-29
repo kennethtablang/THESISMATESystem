@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Star, Calendar, MapPin, Users, Lock, Unlock, CheckCircle2, AlertCircle } from 'lucide-react'
+import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
@@ -66,8 +67,10 @@ export default function Ratings() {
       const updated = await defenseService.mySchedules().catch(() => defenses)
       setDefenses(updated ?? defenses)
       setRating(null)
+      toast.success('Ratings submitted.')
     } catch (err) {
       setRating(r => ({ ...r, submitting: false, error: err.message || 'Failed to submit ratings.' }))
+      toast.error(err.message || 'Failed to submit ratings.')
     }
   }
 
