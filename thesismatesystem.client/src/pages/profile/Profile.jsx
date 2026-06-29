@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { authService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
 import { User, Mail, Shield, Camera, Save, KeyRound, Eye, EyeOff, ShieldCheck, ShieldOff } from 'lucide-react'
+import { toast } from '../../utils/toast'
 
 const roleColors = {
   Student:    { bg: 'rgba(59,130,246,0.12)',  text: '#3b82f6' },
@@ -70,8 +71,10 @@ export default function Profile() {
       updateUser({ firstName: updated.firstName, middleName: updated.middleName, lastName: updated.lastName, fullName })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
+      toast.success('Profile updated.')
     } catch (err) {
       setSaveError(err.message)
+      toast.error(err.message || 'Failed to update profile.')
     } finally {
       setSaving(false)
     }
@@ -85,8 +88,10 @@ export default function Profile() {
       await authService.twoFactorEnable()
       setSetupStep('code-sent')
       setTwoFactorMsg('A 6-digit code has been sent to your email.')
+      toast.info('Verification code sent to your email.')
     } catch (err) {
       setTwoFactorError(err.message || 'Failed to send code.')
+      toast.error(err.message || 'Failed to send verification code.')
     } finally {
       setTwoFactorBusy(false)
     }
@@ -102,8 +107,10 @@ export default function Profile() {
       setSetupStep(null)
       setSetupCode('')
       setTwoFactorMsg('Two-factor authentication is now enabled.')
+      toast.success('Two-factor authentication enabled.')
     } catch (err) {
       setTwoFactorError(err.message || 'Invalid code. Please try again.')
+      toast.error(err.message || 'Invalid verification code.')
     } finally {
       setTwoFactorBusy(false)
     }
@@ -119,8 +126,10 @@ export default function Profile() {
       setSetupStep(null)
       setDisablePassword('')
       setTwoFactorMsg('Two-factor authentication has been disabled.')
+      toast.success('Two-factor authentication disabled.')
     } catch (err) {
       setTwoFactorError(err.message || 'Incorrect password.')
+      toast.error(err.message || 'Incorrect password.')
     } finally {
       setTwoFactorBusy(false)
     }
@@ -146,8 +155,10 @@ export default function Profile() {
       setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
       setPwSaved(true)
       setTimeout(() => setPwSaved(false), 2500)
+      toast.success('Password changed.')
     } catch (err) {
       setPwError(err.message || 'Password change failed. Please check your current password.')
+      toast.error(err.message || 'Password change failed.')
     } finally {
       setPwSaving(false)
     }
