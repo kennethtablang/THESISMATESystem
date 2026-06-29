@@ -362,3 +362,4 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /graphify-out
+/THESISMATESystem.Server/wwwroot/uploads
