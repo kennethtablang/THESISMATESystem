@@ -100,12 +100,24 @@ namespace THESISMATESystem.Server
             builder.Services.AddScoped<IManuscriptService, ManuscriptService>();
             builder.Services.AddScoped<IMonitoringService, MonitoringService>();
 
-            builder.Services.AddSignalR();
+            builder.Services.AddSignalR(options =>
+            {
+                // Allow large Yjs binary updates from paste operations (default is 32 KB)
+                options.MaximumReceiveMessageSize = 4 * 1024 * 1024; // 4 MB
+            });
 
             builder.Services.AddControllers()
                 .AddJsonOptions(o =>
+                {
+                    // Serialize enums as strings
                     o.JsonSerializerOptions.Converters.Add(
-                        new System.Text.Json.Serialization.JsonStringEnumConverter()));
+                        new System.Text.Json.Serialization.JsonStringEnumConverter());
+                    // Always write DateTime/DateTime? with 'Z' suffix so browsers
+                    // parse them as UTC (not local time). SQL Server returns DateTimeKind.Unspecified
+                    // which System.Text.Json serialises without 'Z', causing an 8-hour offset in PHT.
+                    o.JsonSerializerOptions.Converters.Add(new THESISMATESystem.Server.Helpers.UtcDateTimeConverter());
+                    o.JsonSerializerOptions.Converters.Add(new THESISMATESystem.Server.Helpers.UtcNullableDateTimeConverter());
+                });
 
             // Swagger / OpenAPI
             builder.Services.AddSwaggerGen(c =>
@@ -158,6 +170,7 @@ namespace THESISMATESystem.Server
             Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "documents"));
             Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "chapters"));
             Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "manuscripts"));
+            Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "system-features"));
 
             app.UseDefaultFiles();
             app.MapStaticAssets();
@@ -187,6 +200,7 @@ namespace THESISMATESystem.Server
             app.UseCors("SpaPolicy");
             app.UseAuthentication();
             app.UseAuthorization();
+            app.UseMiddleware<THESISMATESystem.Server.Middleware.UpdateLastActiveMiddleware>();
             app.MapControllers();
             app.MapHub<ManuscriptHub>("/hubs/manuscript");
             app.MapFallbackToFile("/index.html");
