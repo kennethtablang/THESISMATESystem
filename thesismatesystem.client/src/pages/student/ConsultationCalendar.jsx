@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Calendar, MapPin, Users, Clock, CheckCircle, XCircle, AlertCircle, Send } from 'lucide-react'
+import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import { consultationScheduleService, groupService } from '../../services/api'
 
@@ -55,9 +56,9 @@ export default function ConsultationCalendar() {
       setMyRequests(prev => [req, ...prev])
       setNotes('')
       setRequesting(null)
-      alert('Request submitted successfully!')
+      toast.success('Request submitted successfully.')
     } catch (err) {
-      alert(err.message)
+      toast.error(err.message || 'Failed to submit request.')
     } finally {
       setSubmitting(false)
     }
