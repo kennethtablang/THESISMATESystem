@@ -1,5 +1,6 @@
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
+using THESISMATESystem.Server.Enums;
 
 namespace THESISMATESystem.Server.Interfaces
 {
@@ -19,7 +20,9 @@ namespace THESISMATESystem.Server.Interfaces
         Task<ConsolidatedRatingDto> GetConsolidatedRatingAsync(int scheduleId);
         Task<bool> FinalizeRatingsAsync(int scheduleId, string adminId);
 
-        Task<IEnumerable<DefenseCriterionResponseDto>> GetCriteriaAsync();
+        Task<IEnumerable<DefenseCriterionResponseDto>> GetCriteriaAsync(DefensePhase? phase = null);
         Task<DefenseCriterionResponseDto> CreateCriterionAsync(CreateCriterionRequestDto dto);
+        Task<DefenseCriterionResponseDto> UpdateCriterionAsync(int id, UpdateCriterionRequestDto dto);
+        Task<bool> DeleteCriterionAsync(int id);
     }
 }

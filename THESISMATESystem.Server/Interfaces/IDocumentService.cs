@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
+using THESISMATESystem.Server.Enums;
 
 namespace THESISMATESystem.Server.Interfaces
 {
@@ -17,5 +18,9 @@ namespace THESISMATESystem.Server.Interfaces
         Task<bool> DeleteDocumentAsync(int id, string userId, string callerRole);
         Task<DocumentSubmissionResponseDto> UploadNewVersionAsync(int originalId, string uploadedById, IFormFile file);
         Task<IEnumerable<DocumentVersionDto>> GetVersionsAsync(int id, string callerId, string callerRole);
+        Task<DocumentSubmissionResponseDto> FinalizeChapterToDocumentAsync(int groupId, int chapterNumber, string userId);
+        Task<DocumentSubmissionResponseDto> FinalizeSectionToDocumentAsync(int groupId, string sectionKey, string userId, IFormFile file);
+        Task<DocumentSubmissionResponseDto> SubmitForReviewAsync(int documentId, string userId);
+        Task<DocumentSubmissionResponseDto> UpdateDocumentStatusAsync(int documentId, string callerId, string callerRole, DocumentSubmissionStatus newStatus);
     }
 }

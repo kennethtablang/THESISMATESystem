@@ -20,5 +20,14 @@ namespace THESISMATESystem.Server.Interfaces
         Task<CapstoneGroupResponseDto> AddMemberAsync(int groupId, string userId);
         Task<CapstoneGroupResponseDto> RemoveMemberAsync(int groupId, string userId);
         Task<CapstoneGroupResponseDto> SetDeadlinesAsync(int groupId, SetGroupDeadlinesRequestDto dto);
+
+        Task<bool> CanAccessGroupAsync(string userId, string role, int groupId);
+        Task<IEnumerable<GroupDeadlineResponseDto>> GetDeadlinesAsync(int groupId);
+        Task<GroupDeadlineResponseDto> CreateDeadlineAsync(string userId, string role, int groupId, CreateGroupDeadlineRequestDto dto);
+        Task<GroupDeadlineResponseDto> UpdateDeadlineAsync(string userId, string role, int groupId, int deadlineId, UpdateGroupDeadlineRequestDto dto);
+        Task<bool> DeleteDeadlineAsync(string userId, string role, int groupId, int deadlineId);
+
+        Task<IEnumerable<CapstoneGroupResponseDto>> GetGroupsByPanelistAsync(string panelistId);
+        Task<CapstoneGroupResponseDto> SetDefenseOutcomeAsync(int groupId, SetGroupDefenseOutcomeRequestDto dto);
     }
 }
