@@ -15,21 +15,33 @@ namespace THESISMATESystem.Server.Services
         private readonly AppDbContext _db;
         private readonly IMapper _mapper;
         private readonly INotificationService _notifications;
+        private readonly IEmailService _email;
+        private readonly ILogger<DefenseService> _logger;
 
-        public DefenseService(AppDbContext db, IMapper mapper, INotificationService notifications)
+        public DefenseService(
+            AppDbContext db,
+            IMapper mapper,
+            INotificationService notifications,
+            IEmailService email,
+            ILogger<DefenseService> logger)
         {
             _db = db;
             _mapper = mapper;
             _notifications = notifications;
+            _email = email;
+            _logger = logger;
         }
 
         public async Task<DefenseScheduleResponseDto> CreateScheduleAsync(CreateDefenseScheduleRequestDto dto)
         {
+            var duration = dto.DurationMinutes > 0 ? dto.DurationMinutes : 60;
+            PhilippineTime.ValidateScheduleHours(dto.ScheduledDateTime, duration);
+
             var schedule = new DefenseSchedule
             {
                 CapstoneGroupId   = dto.CapstoneGroupId,
                 ScheduledDateTime = dto.ScheduledDateTime,
-                DurationMinutes   = dto.DurationMinutes > 0 ? dto.DurationMinutes : 60,
+                DurationMinutes   = duration,
                 Venue             = dto.Venue,
                 Phase             = dto.Phase,
             };
@@ -48,15 +60,43 @@ namespace THESISMATESystem.Server.Services
                 await _db.SaveChangesAsync();
             }
 
-            // Notify group members, adviser, and panelists
-            var group = await _db.CapstoneGroups.Include(g => g.Adviser).FirstAsync(g => g.Id == dto.CapstoneGroupId);
-            var msg = $"Defense scheduled on {dto.ScheduledDateTime:MMM dd, yyyy h:mm tt} at {dto.Venue}.";
+            // Notifications are best-effort — a failure must not prevent the 201 response
+            try
+            {
+                var group = await _db.CapstoneGroups
+                    .Include(g => g.Adviser)
+                    .FirstAsync(g => g.Id == dto.CapstoneGroupId);
 
-            await _notifications.SendToGroupMembersAsync(dto.CapstoneGroupId, msg, NotificationType.DefenseScheduled, defenseId: schedule.Id);
-            await _notifications.SendAsync(group.AdviserId, msg, NotificationType.DefenseScheduled, groupId: dto.CapstoneGroupId, defenseId: schedule.Id);
+                var panelistUsers = dto.PanelistIds.Count > 0
+                    ? await _db.Users
+                        .Where(u => dto.PanelistIds.Contains(u.Id))
+                        .Select(u => new { u.Id, u.Email, u.FirstName, u.LastName })
+                        .ToListAsync()
+                    : [];
 
-            foreach (var pId in dto.PanelistIds)
-                await _notifications.SendAsync(pId, msg, NotificationType.DefenseScheduled, groupId: dto.CapstoneGroupId, defenseId: schedule.Id);
+                var inAppMsg = $"Defense scheduled on {dto.ScheduledDateTime:MMM dd, yyyy h:mm tt} at {dto.Venue}.";
+                await _notifications.SendToGroupMembersAsync(dto.CapstoneGroupId, inAppMsg, NotificationType.DefenseScheduled, defenseId: schedule.Id);
+                await _notifications.SendAsync(group.AdviserId, inAppMsg, NotificationType.DefenseScheduled, groupId: dto.CapstoneGroupId, defenseId: schedule.Id);
+                foreach (var p in panelistUsers)
+                    await _notifications.SendAsync(p.Id, inAppMsg, NotificationType.DefenseScheduled, groupId: dto.CapstoneGroupId, defenseId: schedule.Id);
+
+                var memberEmails   = await GetGroupMemberEmailsAsync(dto.CapstoneGroupId);
+                var panelistEmails = panelistUsers.Where(p => !string.IsNullOrEmpty(p.Email)).Select(p => p.Email!);
+                var adviserEmail   = group.Adviser?.Email;
+                var allEmails      = memberEmails
+                    .Concat(panelistEmails)
+                    .Concat(adviserEmail is not null ? [adviserEmail] : [])
+                    .Distinct();
+
+                var panelistNames = panelistUsers.Select(p => $"{p.FirstName} {p.LastName}".Trim()).ToList();
+                var html    = DefenseEmailTemplates.Scheduled(group.GroupName, schedule.Phase, schedule.ScheduledDateTime, schedule.Venue, schedule.DurationMinutes, panelistNames);
+                var subject = $"Defense Scheduled – {group.GroupName} – {DefenseEmailTemplates.PhaseLabel(schedule.Phase)}";
+                await Task.WhenAll(allEmails.Select(to => SendEmailSafeAsync(to, subject, html)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send scheduling notifications for defense {Id}", schedule.Id);
+            }
 
             return await GetScheduleByIdAsync(schedule.Id)
                 ?? throw new InvalidOperationException("Failed to load defense schedule.");
@@ -106,15 +146,30 @@ namespace THESISMATESystem.Server.Services
                 .FirstOrDefaultAsync(s => s.Id == id)
                 ?? throw new KeyNotFoundException($"Schedule {id} not found.");
 
+            if (schedule.Status == DefenseStatus.Completed)
+                throw new InvalidOperationException("Cannot modify a completed defense.");
+
             var rescheduled = false;
             if (dto.ScheduledDateTime.HasValue)
             {
-                schedule.ScheduledDateTime = dto.ScheduledDateTime.Value;
-                schedule.Status = DefenseStatus.Rescheduled;
-                rescheduled = true;
+                // Only validate and mark as rescheduled when the time actually changes.
+                // Comparing ticks works because both values are the same UTC moment
+                // (stored Unspecified, sent back as Utc — same underlying ticks).
+                var timeChanged = dto.ScheduledDateTime.Value.Ticks != schedule.ScheduledDateTime.Ticks;
+                if (timeChanged)
+                {
+                    var newDuration = dto.DurationMinutes ?? schedule.DurationMinutes;
+                    PhilippineTime.ValidateScheduleHours(dto.ScheduledDateTime.Value, newDuration);
+                    schedule.ScheduledDateTime = dto.ScheduledDateTime.Value;
+                    schedule.Status = DefenseStatus.Rescheduled;
+                    rescheduled = true;
+                }
             }
             if (dto.Venue is not null)          schedule.Venue           = dto.Venue;
             if (dto.Phase.HasValue)             schedule.Phase           = dto.Phase.Value;
+            // Duration-only validation is skipped here: the frontend already validated the
+            // end time before calling the API, and the stored ScheduledDateTime has
+            // DateTimeKind.Unspecified (not reliably UTC), making server-side PHT conversion unreliable.
             if (dto.DurationMinutes.HasValue)   schedule.DurationMinutes = dto.DurationMinutes.Value;
             schedule.UpdatedAt = PhilippineTime.Now;
 
@@ -131,10 +186,27 @@ namespace THESISMATESystem.Server.Services
 
             await _db.SaveChangesAsync();
 
+            // Notifications are best-effort — a failure must not roll back the committed save
             if (rescheduled)
             {
-                var msg = $"Defense rescheduled to {schedule.ScheduledDateTime:MMM dd, yyyy h:mm tt} at {schedule.Venue}.";
-                await _notifications.SendToGroupMembersAsync(schedule.CapstoneGroupId, msg, NotificationType.DefenseRescheduled, defenseId: id);
+                try
+                {
+                    var inAppMsg = $"Defense rescheduled to {schedule.ScheduledDateTime:MMM dd, yyyy h:mm tt} at {schedule.Venue}.";
+                    await _notifications.SendToGroupMembersAsync(schedule.CapstoneGroupId, inAppMsg, NotificationType.DefenseRescheduled, defenseId: id);
+
+                    var group2 = await _db.CapstoneGroups.Include(g => g.Adviser).FirstAsync(g => g.Id == schedule.CapstoneGroupId);
+                    var memberEmails2 = await GetGroupMemberEmailsAsync(schedule.CapstoneGroupId);
+                    var adviserEmail2 = group2.Adviser?.Email;
+                    var allEmails2    = memberEmails2.Concat(adviserEmail2 is not null ? [adviserEmail2] : []).Distinct();
+
+                    var html2    = DefenseEmailTemplates.Rescheduled(group2.GroupName, schedule.Phase, schedule.ScheduledDateTime, schedule.Venue);
+                    var subject2 = $"Defense Rescheduled – {group2.GroupName} – {DefenseEmailTemplates.PhaseLabel(schedule.Phase)}";
+                    await Task.WhenAll(allEmails2.Select(to => SendEmailSafeAsync(to, subject2, html2)));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send rescheduling notifications for defense {Id}", id);
+                }
             }
 
             return await GetScheduleByIdAsync(id)
@@ -145,6 +217,7 @@ namespace THESISMATESystem.Server.Services
         {
             var schedule = await _db.DefenseSchedules.FindAsync(id);
             if (schedule is null) return false;
+            if (schedule.Status == DefenseStatus.Completed) return false;
 
             schedule.Status = DefenseStatus.Cancelled;
             schedule.UpdatedAt = PhilippineTime.Now;
@@ -155,6 +228,16 @@ namespace THESISMATESystem.Server.Services
                 "Your defense has been cancelled. Please wait for rescheduling.",
                 NotificationType.DefenceCancelled,
                 defenseId: id);
+
+            // Email notifications for cancellation
+            var group3       = await _db.CapstoneGroups.Include(g => g.Adviser).FirstAsync(g => g.Id == schedule.CapstoneGroupId);
+            var memberEmails3 = await GetGroupMemberEmailsAsync(schedule.CapstoneGroupId);
+            var adviserEmail3 = group3.Adviser?.Email;
+            var allEmails3    = memberEmails3.Concat(adviserEmail3 is not null ? [adviserEmail3] : []).Distinct();
+
+            var html3    = DefenseEmailTemplates.Cancelled(group3.GroupName, schedule.Phase);
+            var subject3 = $"Defense Cancelled – {group3.GroupName} – {DefenseEmailTemplates.PhaseLabel(schedule.Phase)}";
+            await Task.WhenAll(allEmails3.Select(to => SendEmailSafeAsync(to, subject3, html3)));
 
             return true;
         }
@@ -177,6 +260,12 @@ namespace THESISMATESystem.Server.Services
 
             if (!schedule.IsRatingOpen)
                 throw new InvalidOperationException("Rating is currently closed for this presentation. Grades are immutable.");
+
+            var criterion = await _db.DefenseCriteria.FindAsync(dto.DefenseCriterionId)
+                ?? throw new InvalidOperationException("Criterion not found.");
+
+            if (criterion.Phase != schedule.Phase)
+                throw new InvalidOperationException($"Criterion '{criterion.Name}' does not belong to the {schedule.Phase} rubric.");
 
             var existing = await _db.DefenseRatings.FirstOrDefaultAsync(r =>
                 r.DefenseScheduleId == dto.DefenseScheduleId &&
@@ -258,9 +347,11 @@ namespace THESISMATESystem.Server.Services
             return true;
         }
 
-        public async Task<IEnumerable<DefenseCriterionResponseDto>> GetCriteriaAsync()
+        public async Task<IEnumerable<DefenseCriterionResponseDto>> GetCriteriaAsync(DefensePhase? phase = null)
         {
-            var criteria = await _db.DefenseCriteria.Where(c => c.IsActive).ToListAsync();
+            var query = _db.DefenseCriteria.Where(c => c.IsActive);
+            if (phase.HasValue) query = query.Where(c => c.Phase == phase.Value);
+            var criteria = await query.OrderBy(c => c.Id).ToListAsync();
             return _mapper.Map<IEnumerable<DefenseCriterionResponseDto>>(criteria);
         }
 
@@ -268,16 +359,62 @@ namespace THESISMATESystem.Server.Services
         {
             var criterion = new DefenseCriterion
             {
-                Name = dto.Name,
+                Name        = dto.Name,
                 Description = dto.Description,
-                Weight = dto.Weight,
-                MaxScore = dto.MaxScore
+                Weight      = dto.Weight,
+                MaxScore    = dto.MaxScore,
+                Phase       = dto.Phase,
             };
 
             _db.DefenseCriteria.Add(criterion);
             await _db.SaveChangesAsync();
 
             return _mapper.Map<DefenseCriterionResponseDto>(criterion);
+        }
+
+        public async Task<DefenseCriterionResponseDto> UpdateCriterionAsync(int id, UpdateCriterionRequestDto dto)
+        {
+            var criterion = await _db.DefenseCriteria.FindAsync(id)
+                ?? throw new KeyNotFoundException($"Criterion {id} not found.");
+
+            if (dto.Name is not null)        criterion.Name        = dto.Name;
+            if (dto.Description is not null) criterion.Description = dto.Description;
+            if (dto.Weight.HasValue)         criterion.Weight      = dto.Weight.Value;
+            if (dto.MaxScore.HasValue)       criterion.MaxScore    = dto.MaxScore.Value;
+            if (dto.Phase.HasValue)          criterion.Phase       = dto.Phase.Value;
+
+            await _db.SaveChangesAsync();
+            return _mapper.Map<DefenseCriterionResponseDto>(criterion);
+        }
+
+        public async Task<bool> DeleteCriterionAsync(int id)
+        {
+            var criterion = await _db.DefenseCriteria.FindAsync(id);
+            if (criterion is null) return false;
+            criterion.IsActive = false;
+            await _db.SaveChangesAsync();
+            return true;
+        }
+
+        private async Task<IEnumerable<string>> GetGroupMemberEmailsAsync(int groupId)
+        {
+            var emails = await _db.GroupMembers
+                .Where(m => m.CapstoneGroupId == groupId)
+                .Select(m => m.User.Email)
+                .ToListAsync();
+            return emails.Where(e => !string.IsNullOrEmpty(e)).Select(e => e!);
+        }
+
+        private async Task SendEmailSafeAsync(string to, string subject, string html)
+        {
+            try
+            {
+                await _email.SendEmailAsync(to, subject, html);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send defense email to {To}", to);
+            }
         }
 
         private IQueryable<DefenseSchedule> LoadScheduleQuery() =>
@@ -318,7 +455,7 @@ namespace THESISMATESystem.Server.Services
                 };
             }).ToList();
 
-            var totalCriteria = await _db.DefenseCriteria.CountAsync(c => c.IsActive);
+            var totalCriteria = await _db.DefenseCriteria.CountAsync(c => c.IsActive && c.Phase == schedule.Phase);
             var totalRatingsExpected = panelCount * totalCriteria;
             var allSubmitted = schedule.DefenseRatings.Count >= totalRatingsExpected;
 
