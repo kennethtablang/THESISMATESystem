@@ -24,11 +24,13 @@ namespace THESISMATESystem.Server.Data
         public DbSet<DocumentComment> DocumentComments => Set<DocumentComment>();
         public DbSet<SystemFeature> SystemFeatures => Set<SystemFeature>();
         public DbSet<SystemFeatureComment> SystemFeatureComments => Set<SystemFeatureComment>();
+        public DbSet<SystemFeatureScreenshot> SystemFeatureScreenshots => Set<SystemFeatureScreenshot>();
         public DbSet<ConsultationSchedule> ConsultationSchedules => Set<ConsultationSchedule>();
         public DbSet<ConsultationRequest> ConsultationRequests => Set<ConsultationRequest>();
         public DbSet<Classroom> Classrooms => Set<Classroom>();
         public DbSet<ClassroomEnrollment> ClassroomEnrollments => Set<ClassroomEnrollment>();
         public DbSet<ClassroomAnnouncement> ClassroomAnnouncements => Set<ClassroomAnnouncement>();
+        public DbSet<GroupDeadline> GroupDeadlines => Set<GroupDeadline>();
         public DbSet<ManuscriptSection> ManuscriptSections => Set<ManuscriptSection>();
         public DbSet<ManuscriptFinalizationVote> ManuscriptFinalizationVotes => Set<ManuscriptFinalizationVote>();
         public DbSet<ManuscriptSnapshot> ManuscriptSnapshots => Set<ManuscriptSnapshot>();
@@ -155,6 +157,12 @@ namespace THESISMATESystem.Server.Data
                 .HasOne(sfc => sfc.SystemFeature)
                 .WithMany(sf => sf.Comments)
                 .HasForeignKey(sfc => sfc.SystemFeatureId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<SystemFeatureScreenshot>()
+                .HasOne(s => s.SystemFeature)
+                .WithMany(sf => sf.Screenshots)
+                .HasForeignKey(s => s.SystemFeatureId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             // Consultation schedules

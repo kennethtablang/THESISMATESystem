@@ -43,18 +43,46 @@ namespace THESISMATESystem.Server.Enums
         RatingSubmitted,
         DocumentUploaded,
         DocumentCommented,
+        DocumentSubmitted,
+        DocumentStatusUpdated,
         ConsultationRequested,
         ConsultationRequestResponded,
         ClassroomAnnouncement,
         ClassroomInvitation,
-        ManuscriptUpdated
+        ManuscriptUpdated,
+        DeadlinePosted,
+        SystemFeatureCommented,
+        SystemFeatureStatusUpdated,
     }
 
     public enum DefensePhase
     {
         TitleDefense,
         ProposalDefense,
-        FinalDefense
+        FinalDefense,
+        ReDefense
+    }
+
+    public enum DefenseOutcome
+    {
+        Pending,
+        Defended,
+        NotDefended
+    }
+
+    public enum RevisionLevel
+    {
+        None,
+        MinorRevisions,
+        MajorRevisions
+    }
+
+    public enum FeatureUrgency
+    {
+        Low,
+        Medium,
+        High,
+        Critical
     }
 
     public enum GroupStatus
@@ -78,6 +106,13 @@ namespace THESISMATESystem.Server.Enums
         NeedsRevision
     }
 
+    public enum StudentTestStatus
+    {
+        NotTested,
+        Passed,
+        Failed
+    }
+
     public enum ConsultationScheduleStatus
     {
         Open,
@@ -91,5 +126,32 @@ namespace THESISMATESystem.Server.Enums
         Pending,
         Approved,
         Rejected
+    }
+
+    public enum DocumentSubmissionStatus
+    {
+        Draft,
+        SubmittedForReview,
+        NeedsRevision,
+        Approved
+    }
+
+    public enum DocumentSection
+    {
+        TitlePage = 1,
+        ApprovalSheet = 2,
+        Abstract = 3,
+        Acknowledgement = 4,
+        Dedication = 5,
+        TableOfContents = 6,
+        ListOfTables = 7,
+        ListOfFigures = 8,
+        Chapter1 = 9,
+        Chapter2 = 10,
+        Chapter3 = 11,
+        Chapter4 = 12,
+        Chapter5 = 13,
+        References = 14,
+        Appendices = 15,
     }
 }

@@ -19,6 +19,7 @@ namespace THESISMATESystem.Server.Data
             await SeedUsersAsync(userManager);
             await SeedClassroomAsync(db, userManager);
             await SeedGroupsAsync(db, userManager);
+            await SeedDefaultRubricCriteriaAsync(db);
         }
 
         // ── Roles ─────────────────────────────────────────────────────────────
@@ -79,6 +80,23 @@ namespace THESISMATESystem.Server.Data
             await CreateUser(userManager, "student10@psu.edu.ph", "student10", "Lourdes",  "Fernandez",    "Student@123", "Student");
             await CreateUser(userManager, "student11@psu.edu.ph", "student11", "Marcos",   "Ramos",        "Student@123", "Student");
             await CreateUser(userManager, "student12@psu.edu.ph", "student12", "Isabela",  "Aquino",       "Student@123", "Student");
+
+            // ── Real accounts ──────────────────────────────────────────────────────
+            await CreateUser(userManager, "kennethreytablang@gmail.com", "kennethtablang",
+                "Kenneth", "Tablang", "Admin@123#", "SuperAdmin", middleName: "Rey");
+            await CreateUser(userManager, "kenkentabs3224@gmail.com", "kenkentabs",
+                "Ken", "Tabs", "Faculty@123", "Faculty");
+            await CreateUser(userManager, "kennethrrtablang@gmail.com", "kennethrrtablang",
+                "Kenneth", "Tablang", "Adviser@123", "Faculty");
+            await CreateUser(userManager, "keikatsuno3224@gmail.com", "keikatsuno",
+                "Kei", "Katsuno", "PanelMember@123", "Faculty");
+            await CreateUser(userManager, "thechaoscortex@gmail.com", "thechaoscortex",
+                "Chaos", "Cortex", "Student@123", "Student");
+            await CreateUser(userManager, "sanaminatozaki3224@gmail.com", "sanaminatozaki",
+                "Sana", "Minatozaki", "Student@123", "Student");
+            // kennethrrtablang@gmail.com listed again as Student — already registered above as Faculty, safely skipped
+            await CreateUser(userManager, "krrtablang_19ac0055@psu.edu.ph", "krrtablang",
+                "Kenneth", "Tablang", "Student@123", "Student", studentId: "19-AC-0055");
         }
 
         // ── Classroom ──────────────────────────────────────────────────────────
@@ -259,7 +277,8 @@ namespace THESISMATESystem.Server.Data
             UserManager<ApplicationUser> userManager,
             string email, string userName,
             string firstName, string lastName,
-            string password, string role)
+            string password, string role,
+            string? middleName = null, string? studentId = null)
         {
             if (await userManager.FindByEmailAsync(email) is not null) return;
 
@@ -269,13 +288,70 @@ namespace THESISMATESystem.Server.Data
                 Email          = email,
                 EmailConfirmed = true,
                 FirstName      = firstName,
+                MiddleName     = middleName,
                 LastName       = lastName,
+                StudentId      = studentId,
                 IsActive       = true,
             };
 
             var result = await userManager.CreateAsync(user, password);
             if (result.Succeeded)
+            {
                 await userManager.AddToRoleAsync(user, role);
+                Console.WriteLine($"[Seeder] Created {role}: {email}");
+            }
+            else
+            {
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                Console.WriteLine($"[Seeder] FAILED to create {email}: {errors}");
+            }
+        }
+
+        // ── Default Rubric Criteria ────────────────────────────────────────────
+
+        private static async Task SeedDefaultRubricCriteriaAsync(AppDbContext db)
+        {
+            static async Task SeedPhase(AppDbContext db, DefensePhase phase, List<(string Name, string Desc, decimal Weight)> items)
+            {
+                if (await db.DefenseCriteria.AnyAsync(c => c.Phase == phase)) return;
+                db.DefenseCriteria.AddRange(items.Select(i => new DefenseCriterion
+                {
+                    Phase       = phase,
+                    Name        = i.Name,
+                    Description = i.Desc,
+                    Weight      = i.Weight,
+                    MaxScore    = 100,
+                    IsActive    = true,
+                }));
+                await db.SaveChangesAsync();
+            }
+
+            await SeedPhase(db, DefensePhase.TitleDefense,
+            [
+                ("Problem Identification",  "Clarity and relevance of the research problem and objectives.",              25),
+                ("Literature Review",        "Breadth and depth of related literature; proper citation.",                 20),
+                ("Research Methodology",     "Appropriateness of the proposed research design and methods.",              20),
+                ("Technical Feasibility",    "Viability of the proposed system or solution given available resources.",   20),
+                ("Presentation & Defense",   "Clarity, confidence, and responsiveness during the oral defense.",          15),
+            ]);
+
+            await SeedPhase(db, DefensePhase.ProposalDefense,
+            [
+                ("Problem & Objectives",     "Sharpness of the problem statement and alignment of objectives.",          20),
+                ("Review of Related Studies","Quality and relevance of literature; identification of research gaps.",    15),
+                ("Methodology Design",       "Soundness of the research design, framework, and data collection plan.",   25),
+                ("System Design",            "Completeness of system architecture, data flow, and UI/UX wireframes.",    25),
+                ("Presentation & Defense",   "Clarity of delivery and quality of responses to panel questions.",         15),
+            ]);
+
+            await SeedPhase(db, DefensePhase.FinalDefense,
+            [
+                ("System Completeness",      "All proposed functionalities are fully implemented and operational.",      30),
+                ("Technical Quality",        "Code quality, architecture, security, and performance of the system.",     20),
+                ("Testing & Evaluation",     "Rigor of user acceptance testing and documented results.",                 20),
+                ("Research Documentation",   "Completeness, correctness, and formatting of the final manuscript.",       15),
+                ("Presentation & Defense",   "Professional delivery and depth of answers to panel questions.",           15),
+            ]);
         }
     }
 }
