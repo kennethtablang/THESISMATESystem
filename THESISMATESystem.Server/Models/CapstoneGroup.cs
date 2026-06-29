@@ -20,6 +20,11 @@ namespace THESISMATESystem.Server.Models
         public DateTime? ManuscriptDueDate { get; set; }
         public DateTime? SystemFeaturesDueDate { get; set; }
 
+        // Post-defense outcome tags (set after Final Defense or Re-defense)
+        public DefenseOutcome DefenseOutcome { get; set; } = DefenseOutcome.Pending;
+        public RevisionLevel RevisionLevel { get; set; } = RevisionLevel.None;
+        public bool RequiresReDefense { get; set; } = false;
+
         public string AdviserId { get; set; } = string.Empty;
         public ApplicationUser Adviser { get; set; } = null!;
 

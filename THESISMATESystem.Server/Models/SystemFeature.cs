@@ -21,6 +21,13 @@ namespace THESISMATESystem.Server.Models
         public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
         public DateTime? UpdatedAt { get; set; }
 
+        public FeatureUrgency Urgency { get; set; } = FeatureUrgency.Low;
+
+        public StudentTestStatus StudentTestStatus { get; set; } = StudentTestStatus.NotTested;
+        public string? StudentTestNote { get; set; }
+        public DateTime? StudentTestedAt { get; set; }
+
         public ICollection<SystemFeatureComment> Comments { get; set; } = [];
+        public ICollection<SystemFeatureScreenshot> Screenshots { get; set; } = [];
     }
 }

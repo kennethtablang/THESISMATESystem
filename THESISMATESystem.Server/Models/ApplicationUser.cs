@@ -11,6 +11,7 @@ namespace THESISMATESystem.Server.Models
         public string? StudentId { get; set; }
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
+        public DateTime? LastActiveAt { get; set; }
 
         public ICollection<GroupMember> GroupMemberships { get; set; } = [];
         public ICollection<CapstoneGroup> AdvisedGroups { get; set; } = [];

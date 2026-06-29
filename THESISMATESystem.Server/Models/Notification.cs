@@ -17,5 +17,6 @@ namespace THESISMATESystem.Server.Models
         public int? RelatedGroupId { get; set; }
         public int? RelatedDefenseId { get; set; }
         public int? RelatedChapterId { get; set; }
+        public int? RelatedSystemFeatureId { get; set; }
     }
 }

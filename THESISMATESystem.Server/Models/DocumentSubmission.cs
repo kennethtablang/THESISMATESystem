@@ -1,3 +1,4 @@
+using THESISMATESystem.Server.Enums;
 using THESISMATESystem.Server.Helpers;
 
 namespace THESISMATESystem.Server.Models
@@ -19,6 +20,12 @@ namespace THESISMATESystem.Server.Models
         public string MimeType { get; set; } = string.Empty;
         public int Version { get; set; } = 1;
         public DateTime SubmittedAt { get; set; } = PhilippineTime.Now;
+
+        public DocumentSection? Section { get; set; }
+
+        public bool IsAutoFinalized { get; set; } = false;
+
+        public DocumentSubmissionStatus SubmissionStatus { get; set; } = DocumentSubmissionStatus.Draft;
 
         public int? OriginalDocumentId { get; set; }
         public DocumentSubmission? OriginalDocument { get; set; }
