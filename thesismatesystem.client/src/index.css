@@ -367,3 +367,60 @@
   80%  { transform: translateY(-82vh) translateX(7px);   opacity: 0.25; }
   100% { transform: translateY(-108vh) translateX(0);    opacity: 0;    }
 }
+
+/* ── Toast customization ──────────────────────────────────────────────── */
+.Toastify__toast {
+  border-radius: 12px !important;
+  font-family: inherit !important;
+  font-size: 0.875rem !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12) !important;
+}
+.Toastify__toast--success { background: #f0fdf4 !important; color: #15803d !important; border: 1px solid #bbf7d0 !important; }
+.Toastify__toast--error   { background: #fef2f2 !important; color: #dc2626 !important; border: 1px solid #fecaca !important; }
+.Toastify__toast--info    { background: rgba(201,168,76,0.08) !important; color: #92700a !important; border: 1px solid rgba(201,168,76,0.3) !important; }
+.Toastify__progress-bar--success { background: #16a34a !important; }
+.Toastify__progress-bar--error   { background: #dc2626 !important; }
+.Toastify__progress-bar--info    { background: #c9a84c !important; }
+.Toastify__close-button { color: inherit !important; opacity: 0.5 !important; }
+.dark .Toastify__toast--success { background: #052e16 !important; color: #4ade80 !important; border-color: #166534 !important; }
+.dark .Toastify__toast--error   { background: #450a0a !important; color: #f87171 !important; border-color: #991b1b !important; }
+.dark .Toastify__toast--info    { background: rgba(201,168,76,0.12) !important; color: #c9a84c !important; border-color: rgba(201,168,76,0.25) !important; }
+
+/* ── Document Compare — Tracked Changes ──────────────────────────────────── */
+
+/* Base typography for the white Word-like document page */
+.tc-doc-page p,
+.tc-doc-page h1, .tc-doc-page h2, .tc-doc-page h3,
+.tc-doc-page h4, .tc-doc-page h5, .tc-doc-page h6,
+.tc-doc-page li, .tc-doc-page td, .tc-doc-page th {
+  margin-top: 0;
+  margin-bottom: 14px;
+  line-height: 2;
+}
+.tc-doc-page h1 { font-size: 1.5em;  font-weight: bold; }
+.tc-doc-page h2 { font-size: 1.3em;  font-weight: bold; }
+.tc-doc-page h3 { font-size: 1.1em;  font-weight: bold; }
+.tc-doc-page ul, .tc-doc-page ol { padding-left: 28px; margin-bottom: 14px; }
+.tc-doc-page table { border-collapse: collapse; width: 100%; margin-bottom: 14px; }
+.tc-doc-page td, .tc-doc-page th { border: 1px solid #ccc; padding: 4px 8px; }
+
+/* Removed content: red strikethrough applied to every descendant */
+.tc-removed,
+.tc-removed * {
+  color: #C00000 !important;
+  text-decoration: line-through !important;
+  background-color: rgba(192, 0, 0, 0.04) !important;
+}
+/* Preserve font-weight / font-style inside removed blocks */
+.tc-removed strong, .tc-removed b { font-weight: bold; }
+.tc-removed em,     .tc-removed i { font-style: italic; }
+
+/* Added content: green underline applied to every descendant */
+.tc-added,
+.tc-added * {
+  color: #107C41 !important;
+  text-decoration: underline !important;
+  background-color: rgba(16, 124, 65, 0.04) !important;
+}
+.tc-added strong, .tc-added b { font-weight: bold; }
+.tc-added em,     .tc-added i { font-style: italic; }
