@@ -53,7 +53,10 @@ namespace THESISMATESystem.Server.Controllers
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-            return Ok(await _auth.UpdateUserAsync(userId, dto, callerRole));
+            try { return Ok(await _auth.UpdateUserAsync(userId, dto, callerRole)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPost("change-password")]
@@ -61,8 +64,13 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> ChangePassword(ChangePasswordRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var success = await _auth.ChangePasswordAsync(userId, dto);
-            return success ? Ok() : BadRequest(new { message = "Password change failed." });
+            try
+            {
+                var success = await _auth.ChangePasswordAsync(userId, dto);
+                return success ? Ok() : BadRequest(new { message = "Current password is incorrect." });
+            }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPost("forgot-password")]

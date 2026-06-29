@@ -27,8 +27,12 @@ namespace THESISMATESystem.Server.Controllers
         [HttpGet("milestone-completion")]
         public async Task<IActionResult> MilestoneCompletion([FromQuery] string academicYear)
         {
-            var bytes = await _reports.GenerateMilestoneCompletionReportAsync(academicYear);
-            return File(bytes, "application/pdf", $"milestone_completion_{academicYear}.pdf");
+            try
+            {
+                var bytes = await _reports.GenerateMilestoneCompletionReportAsync(academicYear);
+                return File(bytes, "application/pdf", $"milestone_completion_{academicYear}.pdf");
+            }
+            catch (KeyNotFoundException) { return NotFound(); }
         }
 
         [HttpGet("defense/{scheduleId:int}/outcome")]
@@ -50,8 +54,12 @@ namespace THESISMATESystem.Server.Controllers
             [FromQuery] DateTime? from,
             [FromQuery] DateTime? to)
         {
-            var bytes = await _reports.GenerateAllGroupsReportAsync(adviserId, academicYear, from, to);
-            return File(bytes, "application/pdf", "all_groups_report.pdf");
+            try
+            {
+                var bytes = await _reports.GenerateAllGroupsReportAsync(adviserId, academicYear, from, to);
+                return File(bytes, "application/pdf", "all_groups_report.pdf");
+            }
+            catch (KeyNotFoundException) { return NotFound(); }
         }
     }
 }

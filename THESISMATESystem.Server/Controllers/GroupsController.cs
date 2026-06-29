@@ -158,7 +158,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("{id:int}/logo")]
-        [Authorize(Roles = "Student,Admin,SuperAdmin")]
+        [Authorize(Roles = "Student,Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> UploadLogo(int id, IFormFile file)
         {
             if (file is null || file.Length == 0)
