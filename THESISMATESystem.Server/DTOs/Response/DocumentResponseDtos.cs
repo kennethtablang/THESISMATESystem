@@ -1,3 +1,5 @@
+using THESISMATESystem.Server.Enums;
+
 namespace THESISMATESystem.Server.DTOs.Response
 {
     public class DocumentSubmissionResponseDto
@@ -18,6 +20,9 @@ namespace THESISMATESystem.Server.DTOs.Response
         public bool IsRevised { get; set; }
         public int TotalVersions { get; set; }
         public bool IsChanged { get; set; }
+        public DocumentSection? Section { get; set; }
+        public bool IsAutoFinalized { get; set; }
+        public DocumentSubmissionStatus SubmissionStatus { get; set; }
     }
 
     public class DocumentVersionDto

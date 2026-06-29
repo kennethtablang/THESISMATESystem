@@ -26,6 +26,7 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string? Description { get; set; }
         public decimal Weight { get; set; }
         public int MaxScore { get; set; }
+        public DefensePhase Phase { get; set; }
     }
 
     public class DefenseRatingResponseDto

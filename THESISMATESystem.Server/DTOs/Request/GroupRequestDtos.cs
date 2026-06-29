@@ -1,7 +1,16 @@
 using System.ComponentModel.DataAnnotations;
+using THESISMATESystem.Server.Enums;
 
 namespace THESISMATESystem.Server.DTOs.Request
 {
+    public class SetGroupDefenseOutcomeRequestDto
+    {
+        public DefenseOutcome? DefenseOutcome { get; set; }
+        public RevisionLevel? RevisionLevel { get; set; }
+        public bool? RequiresReDefense { get; set; }
+    }
+
+
     public class CreateGroupRequestDto
     {
         [Required] public string GroupName { get; set; } = string.Empty;
@@ -34,5 +43,22 @@ namespace THESISMATESystem.Server.DTOs.Request
     {
         public DateTime? ManuscriptDueDate { get; set; }
         public DateTime? SystemFeaturesDueDate { get; set; }
+    }
+
+    public class CreateGroupDeadlineRequestDto
+    {
+        [Required, MaxLength(200)] public string Title { get; set; } = string.Empty;
+        [MaxLength(1000)]          public string? Description { get; set; }
+        [Required]                 public DateTime DueDate { get; set; }
+        public bool   PostAsAnnouncement { get; set; } = false;
+        // "Group" = target group only; "Class" = entire classroom
+        public string AnnouncementScope  { get; set; } = "Group";
+    }
+
+    public class UpdateGroupDeadlineRequestDto
+    {
+        [Required, MaxLength(200)] public string Title { get; set; } = string.Empty;
+        [MaxLength(1000)]          public string? Description { get; set; }
+        [Required]                 public DateTime DueDate { get; set; }
     }
 }

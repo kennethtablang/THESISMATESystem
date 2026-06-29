@@ -32,9 +32,19 @@ namespace THESISMATESystem.Server.DTOs.Request
 
     public class CreateCriterionRequestDto
     {
-        [Required] public string Name { get; set; } = string.Empty;
-        public string? Description { get; set; }
+        [Required, MaxLength(200)] public string Name { get; set; } = string.Empty;
+        [MaxLength(500)]           public string? Description { get; set; }
         [Required, Range(0.01, 100)] public decimal Weight { get; set; }
         [Required, Range(1, 100)] public int MaxScore { get; set; } = 100;
+        [Required] public DefensePhase Phase { get; set; } = DefensePhase.TitleDefense;
+    }
+
+    public class UpdateCriterionRequestDto
+    {
+        [MaxLength(200)]           public string? Name { get; set; }
+        [MaxLength(500)]           public string? Description { get; set; }
+        [Range(0.01, 100)]         public decimal? Weight { get; set; }
+        [Range(1, 100)]            public int? MaxScore { get; set; }
+        public DefensePhase?       Phase { get; set; }
     }
 }

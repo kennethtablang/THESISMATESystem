@@ -16,6 +16,9 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string? SystemLogoUrl { get; set; }
         public DateTime? ManuscriptDueDate { get; set; }
         public DateTime? SystemFeaturesDueDate { get; set; }
+        public DefenseOutcome DefenseOutcome { get; set; }
+        public RevisionLevel RevisionLevel { get; set; }
+        public bool RequiresReDefense { get; set; }
         public UserSummaryDto Adviser { get; set; } = null!;
         public List<UserSummaryDto> Members { get; set; } = [];
         public MilestoneProgressDto? MilestoneProgress { get; set; }
@@ -27,6 +30,18 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string FullName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string? StudentId { get; set; }
+    }
+
+    public class GroupDeadlineResponseDto
+    {
+        public int      Id          { get; set; }
+        public int      GroupId     { get; set; }
+        public string   Title       { get; set; } = string.Empty;
+        public string?  Description { get; set; }
+        public DateTime DueDate     { get; set; }
+        public DateTime CreatedAt   { get; set; }
+        public UserSummaryDto CreatedBy { get; set; } = null!;
+        public int DaysRemaining => (int)Math.Ceiling((DueDate - DateTime.UtcNow).TotalDays);
     }
 
     public class MilestoneProgressDto
