@@ -41,7 +41,9 @@ namespace THESISMATESystem.Server.DTOs.Response
         public DateTime DueDate     { get; set; }
         public DateTime CreatedAt   { get; set; }
         public UserSummaryDto CreatedBy { get; set; } = null!;
-        public int DaysRemaining => (int)Math.Ceiling((DueDate - DateTime.UtcNow).TotalDays);
+        // DueDate is stored as client-supplied local time (no UTC conversion on write),
+        // so compare against DateTime.Now (local) to avoid an 8-hour PHT/UTC offset.
+        public int DaysRemaining => (int)Math.Ceiling((DueDate - DateTime.Now).TotalDays);
     }
 
     public class MilestoneProgressDto
