@@ -6,6 +6,7 @@ import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
 import { MessageSquare, Plus, Clock, User, FileText } from 'lucide-react'
+import { toast } from '../../utils/toast'
 
 export default function Consultations() {
   const { user } = useAuth()
@@ -31,6 +32,9 @@ export default function Consultations() {
 
   async function handleLog(e) {
     e.preventDefault()
+    if (!form.groupId) { setError('Please select a group.'); return }
+    if (!form.date) { setError('Please enter a consultation date.'); return }
+    if (!form.discussionContent.trim()) { setError('Discussion content is required.'); return }
     setSaving(true)
     setError('')
     try {
@@ -45,8 +49,10 @@ export default function Consultations() {
       setConsultations((prev) => [created, ...prev])
       setShowLog(false)
       setForm({ groupId: '', date: '', time: '', mode: 'InPerson', discussionContent: '', outcome: '' })
+      toast.success('Consultation logged.')
     } catch (err) {
       setError(err.message || 'Failed to log consultation.')
+      toast.error(err.message || 'Failed to log consultation.')
     } finally {
       setSaving(false)
     }
