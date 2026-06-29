@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
-import { groupService, chapterService } from '../../services/api'
+import { groupService, chapterService, documentService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
 import Badge, { statusLabel, statusVariant } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
-import { FileText, Upload, Eye, MessageSquare, CheckCircle, Download, History } from 'lucide-react'
+import { FileText, Upload, Eye, MessageSquare, CheckCircle, Download, History, FileUp } from 'lucide-react'
+import { toast } from '../../utils/toast'
 
 const CHAPTER_LABELS = [
   'Chapter 1 — Introduction',
@@ -30,6 +31,7 @@ export default function Chapters() {
   const [submitError, setSubmitError] = useState('')
   const [reviewError, setReviewError] = useState('')
   const [chapterHistory, setChapterHistory] = useState([])
+  const [finalizingChapter, setFinalizingChapter] = useState(null)
   const fileRef = useRef()
 
   const isAdviser = user?.role === 'Faculty'
@@ -89,8 +91,10 @@ export default function Chapters() {
       setSubmitForm({ chapterNumber: 1, file: null })
       if (fileRef.current) fileRef.current.value = ''
       setShowSubmit(false)
+      toast.success('Chapter submitted.')
     } catch (err) {
       setSubmitError(err.message)
+      toast.error(err.message || 'Failed to submit chapter.')
     } finally {
       setSaving(false)
     }
@@ -123,8 +127,10 @@ export default function Chapters() {
       setShowReview(false)
       setSelected(null)
       setReviewForm({ status: 'Approved', note: '' })
+      toast.success('Review submitted.')
     } catch (err) {
       setReviewError(err.message)
+      toast.error(err.message || 'Failed to submit review.')
     } finally {
       setSaving(false)
     }
@@ -141,6 +147,19 @@ export default function Chapters() {
       }
     } catch {
       // ignore — history is optional
+    }
+  }
+
+  async function handleFinalize(chapter) {
+    if (!group?.id || finalizingChapter) return
+    setFinalizingChapter(chapter.chapterNumber)
+    try {
+      await documentService.finalizeChapter(group.id, chapter.chapterNumber)
+      toast.success(`Chapter ${chapter.chapterNumber} sent to Upload Documents.`)
+    } catch (err) {
+      toast.error(err.message || 'Could not finalize chapter.')
+    } finally {
+      setFinalizingChapter(null)
     }
   }
 
@@ -172,7 +191,13 @@ export default function Chapters() {
                 .slice()
                 .sort((a, b) => a.chapterNumber - b.chapterNumber)
                 .map((c) => (
-                  <StudentChapterRow key={c.id} chapter={c} onView={() => openView(c)} />
+                  <StudentChapterRow
+                    key={c.id}
+                    chapter={c}
+                    onView={() => openView(c)}
+                    onFinalize={handleFinalize}
+                    finalizing={finalizingChapter === c.chapterNumber}
+                  />
                 ))}
             </div>
           )
@@ -428,7 +453,7 @@ export default function Chapters() {
   )
 }
 
-function StudentChapterRow({ chapter, onView }) {
+function StudentChapterRow({ chapter, onView, onFinalize, finalizing }) {
   const latestNote = chapter.revisionNotes?.[chapter.revisionNotes.length - 1]
 
   return (
@@ -461,6 +486,20 @@ function StudentChapterRow({ chapter, onView }) {
               </span>
             )}
             <Badge variant={statusVariant(chapter.status)} size="sm">{statusLabel(chapter.status)}</Badge>
+            <button
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg font-medium transition-colors shrink-0"
+              style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.2)' }}
+              disabled={finalizing}
+              onClick={(e) => { e.stopPropagation(); onFinalize?.(chapter) }}
+              title="Send this chapter to Upload Documents"
+            >
+              {finalizing ? (
+                <span className="w-3 h-3 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
+              ) : (
+                <FileUp size={12} />
+              )}
+              {finalizing ? 'Sending...' : 'Finalize'}
+            </button>
           </div>
         </div>
         {chapter.submittedAt && (
