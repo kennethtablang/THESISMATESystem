@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Calendar, Plus, CheckCircle, XCircle, Clock, MapPin, Users, ChevronDown, ChevronUp } from 'lucide-react'
+import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import { consultationScheduleService } from '../../services/api'
 
@@ -25,9 +26,14 @@ function RequestList({ scheduleId, onRespond }) {
   }, [scheduleId])
 
   async function respond(requestId, status, notes) {
-    const updated = await consultationScheduleService.respond(requestId, { status, responseNotes: notes })
-    setRequests(prev => prev.map(r => r.id === requestId ? updated : r))
-    onRespond()
+    try {
+      const updated = await consultationScheduleService.respond(requestId, { status, responseNotes: notes })
+      setRequests(prev => prev.map(r => r.id === requestId ? updated : r))
+      onRespond()
+      toast.success(status === 'Approved' ? 'Request approved.' : 'Request rejected.')
+    } catch (err) {
+      toast.error(err?.message || 'Failed to respond to request.')
+    }
   }
 
   if (loading) return <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>Loading requests...</p>
@@ -91,8 +97,10 @@ export default function ConsultationManager() {
       setSchedules(prev => [schedule, ...prev])
       setForm({ title: '', description: '', location: '', mode: 'InPerson', scheduledStartAt: '', scheduledEndAt: '', maxGroups: 5 })
       setShowForm(false)
-    } catch (err) { alert(err.message) }
-    finally { setSubmitting(false) }
+      toast.success('Consultation schedule created.')
+    } catch (err) {
+      toast.error(err?.message || 'Failed to create schedule.')
+    } finally { setSubmitting(false) }
   }
 
   async function reload() {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, Copy, Check, Users, Megaphone, RefreshCw, Send, ChevronDown, ChevronUp } from 'lucide-react'
+import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import { classroomService, groupService, authService } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
@@ -7,7 +8,17 @@ import { useAuth } from '../../contexts/AuthContext'
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false)
   async function handleCopy() {
-    await navigator.clipboard.writeText(text)
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const el = document.createElement('textarea')
+      el.value = text
+      el.style.cssText = 'position:fixed;opacity:0'
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+    }
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -106,8 +117,9 @@ export default function ClassroomManager() {
       setCreateForm({ className: '', academicYear: '' })
       setShowCreate(false)
       loadClassroom(room)
+      toast.success('Classroom created.')
     } catch (err) {
-      alert(err.message || 'Failed to create classroom')
+      toast.error(err.message || 'Failed to create classroom.')
     } finally {
       setCreating(false)
     }
@@ -124,8 +136,9 @@ export default function ClassroomManager() {
       })
       setAnnouncements(prev => [ann, ...prev])
       setAnnForm({ title: '', content: '', targetGroupId: '' })
+      toast.success('Announcement posted.')
     } catch (err) {
-      alert(err.message || 'Failed to post announcement')
+      toast.error(err.message || 'Failed to post announcement.')
     } finally {
       setPosting(false)
     }
@@ -148,8 +161,9 @@ export default function ClassroomManager() {
       ))
       setAssignStudentId('')
       setAssignGroupId('')
+      toast.success('Student assigned to group.')
     } catch (err) {
-      alert(err.message || 'Failed to assign student')
+      toast.error(err.message || 'Failed to assign student.')
     } finally {
       setAssigning(false)
     }
@@ -185,8 +199,10 @@ export default function ClassroomManager() {
 
       setGroupForm({ groupName: '', adviserId: '', memberIds: [] })
       setShowCreateGroup(false)
+      toast.success('Group created.')
     } catch (err) {
       setGroupError(err.message || 'Failed to create group.')
+      toast.error(err.message || 'Failed to create group.')
     } finally {
       setCreatingGroup(false)
     }
@@ -210,8 +226,9 @@ export default function ClassroomManager() {
       setClassrooms(updated)
       const refreshed = updated.find(c => c.id === selected.id)
       if (refreshed) setSelected(refreshed)
+      toast.success('Join code regenerated.')
     } catch (err) {
-      alert(err.message || 'Failed to regenerate code')
+      toast.error(err.message || 'Failed to regenerate code.')
     }
   }
 
