@@ -27,11 +27,19 @@ export class SignalRYjsProvider {
   async connect() {
     this._connected = true
 
-    // Forward local Y.Doc updates to the hub
+    // Forward local Y.Doc updates to the hub.
+    // For large updates (paste operations) we send the full Yjs state instead of
+    // the incremental delta, because incremental updates carry implicit dependencies:
+    // if a receiver is missing any prior update, they can never apply subsequent
+    // ones. A full-state update has no dependencies and always converges.
+    const FULL_STATE_THRESHOLD = 10 * 1024 // 10 KB
     this._docUpdateHandler = (update, origin) => {
       if (origin === this || !this._connected) return
-      const b64 = _toB64(update)
-      this.connection.invoke('SendDocUpdate', this.groupId, this.sectionKey, b64).catch(() => {})
+      const payload = update.byteLength > FULL_STATE_THRESHOLD
+        ? Y.encodeStateAsUpdate(this.ydoc)
+        : update
+      const b64 = _toB64(payload)
+      this.connection.invoke('SendDocUpdate', this.groupId, this.sectionKey, b64).catch(console.warn)
     }
     this.ydoc.on('update', this._docUpdateHandler)
 
