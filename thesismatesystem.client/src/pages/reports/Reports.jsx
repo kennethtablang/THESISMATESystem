@@ -310,7 +310,7 @@ export default function Reports() {
                                     background: isCompleted ? 'rgba(34,197,94,0.12)' : d.status === 'Scheduled' ? 'rgba(59,130,246,0.12)' : d.status === 'Cancelled' ? 'rgba(107,114,128,0.12)' : 'rgba(245,158,11,0.12)',
                                     color: isCompleted ? '#16a34a' : d.status === 'Scheduled' ? '#3b82f6' : d.status === 'Cancelled' ? '#6b7280' : '#d97706',
                                   }}>
-                                  {d.statusLabel ?? d.status}
+                                  {d.status}
                                 </span>
                               </td>
                               <td style={{ color: 'var(--text-secondary)' }}>
@@ -320,7 +320,7 @@ export default function Reports() {
                                 }
                               </td>
                               <td className="hidden sm:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                                <span className="truncate block max-w-[180px]">{d.thesisTitle ?? d.projectTitle ?? '—'}</span>
+                                <span className="truncate block max-w-[180px]">{groups.find(g => g.id === d.capstoneGroupId)?.projectTitle ?? '—'}</span>
                               </td>
                               <td>
                                 {isCompleted && (
