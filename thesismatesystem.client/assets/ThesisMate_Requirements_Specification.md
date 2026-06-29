@@ -2,15 +2,15 @@
 
 **System:** ThesisMate — Progress Monitoring and Defense Rating System for Capstone Projects of BSIT Students
 **Institution:** Pangasinan State University – Lingayen Campus, Science and Technology Department
-**Technology Stack:** ASP.NET Core 10 Web API · React 19 + Vite · Entity Framework Core · Microsoft SQL Server · Tailwind CSS 3 · SignalR · Yjs · QuestPDF · JWT Bearer Authentication
-**Document Version:** 2.0 (reflects Faculty role unification and all implemented modules)
+**Technology Stack:** ASP.NET Core 10 Web API · React 19 + Vite · Entity Framework Core · Microsoft SQL Server · Tailwind CSS 3 · SignalR · Yjs · QuestPDF · JWT Bearer Authentication · docx (client-side DOCX generation) · LanguageTool API · DOMPurify
+**Document Version:** 3.0 (added document section workflow, adviser review, manuscript auto-save, grammar/spell checking, comment highlight removal, formatted DOCX export, dashboard layout updates)
 **Last Updated:** June 2026
 
 ---
 
 ## 1. System Overview
 
-ThesisMate is a web-based, role-differentiated platform that consolidates capstone project **progress monitoring**, **manuscript collaboration**, and **oral defense rating** into a single, database-backed system. It replaces the manual, paper- and spreadsheet-based workflows currently used by faculty members and student researchers at PSU Lingayen by centralizing chapter submissions, real-time collaborative manuscript editing, consultation records, defense scheduling, evaluation scoring, classroom management, and academic reporting.
+ThesisMate is a web-based, role-differentiated platform that consolidates capstone project **progress monitoring**, **manuscript collaboration**, and **oral defense rating** into a single, database-backed system. It replaces the manual, paper- and spreadsheet-based workflows currently used by faculty members and student researchers at PSU Lingayen by centralizing chapter submissions, real-time collaborative manuscript editing, consultation records, defense scheduling, evaluation scoring, classroom management, document review workflows, and academic reporting.
 
 The architecture is a **decoupled SPA + REST API**: a React 19/Vite single-page application communicates with an ASP.NET Core 10 Web API via JSON over HTTPS, with JWT Bearer tokens for stateless authentication. Real-time features (manuscript collaboration, notifications) are delivered via SignalR WebSockets.
 
@@ -43,8 +43,8 @@ The architecture is a **decoupled SPA + REST API**: a React 19/Vite single-page 
 | 3 | Capstone Group Management | Group registration, adviser assignment, logos, academic year, version tags |
 | 4 | Classroom Management | Classroom creation, join-code enrollment, announcements, group assignment |
 | 5 | Chapter Submission & Review | Chapter file uploads, status tracking, revision notes, version history |
-| 6 | Document Management | General document uploads, versioning, comments |
-| 7 | Manuscript Collaborative Editor | Real-time multi-user editing (Yjs + SignalR), section management, revision workflow, comments, voting |
+| 6 | Document Management | Section-tagged document uploads, submission status workflow, versioning, adviser review with rich comments, approval/revision actions |
+| 7 | Manuscript Collaborative Editor | Real-time multi-user editing (Yjs + SignalR), auto-save, grammar/spell checking, section management, revision workflow, inline comments with highlight removal, formatted DOCX export |
 | 8 | System Feature Tracker | Track IT system/software features, completion dates, and commentary |
 | 9 | Consultation Logging | Adviser-logged consultation records per group and chapter |
 | 10 | Consultation Schedule Management | FacultyIC creates time slots; groups request and confirm appointments |
@@ -135,6 +135,16 @@ The architecture is a **decoupled SPA + REST API**: a React 19/Vite single-page 
 | FR-6.5 | The system shall allow students, Faculty advisers, and Admin to add text comments to a document submission. |
 | FR-6.6 | The system shall allow the uploading student and Admin to delete a document. |
 | FR-6.7 | The system shall allow authenticated users to download any document via a secure endpoint. |
+| FR-6.8 | The system shall tag each document submission with one of the following enumerated section types: `TitlePage`, `Abstract`, `Chapter1`, `Chapter2`, `Chapter3`, `Chapter4`, `Chapter5`, `RelatedLiterature`, `Methodology`, `Results`, `Conclusion`, `References`, `Appendices`. Untagged documents shall be valid and treated as general uploads. |
+| FR-6.9 | Each document submission shall carry a `DocumentSubmissionStatus` field with one of the following values: `Draft` (default upon upload), `SubmittedForReview`, `NeedsRevision`, `Approved`. The system shall enforce valid state transitions and reject invalid ones. |
+| FR-6.10 | The system shall allow a student member of the owning capstone group to submit a document for adviser review by transitioning its status from `Draft` or `NeedsRevision` to `SubmittedForReview` via `POST /documents/{id}/submit`. |
+| FR-6.11 | The system shall allow the group's assigned Faculty adviser (and Admin) to update a document's submission status to `Approved` or `NeedsRevision` via `PATCH /documents/{id}/status`. Unauthorized callers (e.g., a Faculty user who is not the group's adviser) shall receive a `403 Forbidden` response. |
+| FR-6.12 | The system shall send a `DocumentSubmitted` notification to the group's assigned adviser when a student submits a document for review (FR-6.10). The notification message shall include the group name, document title, and version number. |
+| FR-6.13 | The system shall send a `DocumentStatusUpdated` notification to all members of the capstone group when the adviser updates the document's status (FR-6.11). The notification message shall include the document title and the new status. |
+| FR-6.14 | The system shall provide an **Adviser Document Review page** accessible to Faculty advisers at the route `/documents/review/:id`. The page shall present a split-screen layout: a left document preview pane (rendering DOCX files using `docx-preview` and PDF files via an iframe) and a right sidebar. The sidebar shall display: section label, version indicator (e.g., "v2 of 3"), group name, submitter name, submission date, current status badge, a download button, and — when the document's status is `SubmittedForReview` — `Approve` and `Request Revision` action buttons. |
+| FR-6.15 | The Adviser Document Review page shall provide a rich-text comment editor within the right sidebar, supporting Bold, Italic, Underline, text highlight, and a color palette. The system shall allow the adviser to submit comments associated with the document. All submitted comment content shall be sanitized using DOMPurify before rendering in the browser to prevent cross-site scripting. |
+| FR-6.16 | The system shall provide an **Adviser Document Review list page** (`/adviser/manuscript-review`) displaying all documents across all groups the Faculty user advises, ordered first by canonical section sequence (TitlePage first, Appendices last), then by status (`SubmittedForReview` first), then by submission date. The page shall provide status filter tabs (All / Pending Review / Approved / Needs Revision) and a group filter dropdown. Documents with `SubmittedForReview` status shall display a "Review Now" button; all other statuses shall display a "View & Comment" button. |
+| FR-6.17 | The system shall provide a **Student Upload Documents page** (`/documents`) listing one card per recognized document section. Each card shall display the uploaded file name, version number, and the current `DocumentSubmissionStatus` as a color-coded badge. When a document has `Draft` or `NeedsRevision` status, the card shall display a right-aligned "Finalize & Submit to Adviser" button that triggers the FR-6.10 workflow. The "Upload New Version" action shall remain available for all uploaded sections regardless of status. |
 
 ### 4.7 Manuscript Collaborative Editor
 
@@ -153,6 +163,11 @@ The architecture is a **decoupled SPA + REST API**: a React 19/Vite single-page 
 | FR-7.11 | The system shall provide a **revision summary** for a group's manuscript, showing: the current revision number, locked status, per-section review completion, and a history of all past revisions with comment counts and timestamps. |
 | FR-7.12 | The system shall authorize SignalR manuscript hub access per-group using the user's JWT and their assignment (student in group, Faculty adviser/panel/FacultyIC for that group, Admin). Unauthorized connections shall be rejected. |
 | FR-7.13 | The system shall allow Faculty advisers, panelists, FacultyIC, and Admin to view the manuscript of any group they are authorized for (via assignment checks). |
+| FR-7.14 | The system shall implement **auto-save** in the manuscript editor. Content changes shall trigger a 2-second debounce timer; upon expiry, the editor shall automatically save the current HTML content and Yjs binary state to the server using the same payload as a manual save. Each content change resets the debounce timer. Auto-save shall be suppressed for locked (read-only) sections. |
+| FR-7.15 | The system shall display a **save status indicator** in the manuscript editor's status bar reflecting the current save state: (a) a spinning ring with the label "Saving…" while a save request is in flight; (b) a green checkmark with the label "All changes saved" for three seconds immediately following a successful save; (c) the timestamp of the last save in Philippine Standard Time and the name of the saving user in the idle state; and (d) "Not yet saved" if the section has never been saved. Pressing Ctrl+S or Cmd+S shall cancel any pending auto-save timer and trigger an immediate save. |
+| FR-7.16 | The system shall provide **real-time grammar and spelling checking** within the manuscript editor using the LanguageTool public API. After a 2-second debounce following each content change, the editor shall submit up to 20,000 characters of plain text (extracted from the ProseMirror document, with block boundaries represented as paragraph separators) to the LanguageTool endpoint. The system shall render identified errors as inline ProseMirror decorations: a red wavy underline for spelling errors (`misspelling` issue type) and a blue wavy underline for grammar errors. Hovering over an underlined segment shall display a tooltip containing the error message and up to five suggested corrections. Grammar checking shall not fire on locked sections. Network errors and API rate-limit responses shall be silently ignored. The browser's native `spellcheck` attribute shall be disabled on the editor's contenteditable element to prevent duplicate underlines. |
+| FR-7.17 | When a user deletes an inline comment from the comment panel in the manuscript editor, the system shall simultaneously remove the corresponding text highlight (ProseMirror `comment` mark) from the document. The removal shall be performed via a ProseMirror transaction that traverses all text nodes in the document, identifies those carrying a `comment` mark whose `commentId` attribute matches the deleted comment, and calls `removeMark` on each such node range before dispatching the transaction. |
+| FR-7.18 | The system shall allow students to **finalize** a manuscript section (Chapter 1–5 or References) to the Document Management system. The finalization process shall: (a) generate a DOCX file entirely in the browser using the `docx` npm library, applying academic formatting (Courier New 12pt font, double line spacing, 1.5-inch left margin, 1-inch top/right/bottom margins, centered page-number footer); (b) upload the generated DOCX file to the server via `POST /documents/groups/{groupId}/sections/{sectionKey}/finalize` as multipart form data; and (c) on the server, store the uploaded file directly to disk and create a new `DocumentSubmission` record (or a new version of an existing record for that section), without performing any server-side HTML-to-DOCX conversion. The same client-side formatting shall be applied when a user selects "Export This Section" to download the DOCX locally without uploading. |
 
 ### 4.8 System Feature Tracker
 
@@ -232,7 +247,7 @@ The architecture is a **decoupled SPA + REST API**: a React 19/Vite single-page 
 | ID | Requirement |
 |---|---|
 | FR-14.1 | The system shall send an in-app notification to a user when a relevant event occurs. The notification shall include: a human-readable message, event type, creation timestamp, and read/unread status. |
-| FR-14.2 | The system shall send notifications for the following events at minimum: chapter submitted, chapter status updated, revision notes added, consultation logged, consultation schedule request responded to, defense scheduled, defense cancelled/rescheduled, consultation log created. |
+| FR-14.2 | The system shall send notifications for the following events at minimum: chapter submitted, chapter status updated, revision notes added, consultation logged, consultation schedule request responded to, defense scheduled, defense cancelled/rescheduled, consultation log created, document submitted for review (`DocumentSubmitted`), and document status updated by adviser (`DocumentStatusUpdated`). |
 | FR-14.3 | The system shall allow users to mark individual notifications as read. |
 | FR-14.4 | The system shall allow users to mark all notifications as read in a single action. |
 | FR-14.5 | The system shall display an unread notification count indicator in the interface for authenticated users. |
@@ -242,10 +257,10 @@ The architecture is a **decoupled SPA + REST API**: a React 19/Vite single-page 
 
 | ID | Requirement |
 |---|---|
-| FR-15.1 | The system shall provide a **Student Dashboard** showing: current chapter approval status per chapter, group health score summary, pending voting status for manuscript lock, upcoming defense schedule, and recent notifications. |
-| FR-15.2 | The system shall provide a **Faculty Dashboard** showing: count of advised groups, pending chapter reviews, upcoming panel defense assignments, total consultation logs, an advised group progress list, and quick-action links to key pages. The dashboard shall dynamically display only sections where the user has active assignments. |
-| FR-15.3 | The system shall provide an **Admin Dashboard** showing: total groups, active defense count, active user count, and a defense schedule overview table with quick actions for scheduling and user management. |
-| FR-15.4 | The system shall provide a **SuperAdmin Dashboard** showing: system-wide user statistics, a role breakdown visualization, a recent audit log feed, and administrative quick actions. |
+| FR-15.1 | The system shall provide a **Student Dashboard** showing: a personalized welcome banner with group name, project title, and academic year; a chapter progress bar (approved / total); stat cards for chapters submitted, chapters needing attention, consultation count, and next scheduled defense with its phase label and color; an **Upcoming Deadlines** section displaying the next three group deadlines sorted by due date with urgency color coding (red ≤ 3 days, amber ≤ 7 days, blue otherwise); a full-width **Chapter Submissions** list with status color coding; a **Recent Activity** notification feed rendered immediately below the Chapter Submissions section and above the lower grid; a **My Defense Schedule** list with phase-colored indicators; and quick-action links to document upload, manuscript editor, consultation calendar, and system tracker. |
+| FR-15.2 | The system shall provide a **Faculty Dashboard** showing: stat cards for advised group count, pending chapter reviews, upcoming defense assignments (as adviser or panelist), and consultation count for the current month; a **Pending Chapter Reviews** section listing chapter submissions with `PendingReview` or `UnderRevision` status across all advised groups; an **Upcoming Defense Assignments** section listing scheduled defenses where the faculty is assigned as adviser or panelist, with phase-colored indicators; an **Advised Groups** list showing each group's milestone completion percentage via a progress bar; an **Upcoming Consultation Slots** list showing the next three time slots the faculty has created; an **Adviser Document Review** entry point (list view at `/adviser/manuscript-review`) allowing the faculty to see all documents submitted for review across advised groups, filtered by status, and navigate to the per-document review page (`/documents/review/:id`); and quick-action links to manuscript review, defense scheduler, rubric manager, and consultation manager. Sections are hidden when no data is present. |
+| FR-15.3 | The system shall provide an **Admin Dashboard** showing: stat cards for active group count, classroom count (with enrollment total), upcoming defense count, and active user count; a **Defense Pipeline** card breaking down defenses by phase (Title, Proposal, Final) with completed and upcoming counts per phase; a **Group Overview** card showing active vs. archived group counts and a consultation health breakdown (on-track ≥ 75%, moderate 50–74%, at-risk < 50%); a **User Distribution** card with per-role user counts and a visual bar; **Alert Banners** for at-risk groups (consultation score < 50%), defenses in the next 7 days, and deactivated accounts; a **Group Consultation Monitoring** table showing each group's total consultations, last-30-day consultations, score, and a health progress bar; an **Upcoming Defenses** sidebar list with phase color dots; and quick-action links to the defense scheduler, rubric manager, user management, and reports. |
+| FR-15.4 | The system shall provide a **SuperAdmin Dashboard** showing: all information visible on the Admin Dashboard; stat cards for total user count (active/inactive breakdown), active group count, classroom count, and upcoming defense count; a **User Distribution** card with role breakdown bars and additional rows showing active account ratio and 2FA adoption percentage; a **System Health** card combining active/archived group and classroom counts with a consultation health breakdown; a **Recent Users** list showing the five most recently registered accounts with role color badges; and **Alert Banners** for at-risk groups, upcoming defenses, and deactivated accounts. |
 
 ### 4.16 Report Generation
 
@@ -274,6 +289,7 @@ NFRs are organized according to the **ISO/IEC 25010:2023** quality dimensions: F
 | NFR-1.2 | **Correctness:** All weighted defense score computations shall be mathematically accurate to two decimal places. All timestamps shall reflect Philippine Standard Time (UTC+8). |
 | NFR-1.3 | **Appropriateness:** Every system function shall map to a documented stakeholder need. No feature shall expose functionality to a role that is not authorized to use it, even through direct API calls. |
 | NFR-1.4 | **Role Completeness:** The Faculty role unification shall correctly grant access to all adviser, panelist, and FacultyIC functions based on actual database assignments, without requiring role hierarchy changes for legitimate concurrent assignments. |
+| NFR-1.5 | **Thesis Formatting Compliance:** All DOCX files generated by the manuscript editor's Finalize and Export actions shall conform to PSU Lingayen academic formatting standards: Courier New typeface at 12pt, double line spacing, 1.5-inch left margin, and 1-inch top, right, and bottom margins, with a centered page-number footer. Formatting shall be applied client-side using the `docx` npm library prior to upload or download, ensuring no dependency on server-side HTML conversion. |
 
 ### 5.2 Reliability
 
@@ -285,6 +301,7 @@ NFRs are organized according to the **ISO/IEC 25010:2023** quality dimensions: F
 | NFR-2.4 | **Fault Tolerance:** In the event of a SignalR disconnection during collaborative manuscript editing, the Yjs CRDT state shall allow clients to re-synchronize and merge changes without data loss upon reconnection. |
 | NFR-2.5 | **Recoverability:** The database shall be backed up on a scheduled daily basis. A documented recovery procedure shall exist with a defined Recovery Time Objective (RTO). |
 | NFR-2.6 | **Idempotency:** Re-submitting a rating or a chapter file in the case of a network retry shall not create duplicate records. The system shall detect and handle duplicate submissions gracefully. |
+| NFR-2.7 | **Auto-Save Reliability:** The manuscript editor's auto-save mechanism shall ensure that no more than two seconds of user-entered content changes are at risk of loss due to a browser closure or network failure, given that a stable server connection exists. The auto-save debounce timer shall be cleared and a save triggered immediately upon any explicit Ctrl+S / Cmd+S invocation, regardless of how recently the previous save occurred. |
 
 ### 5.3 Usability
 
@@ -297,6 +314,7 @@ NFRs are organized according to the **ISO/IEC 25010:2023** quality dimensions: F
 | NFR-3.5 | **Responsiveness:** The interface shall render correctly and remain fully functional on desktop (≥ 1280 px), tablet (768–1279 px), and mobile (< 768 px) viewports using Tailwind CSS responsive utilities. |
 | NFR-3.6 | **Accessibility:** Interactive elements (buttons, inputs, links) shall have sufficient color contrast and legible label text to support users with moderate visual impairments. |
 | NFR-3.7 | **Empty States:** Every list or data view shall display a meaningful empty-state message and a suggested action when no records exist, preventing user confusion. |
+| NFR-3.8 | **Grammar and Spell Check Usability:** The grammar and spelling checker in the manuscript editor shall follow a 2-second debounce to avoid disruptive mid-word interruptions. Detected errors shall be indicated by visually distinct wavy underlines (red for misspelling, blue for grammar) rendered as non-intrusive inline decorations that do not obstruct the text cursor or selection. Hovering over any underlined segment shall display a tooltip containing the diagnostic message and up to five suggested corrections. The checker shall silently suppress results when the external API is unavailable to prevent user-facing error states during transient network failures. |
 
 ### 5.4 Performance Efficiency
 
@@ -335,13 +353,14 @@ NFRs are organized according to the **ISO/IEC 25010:2023** quality dimensions: F
 | NFR-7.1 | **Password Storage:** User passwords shall be stored as salted hashes using ASP.NET Core Identity's default PBKDF2 algorithm. Plaintext passwords shall never be stored or logged. |
 | NFR-7.2 | **Token Security:** JWT tokens shall be signed with a symmetric HMAC-SHA256 key. Tokens shall have a defined expiry. The signing key shall be stored in server configuration, never in source code. |
 | NFR-7.3 | **Authorization Enforcement:** Every API endpoint that modifies data or returns sensitive information shall be decorated with `[Authorize]` and the appropriate role constraint. The frontend role-guard shall be considered a UX aid only — security shall be enforced exclusively at the API level. |
-| NFR-7.4 | **Assignment-Based Authorization:** For Faculty users, access to group-specific resources (manuscript, chapters, consultations) shall be verified against actual database assignment records (adviser, panelist, FacultyIC) at the service layer, not merely against the JWT role claim. |
+| NFR-7.4 | **Assignment-Based Authorization:** For Faculty users, access to group-specific resources (manuscript, chapters, consultations, document review) shall be verified against actual database assignment records (adviser, panelist, FacultyIC) at the service layer, not merely against the JWT role claim. The `PATCH /documents/{id}/status` endpoint shall return `403 Forbidden` to any Faculty caller who is not the group's assigned adviser. |
 | NFR-7.5 | **Data Transmission:** All client–server communication shall be encrypted via HTTPS/TLS. HTTP connections shall be redirected to HTTPS. |
 | NFR-7.6 | **File Upload Security:** Uploaded files shall be validated by both file extension and magic-byte (binary signature) inspection before storage. Files shall be stored outside the web root with non-guessable server paths to prevent direct access. |
 | NFR-7.7 | **XSS Prevention:** Manuscript HTML content rendered in the browser shall be sanitized using DOMPurify before insertion into the DOM to prevent cross-site scripting attacks. |
 | NFR-7.8 | **Audit Trail:** The following actions shall be recorded in the audit log with acting user ID, target user/resource, action type, and Philippine Standard Time timestamp: login (success and failure), role change, account deactivation, password reset, email change, and 2FA toggle. |
 | NFR-7.9 | **Data Privacy:** Handling of student personal data (name, email, academic records) shall comply with the Philippine Data Privacy Act of 2012 (Republic Act No. 10173). Personal data shall not be exposed in URL parameters or unencrypted storage. |
 | NFR-7.10 | **Two-Factor Authentication:** When 2FA is enabled on an account, the JWT token shall not be issued until the user provides a valid, time-limited OTP delivered via email. Brute-force protection on the OTP endpoint shall be enforced. |
+| NFR-7.11 | **Document Review Comment Sanitization:** All rich-text comment content submitted through the Adviser Document Review page shall be sanitized server-side before storage and additionally sanitized client-side using DOMPurify before rendering via `dangerouslySetInnerHTML`. The sanitization shall strip any script tags, event handlers, and other executable content while preserving permitted formatting markup (bold, italic, underline, highlight, color). |
 
 ---
 
@@ -355,6 +374,8 @@ NFRs are organized according to the **ISO/IEC 25010:2023** quality dimensions: F
 | C-4 | All users are assumed to have access to a modern web browser and an internet/intranet connection. |
 | C-5 | The academic year format used throughout the system follows the convention `YYYY-YYYY` (e.g., `2024-2025`). |
 | C-6 | Capstone groups in the system represent BSIT students completing an IT capstone project that includes both a manuscript (thesis document) and a software system component. |
+| C-7 | Grammar and spell checking (FR-7.16) relies on the LanguageTool public API (`https://api.languagetool.org/v2/check`). This service is subject to external rate limits (approximately 20 requests per minute and 75,000 characters per day for anonymous callers). Institutions requiring higher throughput should deploy a self-hosted LanguageTool instance. |
+| C-8 | Client-side DOCX generation (FR-7.18) requires the user's browser to execute JavaScript; the feature is unavailable if JavaScript is disabled. |
 
 ---
 
@@ -367,8 +388,16 @@ NFRs are organized according to the **ISO/IEC 25010:2023** quality dimensions: F
 | 4.3 — Group Management | Capstone Group | NFR-1.3, 2.3 |
 | 4.4 — Classroom Management | Classroom | NFR-3.1, 3.2 |
 | 4.5 — Chapter Submission | Chapter Review | NFR-4.4, 7.6 |
-| 4.6 — Document Management | Documents | NFR-4.4, 7.6 |
-| 4.7 — Manuscript Collaborative Editor | Manuscript | NFR-2.4, 4.5, 7.7 |
+| 4.6 — Document Management (FR-6.1–6.7) | Documents — Upload & Versioning | NFR-4.4, 7.6 |
+| 4.6 — Document Section Workflow (FR-6.8–6.9) | Documents — Section Types & Status | NFR-1.3, 2.2 |
+| 4.6 — Document Submission & Approval (FR-6.10–6.13) | Documents — Student Submit / Adviser Act | NFR-7.3, 7.4, 2.2 |
+| 4.6 — Adviser Review Page (FR-6.14–6.15) | Documents — Adviser Review UI | NFR-7.7, 7.11, 3.4 |
+| 4.6 — Adviser Review List & Student Upload UI (FR-6.16–6.17) | Documents — List & Student Cards | NFR-3.3, 3.4, 3.7 |
+| 4.7 — Manuscript Collaborative Editor (FR-7.1–7.13) | Manuscript | NFR-2.4, 4.5, 7.7 |
+| 4.7 — Manuscript Auto-Save (FR-7.14–7.15) | Manuscript — Auto-Save | NFR-2.7, 3.4 |
+| 4.7 — Grammar & Spell Check (FR-7.16) | Manuscript — Language Checking | NFR-3.8, 6.1 |
+| 4.7 — Comment Highlight Removal (FR-7.17) | Manuscript — Inline Comments | NFR-1.1, 3.4 |
+| 4.7 — Finalize & Formatted DOCX (FR-7.18) | Manuscript — Finalize / Export | NFR-1.5, 4.4, 6.1 |
 | 4.8 — System Feature Tracker | Feature Tracker | NFR-3.7 |
 | 4.9 — Consultation Logging | Consultations | NFR-2.2 |
 | 4.10 — Consultation Schedules | Consultation Mgmt | NFR-3.2 |
