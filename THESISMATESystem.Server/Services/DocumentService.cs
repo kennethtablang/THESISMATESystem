@@ -116,21 +116,21 @@ namespace THESISMATESystem.Server.Services
 
             var rootId = doc.OriginalDocumentId ?? doc.Id;
 
-            // Admins and staff with broad access can view any version history
-            var isPrivileged = callerRole is "Admin" or "SuperAdmin" or "Faculty";
+            // Admins and SuperAdmins have unrestricted access
+            var isPrivileged = callerRole is "Admin" or "SuperAdmin";
             if (!isPrivileged)
             {
-                // Faculty as adviser — must advise this group
                 var groupId = doc.CapstoneGroupId;
                 if (callerRole == "Faculty")
                 {
+                    // Faculty must be the group's adviser to view version history
                     var advises = await _db.CapstoneGroups
                         .AnyAsync(g => g.Id == groupId && g.AdviserId == callerId);
                     if (!advises) throw new UnauthorizedAccessException();
                 }
                 else
                 {
-                    // Student / Panel — must be a group member
+                    // Student — must be a group member
                     var isMember = await _db.GroupMembers
                         .AnyAsync(gm => gm.CapstoneGroupId == groupId && gm.UserId == callerId);
                     if (!isMember) throw new UnauthorizedAccessException();
@@ -454,7 +454,7 @@ namespace THESISMATESystem.Server.Services
                 _            => sectionKey
             };
 
-            var uploadDir = Path.Combine(_env.ContentRootPath, "uploads", "documents", groupId.ToString());
+            var uploadDir = Path.Combine(_env.WebRootPath, "uploads", "documents", groupId.ToString());
             Directory.CreateDirectory(uploadDir);
 
             var storedName = $"{Guid.NewGuid()}.docx";

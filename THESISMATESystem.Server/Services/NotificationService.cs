@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Response;
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 using THESISMATESystem.Server.Models;
 
@@ -80,7 +81,9 @@ namespace THESISMATESystem.Server.Services
             await _db.SaveChangesAsync();
 
             // Email users who have been inactive for more than 15 minutes
-            var offlineThreshold = DateTime.UtcNow.AddMinutes(-15);
+            // LastActiveAt is stored in PHT (set by UpdateLastActiveMiddleware using PhilippineTime.Now),
+            // so compare against PHT now — not UTC — to avoid the 8-hour offset.
+            var offlineThreshold = PhilippineTime.Now.AddMinutes(-15);
             var frontendUrl = _config["ClientBaseUrl"] ?? "https://localhost:62535";
             var trackerUrl = $"{frontendUrl}/system-features";
 

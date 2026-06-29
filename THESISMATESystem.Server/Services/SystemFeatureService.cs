@@ -257,8 +257,9 @@ namespace THESISMATESystem.Server.Services
             if (comment.IsSystemComment)
                 throw new UnauthorizedAccessException("System comments cannot be deleted.");
 
-            var user = await _userManager.FindByIdAsync(userId)!;
-            var roles = await _userManager.GetRolesAsync(user!);
+            var user = await _userManager.FindByIdAsync(userId)
+                ?? throw new KeyNotFoundException("User not found.");
+            var roles = await _userManager.GetRolesAsync(user);
             var isAdmin = roles.Any(r => r is "Admin" or "SuperAdmin");
 
             if (!isAdmin && comment.AuthorId != userId)

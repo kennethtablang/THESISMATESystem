@@ -223,21 +223,28 @@ namespace THESISMATESystem.Server.Services
             schedule.UpdatedAt = PhilippineTime.Now;
             await _db.SaveChangesAsync();
 
-            await _notifications.SendToGroupMembersAsync(
-                schedule.CapstoneGroupId,
-                "Your defense has been cancelled. Please wait for rescheduling.",
-                NotificationType.DefenceCancelled,
-                defenseId: id);
+            // Notifications are best-effort — must not fail the cancel response
+            try
+            {
+                await _notifications.SendToGroupMembersAsync(
+                    schedule.CapstoneGroupId,
+                    "Your defense has been cancelled. Please wait for rescheduling.",
+                    NotificationType.DefenceCancelled,
+                    defenseId: id);
 
-            // Email notifications for cancellation
-            var group3       = await _db.CapstoneGroups.Include(g => g.Adviser).FirstAsync(g => g.Id == schedule.CapstoneGroupId);
-            var memberEmails3 = await GetGroupMemberEmailsAsync(schedule.CapstoneGroupId);
-            var adviserEmail3 = group3.Adviser?.Email;
-            var allEmails3    = memberEmails3.Concat(adviserEmail3 is not null ? [adviserEmail3] : []).Distinct();
+                var group3        = await _db.CapstoneGroups.Include(g => g.Adviser).FirstAsync(g => g.Id == schedule.CapstoneGroupId);
+                var memberEmails3 = await GetGroupMemberEmailsAsync(schedule.CapstoneGroupId);
+                var adviserEmail3 = group3.Adviser?.Email;
+                var allEmails3    = memberEmails3.Concat(adviserEmail3 is not null ? [adviserEmail3] : []).Distinct();
 
-            var html3    = DefenseEmailTemplates.Cancelled(group3.GroupName, schedule.Phase);
-            var subject3 = $"Defense Cancelled – {group3.GroupName} – {DefenseEmailTemplates.PhaseLabel(schedule.Phase)}";
-            await Task.WhenAll(allEmails3.Select(to => SendEmailSafeAsync(to, subject3, html3)));
+                var html3    = DefenseEmailTemplates.Cancelled(group3.GroupName, schedule.Phase);
+                var subject3 = $"Defense Cancelled – {group3.GroupName} – {DefenseEmailTemplates.PhaseLabel(schedule.Phase)}";
+                await Task.WhenAll(allEmails3.Select(to => SendEmailSafeAsync(to, subject3, html3)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send cancellation notifications for defense {Id}", id);
+            }
 
             return true;
         }
@@ -266,6 +273,9 @@ namespace THESISMATESystem.Server.Services
 
             if (criterion.Phase != schedule.Phase)
                 throw new InvalidOperationException($"Criterion '{criterion.Name}' does not belong to the {schedule.Phase} rubric.");
+
+            if (dto.Score < 0 || dto.Score > criterion.MaxScore)
+                throw new InvalidOperationException($"Score must be between 0 and {criterion.MaxScore} for '{criterion.Name}'.");
 
             var existing = await _db.DefenseRatings.FirstOrDefaultAsync(r =>
                 r.DefenseScheduleId == dto.DefenseScheduleId &&
