@@ -117,8 +117,10 @@ export const defenseService = {
   getRatings: (id) => api.get(`/defenses/${id}/ratings`),
   getConsolidated: (id) => api.get(`/defenses/${id}/consolidated`),
   finalize: (id) => api.post(`/defenses/${id}/finalize`),
-  criteria: () => api.get('/defenses/criteria'),
+  criteria: (phase) => api.get(`/defenses/criteria${phase ? `?phase=${phase}` : ''}`),
   createCriterion: (data) => api.post('/defenses/criteria', data),
+  updateCriterion: (id, data) => api.put(`/defenses/criteria/${id}`, data),
+  deleteCriterion: (id) => api.delete(`/defenses/criteria/${id}`),
 }
 
 export const groupService = {
@@ -138,7 +140,13 @@ export const groupService = {
     return requestMultipart('POST', `/groups/${id}/logo`, fd)
   },
   logoUrl: (id) => `${BASE_URL}/groups/${id}/logo`,
-  setDeadlines: (id, data) => api.patch(`/groups/${id}/deadlines`, data),
+  setDeadlines:      (id, data)              => api.patch(`/groups/${id}/deadlines`, data),
+  getDeadlines:      (id)                    => api.get(`/groups/${id}/deadline-list`),
+  createDeadline:    (id, data)              => api.post(`/groups/${id}/deadline-list`, data),
+  updateDeadline:    (id, deadlineId, data)  => api.patch(`/groups/${id}/deadline-list/${deadlineId}`, data),
+  deleteDeadline:    (id, deadlineId)        => api.delete(`/groups/${id}/deadline-list/${deadlineId}`),
+  panelGroups:       ()                      => api.get('/groups/panel-groups'),
+  setDefenseOutcome: (id, data)              => api.patch(`/groups/${id}/defense-outcome`, data),
 }
 
 export const manuscriptService = {
@@ -258,6 +266,20 @@ export const documentService = {
     return requestMultipart('POST', `/documents/${id}/new-version`, fd)
   },
   versions: (id) => api.get(`/documents/${id}/versions`),
+  fetchBlob: async (id) => {
+    const token = sessionStorage.getItem('tm_token')
+    const res = await fetch(`${BASE_URL}/documents/${id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) throw new Error(`Failed to load document (${res.status})`)
+    return res.blob()
+  },
+  finalizeChapter: (groupId, chapterNumber) =>
+    api.post(`/documents/groups/${groupId}/chapters/${chapterNumber}/finalize`),
+  finalizeSection: (groupId, sectionKey, formData) =>
+    api.postForm(`/documents/groups/${groupId}/sections/${sectionKey}/finalize`, formData),
+  submit: (id) => api.post(`/documents/${id}/submit`, {}),
+  updateStatus: (id, status) => api.patch(`/documents/${id}/status`, { status }),
 }
 
 export const systemFeatureService = {
@@ -269,6 +291,13 @@ export const systemFeatureService = {
   delete: (id) => api.delete(`/system-features/${id}`),
   addComment: (id, data) => api.post(`/system-features/${id}/comments`, data),
   comments: (id) => api.get(`/system-features/${id}/comments`),
+  deleteComment: (featureId, commentId) => api.delete(`/system-features/${featureId}/comments/${commentId}`),
+  submitStudentTest: (id, data) => api.patch(`/system-features/${id}/student-test`, data),
+  uploadScreenshot: (id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.postForm(`/system-features/${id}/screenshot`, fd)
+  },
 }
 
 export const classroomService = {
