@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { notificationService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
-import { Bell, CheckCheck, FileText, Calendar, MessageSquare, Users, AlertCircle } from 'lucide-react'
+import { Bell, CheckCheck, FileText, Calendar, MessageSquare, Users, AlertCircle, BookOpen, Clock, Cpu } from 'lucide-react'
 
 const iconMap = {
   ChapterSubmitted: FileText,
@@ -19,6 +20,11 @@ const iconMap = {
   DefenceCancelled: Calendar,
   RatingSubmitted: AlertCircle,
   ClassroomAnnouncement: Users,
+  ClassroomInvitation: Users,
+  ManuscriptUpdated: BookOpen,
+  DeadlinePosted: Clock,
+  SystemFeatureCommented: Cpu,
+  SystemFeatureStatusUpdated: Cpu,
 }
 
 const typeLabels = {
@@ -35,9 +41,21 @@ const typeLabels = {
   DefenceCancelled: 'Defense Cancelled',
   RatingSubmitted: 'Rating Submitted',
   ClassroomAnnouncement: 'Classroom Announcement',
+  ClassroomInvitation: 'Classroom Invitation',
+  ManuscriptUpdated: 'Manuscript Updated',
+  DeadlinePosted: 'Deadline Posted',
+  SystemFeatureCommented: 'System Feature Comment',
+  SystemFeatureStatusUpdated: 'Feature Status Updated',
+}
+
+// Notification types that should navigate to a specific page when clicked
+const typeRoutes = {
+  SystemFeatureCommented: '/system-features',
+  SystemFeatureStatusUpdated: '/system-features',
 }
 
 export default function Notifications() {
+  const navigate = useNavigate()
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -56,6 +74,12 @@ export default function Notifications() {
   function markAllRead() {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true, isRead: true })))
     notificationService.markAllRead().catch(() => {})
+  }
+
+  function handleClick(n) {
+    markRead(n.id)
+    const route = typeRoutes[n.type]
+    if (route) navigate(route)
   }
 
   const unread = notifications.filter((n) => !(n.read ?? n.isRead)).length
@@ -95,8 +119,9 @@ export default function Notifications() {
                   style={{
                     background: isRead ? 'var(--bg-card)' : 'rgba(201,168,76,0.06)',
                     border: `1px solid ${isRead ? 'var(--border-light)' : 'rgba(201,168,76,0.25)'}`,
+                    cursor: typeRoutes[n.type] ? 'pointer' : 'default',
                   }}
-                  onClick={() => markRead(n.id)}
+                  onClick={() => handleClick(n)}
                   onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none' }}
                 >
@@ -118,6 +143,11 @@ export default function Notifications() {
                     <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                       {n.message}
                     </p>
+                    {typeRoutes[n.type] && (
+                      <p className="text-xs mt-1" style={{ color: '#c9a84c' }}>
+                        Tap to open System Tracker →
+                      </p>
+                    )}
                   </div>
                   {!isRead && (
                     <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: '#c9a84c' }} />
@@ -137,6 +167,7 @@ function formatTime(iso) {
   const date = new Date(iso)
   const now = new Date()
   const diff = Math.floor((now - date) / 1000)
+  if (diff < 60) return 'Just now'
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
