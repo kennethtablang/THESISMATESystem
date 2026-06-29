@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import AppFooter from './Footer'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -50,6 +52,7 @@ export default function Layout() {
         </main>
         <AppFooter />
       </div>
+      <ToastContainer />
     </div>
   )
 }

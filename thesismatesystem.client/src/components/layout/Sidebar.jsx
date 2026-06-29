@@ -2,10 +2,10 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import logo from '../../assets/ThesisMate-logo.png'
 import {
-  LayoutDashboard, Users, FileText, MessageSquare, Calendar,
-  Bell, BarChart3, UserCircle, Star, Upload, Cpu, CalendarClock,
-  ShieldCheck, BookOpen, School, Megaphone, PenLine, LogOut, Activity,
-  ChevronLeft, ChevronRight, GraduationCap, Building2, CalendarRange,
+  LayoutDashboard, Users, FileText, Calendar,
+  Bell, BarChart3, UserCircle, Star, Upload, Cpu,
+  ShieldCheck, BookOpen, Megaphone, PenLine, Activity,
+  ChevronLeft, ChevronRight, GraduationCap, Building2, CalendarRange, ClipboardList,
 } from 'lucide-react'
 
 // ── Role config ───────────────────────────────────────────────────────
@@ -17,57 +17,67 @@ const roleConfig = {
 }
 
 // ── Nav definitions ───────────────────────────────────────────────────
+// { divider: true, label: 'Section' } entries render as labeled section breaks
 const navByRole = {
   SuperAdmin: [
     { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
+    { divider: true, label: 'Management' },
     { label: 'User Management',  icon: ShieldCheck,     to: '/users' },
     { label: 'Classrooms',       icon: Building2,       to: '/classrooms' },
     { label: 'Advisers',         icon: GraduationCap,   to: '/advisers' },
     { label: 'Manage Groups',    icon: Users,           to: '/groups' },
     { label: 'All Documents',    icon: FileText,        to: '/documents' },
+    { divider: true, label: 'Academic' },
+    { label: 'System Tracker',   icon: Cpu,             to: '/system-features' },
     { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
-    { label: 'Defense Schedules',  icon: Calendar,      to: '/defenses' },
-    { label: 'Defense Scheduler',  icon: CalendarRange, to: '/defense-scheduler' },
-    { label: 'Reports',            icon: BarChart3,     to: '/reports' },
+    { divider: true, label: 'Defenses' },
+    { label: 'Defense Schedules',  icon: Calendar,       to: '/defenses' },
+    { label: 'Defense Scheduler',  icon: CalendarRange,  to: '/defense-scheduler' },
+    { label: 'Rubric Manager',     icon: ClipboardList,  to: '/rubric-manager' },
+    { divider: true, label: 'Reports' },
+    { label: 'Reports',            icon: BarChart3,      to: '/reports' },
   ],
   Admin: [
     { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
+    { divider: true, label: 'Management' },
     { label: 'User Management',  icon: ShieldCheck,     to: '/users' },
     { label: 'Classrooms',       icon: Building2,       to: '/classrooms' },
     { label: 'Advisers',         icon: GraduationCap,   to: '/advisers' },
     { label: 'Manage Groups',    icon: Users,           to: '/groups' },
+    { divider: true, label: 'Academic' },
     { label: 'Chapters',         icon: FileText,        to: '/chapters' },
     { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
-    { label: 'Consultations',    icon: MessageSquare,   to: '/consultations' },
-    { label: 'Defense Schedules',  icon: Calendar,      to: '/defenses' },
-    { label: 'Defense Scheduler',  icon: CalendarRange, to: '/defense-scheduler' },
-    { label: 'Reports',            icon: BarChart3,     to: '/reports' },
+    { divider: true, label: 'Defenses' },
+    { label: 'Defense Schedules',  icon: Calendar,       to: '/defenses' },
+    { label: 'Defense Scheduler',  icon: CalendarRange,  to: '/defense-scheduler' },
+    { label: 'Rubric Manager',     icon: ClipboardList,  to: '/rubric-manager' },
+    { divider: true, label: 'Reports' },
+    { label: 'Reports',            icon: BarChart3,      to: '/reports' },
   ],
   Faculty: [
     { label: 'Dashboard',             icon: LayoutDashboard, to: '/dashboard' },
+    { divider: true, label: 'Academic' },
     { label: 'My Groups',             icon: Users,           to: '/groups' },
     { label: 'Manuscripts',           icon: BookOpen,        to: '/documents' },
-    { label: 'Manuscript Review',     icon: PenLine,         to: '/manuscript' },
-    { label: 'Chapters',              icon: FileText,        to: '/chapters' },
     { label: 'System Tracker',        icon: Cpu,             to: '/system-features' },
     { label: 'Monitoring',            icon: Activity,        to: '/monitoring' },
-    { label: 'Consultations',         icon: MessageSquare,   to: '/consultations' },
-    { label: 'Classroom',             icon: School,          to: '/classroom' },
-    { label: 'Consultation Manager',  icon: CalendarClock,   to: '/consultation-manager' },
+    { divider: true, label: 'Defenses' },
     { label: 'Defense Schedules',  icon: Calendar,      to: '/defenses' },
     { label: 'Defense Scheduler',  icon: CalendarRange, to: '/defense-scheduler' },
     { label: 'Rate Defenses',      icon: Star,          to: '/ratings' },
+    { divider: true, label: 'Reports' },
     { label: 'Reports',               icon: BarChart3,       to: '/reports' },
   ],
   Student: [
     { label: 'Dashboard',            icon: LayoutDashboard, to: '/dashboard' },
+    { divider: true, label: 'My Work' },
     { label: 'My Class',             icon: Megaphone,       to: '/my-class' },
     { label: 'My Group',             icon: Users,           to: '/groups' },
     { label: 'Manuscript',           icon: PenLine,         to: '/manuscript' },
     { label: 'Upload Documents',     icon: Upload,          to: '/documents' },
     { label: 'System Tracker',       icon: Cpu,             to: '/system-features' },
     { label: 'Monitoring',           icon: Activity,        to: '/monitoring' },
-    { label: 'Consultation Calendar',icon: CalendarClock,   to: '/calendar' },
+    { divider: true, label: 'Schedule' },
     { label: 'Defense Schedule',     icon: Calendar,        to: '/defenses' },
   ],
 }
@@ -78,7 +88,7 @@ const accountItems = [
 ]
 
 export default function Sidebar({ onClose, collapsed, onToggleCollapse }) {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const role = user?.role ?? 'Student'
   const navItems = navByRole[role] ?? navByRole.Student
@@ -208,20 +218,26 @@ export default function Sidebar({ onClose, collapsed, onToggleCollapse }) {
 
       {/* ── Navigation ──────────────────────────────────── */}
       <nav
-        className="relative z-10 flex-1 overflow-y-auto py-4"
+        className="relative z-10 flex-1 overflow-y-auto py-2"
         style={{ paddingInline: collapsed ? '8px' : '12px', scrollbarWidth: 'none' }}
       >
-        {/* Main nav items */}
+        {/* Main nav items — divider entries render as section labels */}
         <ul className="space-y-0.5">
-          {navItems.map(item => (
-            <li key={item.to}>
-              <NavItem item={item} onNav={handleNav} collapsed={collapsed} />
-            </li>
-          ))}
+          {navItems.map((item, i) =>
+            item.divider ? (
+              <li key={`div-${i}`}>
+                <NavDivider label={item.label} collapsed={collapsed} />
+              </li>
+            ) : (
+              <li key={item.to}>
+                <NavItem item={item} onNav={handleNav} collapsed={collapsed} />
+              </li>
+            )
+          )}
         </ul>
 
-        {/* Dot separator */}
-        <div className="flex items-center justify-center gap-1.5 my-4" aria-hidden>
+        {/* Dot separator before account items */}
+        <div className="flex items-center justify-center gap-1.5 my-3" aria-hidden>
           {collapsed ? (
             <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.12)', display: 'block' }} />
           ) : (
@@ -324,26 +340,35 @@ export default function Sidebar({ onClose, collapsed, onToggleCollapse }) {
                 {roleLabel}
               </span>
             </div>
-
-            <button
-              title="Log out"
-              onClick={e => { e.stopPropagation(); logout?.() }}
-              style={{
-                width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(255,255,255,0.06)',
-                color: 'rgba(255,255,255,0.3)',
-                border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; e.currentTarget.style.color = '#f87171' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.3)' }}
-            >
-              <LogOut size={13} />
-            </button>
           </div>
         )}
       </div>
     </aside>
+  )
+}
+
+// ── Section divider ────────────────────────────────────────────────────
+function NavDivider({ label, collapsed }) {
+  if (collapsed) {
+    return (
+      <div aria-hidden style={{ margin: '6px 4px', height: 1, background: 'rgba(255,255,255,0.08)', borderRadius: 1 }} />
+    )
+  }
+  return (
+    <div aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 2px 4px' }}>
+      <span style={{
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        color: 'rgba(201,168,76,0.55)',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      }}>
+        {label}
+      </span>
+      <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.07)', borderRadius: 1 }} />
+    </div>
   )
 }
 
