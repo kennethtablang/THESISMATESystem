@@ -364,3 +364,5 @@ FodyWeavers.xsd
 /graphify-out
 /THESISMATESystem.Server/wwwroot/uploads
 /.claude
+/THESISMATESystem.Server/uploads/documents/5
+*.md
