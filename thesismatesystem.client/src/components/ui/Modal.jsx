@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -9,9 +9,26 @@ const sizeClasses = {
   xl: 'max-w-4xl',
 }
 
+// Must match animate-fade-out / animate-slide-down duration in tailwind.config.js
+const CLOSE_DURATION = 200
+
 export default function Modal({ open, onClose, title, children, size = 'md', footer }) {
+  const [mounted, setMounted] = useState(open)
+  const [closing, setClosing] = useState(false)
+
   useEffect(() => {
-    if (!open) return
+    if (open) {
+      setMounted(true)
+      setClosing(false)
+    } else if (mounted) {
+      setClosing(true)
+      const t = setTimeout(() => { setMounted(false); setClosing(false) }, CLOSE_DURATION)
+      return () => clearTimeout(t)
+    }
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!mounted) return
     const handler = (e) => e.key === 'Escape' && onClose?.()
     document.addEventListener('keydown', handler)
     document.body.style.overflow = 'hidden'
@@ -19,19 +36,19 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
       document.removeEventListener('keydown', handler)
       document.body.style.overflow = ''
     }
-  }, [open, onClose])
+  }, [mounted, onClose])
 
-  if (!open) return null
+  if (!mounted) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+    <div className={clsx('fixed inset-0 z-50 flex items-center justify-center p-4', closing ? 'animate-fade-out' : 'animate-fade-in')}>
       <div
         className="absolute inset-0"
         style={{ background: 'rgba(10, 22, 40, 0.6)', backdropFilter: 'blur(4px)' }}
         onClick={onClose}
       />
       <div
-        className={clsx('relative w-full rounded-2xl animate-slide-up', sizeClasses[size])}
+        className={clsx('relative w-full rounded-2xl', sizeClasses[size], closing ? 'animate-slide-down' : 'animate-slide-up')}
         style={{
           background: 'var(--bg-card)',
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
