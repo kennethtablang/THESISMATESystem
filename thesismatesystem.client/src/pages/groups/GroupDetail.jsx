@@ -2,23 +2,28 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { groupService, authService, classroomService } from '../../services/api'
-import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import { PageLoader } from '../../components/ui/Spinner'
 import {
   ArrowLeft, Users, BookOpen, FileText, Calendar, MessageSquare,
   TrendingUp, Pencil, UserPlus, UserMinus, Search, Image,
   GraduationCap, Archive, CheckCircle2, Clock, AlertCircle, Cpu,
-  ChevronRight, CalendarDays,
+  ChevronRight, CalendarDays, Trash2, Upload,
 } from 'lucide-react'
+import { toast } from '../../utils/toast'
 
 function deadlineInfo(dueDate) {
   if (!dueDate) return { label: 'Not set', color: 'var(--text-muted)', bg: 'var(--bg-subtle)', border: 'var(--border-light)' }
-  const diffDays = Math.ceil((new Date(dueDate) - new Date()) / 86400000)
-  if (diffDays < 0)  return { label: 'Overdue',          color: '#dc2626', bg: 'rgba(220,38,38,0.08)',  border: 'rgba(220,38,38,0.2)' }
-  if (diffDays === 0) return { label: 'Due today',        color: '#dc2626', bg: 'rgba(220,38,38,0.08)',  border: 'rgba(220,38,38,0.2)' }
-  if (diffDays <= 7)  return { label: `Due in ${diffDays}d`, color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.2)' }
-  return { label: `${diffDays}d left`, color: '#16a34a', bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.2)' }
+  // Compare date-only (midnight local) to avoid timezone-induced urgency flips
+  const due   = new Date(dueDate); due.setHours(0, 0, 0, 0)
+  const today = new Date();        today.setHours(0, 0, 0, 0)
+  const diffDays = Math.round((due - today) / 86400000)
+  if (diffDays < 0)   return { label: 'Overdue',              color: '#dc2626', bg: 'rgba(220,38,38,0.10)',   border: 'rgba(220,38,38,0.25)'  }
+  if (diffDays === 0) return { label: 'Due today',            color: '#dc2626', bg: 'rgba(220,38,38,0.10)',   border: 'rgba(220,38,38,0.25)'  }
+  if (diffDays <= 3)  return { label: `Due in ${diffDays}d`,  color: '#dc2626', bg: 'rgba(220,38,38,0.07)',   border: 'rgba(220,38,38,0.18)'  }
+  if (diffDays <= 7)  return { label: `Due in ${diffDays}d`,  color: '#f59e0b', bg: 'rgba(245,158,11,0.10)',  border: 'rgba(245,158,11,0.25)' }
+  if (diffDays <= 14) return { label: `Due in ${diffDays}d`,  color: '#0284c7', bg: 'rgba(14,165,233,0.10)',  border: 'rgba(14,165,233,0.25)' }
+  return { label: `${diffDays}d left`,                        color: '#16a34a', bg: 'rgba(34,197,94,0.10)',   border: 'rgba(34,197,94,0.25)'  }
 }
 
 function fmt(iso) {
@@ -147,18 +152,30 @@ export default function GroupDetail() {
   const [logoError,     setLogoError]     = useState(false)
 
   // Deadlines
-  const [showDeadlineModal, setShowDeadlineModal] = useState(false)
-  const [deadlineForm,      setDeadlineForm]      = useState({ manuscriptDueDate: '', systemFeaturesDueDate: '' })
-  const [deadlineSaving,    setDeadlineSaving]    = useState(false)
-  const [deadlineError,     setDeadlineError]     = useState('')
+  const [deadlines,          setDeadlines]          = useState([])
+  const [showDeadlineModal,  setShowDeadlineModal]  = useState(false)
+  const [editingDeadline,    setEditingDeadline]    = useState(null)   // null = create, object = edit
+  const [deadlineForm,       setDeadlineForm]       = useState({
+    title: '', description: '', dueDate: '',
+    postAsAnnouncement: false, announcementScope: 'Group',
+  })
+  const [deadlineSaving,     setDeadlineSaving]     = useState(false)
+  const [deadlineError,      setDeadlineError]      = useState('')
+  const [deletingDeadlineId, setDeletingDeadlineId] = useState(null)
 
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
   const canManageDeadlines = ['Admin', 'SuperAdmin', 'Faculty'].includes(user?.role)
 
-  // ── Load group ──────────────────────────────────────────────────────────────
+  // ── Load group + deadlines ──────────────────────────────────────────────────
   useEffect(() => {
-    groupService.get(id)
-      .then(setGroup)
+    setLoading(true)
+    setDeadlines([])   // clear stale data from previous group immediately
+    setGroup(null)
+    Promise.all([
+      groupService.get(id),
+      groupService.getDeadlines(id).catch(() => []),
+    ])
+      .then(([grp, dl]) => { setGroup(grp); setDeadlines(Array.isArray(dl) ? dl : []) })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false))
   }, [id])
@@ -191,9 +208,11 @@ export default function GroupDetail() {
     setMemberError('')
     try {
       const updated = await groupService.addMember(id, student.id)
+      toast.success(`${student.fullName} added to group.`)
       setGroup(updated)
     } catch (err) {
       setMemberError(err.message || 'Failed to add member.')
+      toast.error(err.message || 'Failed to add member.')
     } finally {
       setAddingId(null)
     }
@@ -210,8 +229,10 @@ export default function GroupDetail() {
     try {
       const updated = await groupService.removeMember(id, confirmRemove.id)
       setGroup(updated)
+      toast.success('Member removed.')
     } catch (err) {
       setMemberError(err.message || 'Failed to remove member.')
+      toast.error(err.message || 'Failed to remove member.')
     } finally {
       setRemovingId(null)
     }
@@ -246,8 +267,10 @@ export default function GroupDetail() {
       })
       setGroup(updated)
       setShowEditModal(false)
+      toast.success('Group updated.')
     } catch (err) {
       setEditError(err.message)
+      toast.error(err.message || 'Failed to update group.')
     } finally {
       setEditSaving(false)
     }
@@ -262,9 +285,11 @@ export default function GroupDetail() {
     setConfirmArchive(false)
     try {
       await groupService.archive(id)
+      toast.success('Group archived.')
       navigate('/groups')
     } catch (err) {
       setMemberError(err.message || 'Failed to archive group.')
+      toast.error(err.message || 'Failed to archive group.')
     }
   }
 
@@ -276,58 +301,105 @@ export default function GroupDetail() {
     try {
       const updated = await groupService.uploadLogo(id, file)
       setGroup(updated)
+      toast.success('Logo uploaded.')
     } catch (err) {
-      alert(err.message || 'Failed to upload logo.')
+      toast.error(err.message || 'Failed to upload logo.')
     } finally {
       setLogoUploading(false)
     }
   }
 
   // ── Deadlines ────────────────────────────────────────────────────────────────
-  function openDeadlineModal() {
-    const toInput = (iso) => iso ? new Date(iso).toISOString().split('T')[0] : ''
-    setDeadlineForm({
-      manuscriptDueDate:     toInput(group.manuscriptDueDate),
-      systemFeaturesDueDate: toInput(group.systemFeaturesDueDate),
-    })
+  function openDeadlineModal(existing = null) {
+    setEditingDeadline(existing)
+    if (existing) {
+      // Pre-fill form with existing deadline — convert ISO date to YYYY-MM-DD for <input type="date">
+      const localDate = new Date(existing.dueDate)
+      const yyyy = localDate.getFullYear()
+      const mm   = String(localDate.getMonth() + 1).padStart(2, '0')
+      const dd   = String(localDate.getDate()).padStart(2, '0')
+      setDeadlineForm({
+        title:              existing.title,
+        description:        existing.description ?? '',
+        dueDate:            `${yyyy}-${mm}-${dd}`,
+        postAsAnnouncement: false,
+        announcementScope:  'Group',
+      })
+    } else {
+      setDeadlineForm({ title: '', description: '', dueDate: '', postAsAnnouncement: false, announcementScope: 'Group' })
+    }
     setDeadlineError('')
     setShowDeadlineModal(true)
   }
 
   async function handleDeadlineSave() {
+    if (!deadlineForm.title.trim()) { setDeadlineError('Title is required.'); return }
+    if (!deadlineForm.dueDate)      { setDeadlineError('Due date is required.'); return }
     setDeadlineSaving(true)
     setDeadlineError('')
+    // Build a date at local noon to avoid UTC day-shift when converting
+    const [y, m, d] = deadlineForm.dueDate.split('-').map(Number)
+    const dueDateIso = new Date(y, m - 1, d, 12, 0, 0).toISOString()
     try {
-      const updated = await groupService.setDeadlines(id, {
-        manuscriptDueDate:     deadlineForm.manuscriptDueDate     || null,
-        systemFeaturesDueDate: deadlineForm.systemFeaturesDueDate || null,
-      })
-      setGroup(updated)
+      if (editingDeadline) {
+        const updated = await groupService.updateDeadline(id, editingDeadline.id, {
+          title:       deadlineForm.title.trim(),
+          description: deadlineForm.description.trim() || null,
+          dueDate:     dueDateIso,
+        })
+        setDeadlines(prev =>
+          prev.map(dl => dl.id === editingDeadline.id ? updated : dl)
+            .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+        )
+        toast.success('Deadline updated.')
+      } else {
+        const created = await groupService.createDeadline(id, {
+          title:               deadlineForm.title.trim(),
+          description:         deadlineForm.description.trim() || null,
+          dueDate:             dueDateIso,
+          postAsAnnouncement:  deadlineForm.postAsAnnouncement,
+          announcementScope:   deadlineForm.announcementScope,
+        })
+        setDeadlines(prev => [...prev, created].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)))
+        toast.success('Deadline created.')
+      }
       setShowDeadlineModal(false)
+      setEditingDeadline(null)
     } catch (err) {
-      setDeadlineError(err.message || 'Failed to save deadlines.')
+      setDeadlineError(err.message || (editingDeadline ? 'Failed to update deadline.' : 'Failed to create deadline.'))
+      toast.error(err.message || (editingDeadline ? 'Failed to update deadline.' : 'Failed to create deadline.'))
     } finally {
       setDeadlineSaving(false)
     }
   }
 
+  async function handleDeleteDeadline(deadlineId) {
+    setDeletingDeadlineId(deadlineId)
+    try {
+      await groupService.deleteDeadline(id, deadlineId)
+      setDeadlines(prev => prev.filter(d => d.id !== deadlineId))
+      toast.success('Deadline removed.')
+    } catch (err) {
+      toast.error(err?.message || 'Failed to remove deadline.')
+    } finally {
+      setDeletingDeadlineId(null)
+    }
+  }
+
   // ── Render states ───────────────────────────────────────────────────────────
-  if (loading) return <><TopBar title="Group Details" /><PageLoader /></>
+  if (loading) return <PageLoader />
 
   if (notFound) return (
-    <>
-      <TopBar title="Group Not Found" />
-      <div className="p-8 text-center">
-        <AlertCircle size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-        <p className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>Group not found</p>
-        <p className="text-sm mt-1 mb-4" style={{ color: 'var(--text-muted)' }}>
-          This group does not exist or you don't have access to it.
-        </p>
-        <button className="btn-secondary" onClick={() => navigate('/groups')}>
-          <ArrowLeft size={14} /> Back to Groups
-        </button>
-      </div>
-    </>
+    <div className="p-8 text-center">
+      <AlertCircle size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+      <p className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>Group not found</p>
+      <p className="text-sm mt-1 mb-4" style={{ color: 'var(--text-muted)' }}>
+        This group does not exist or you don't have access to it.
+      </p>
+      <button className="btn-secondary" onClick={() => navigate('/groups')}>
+        <ArrowLeft size={14} /> Back to Groups
+      </button>
+    </div>
   )
 
   const progress     = group.milestoneProgress?.completionPercentage ?? 0
@@ -336,22 +408,28 @@ export default function GroupDetail() {
 
   return (
     <div>
-      <TopBar
-        title={group.groupName}
-        subtitle={group.projectTitle ?? 'No research title set'}
-      />
+      {/* Mobile-only sticky header with back button */}
+      <div
+        className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3"
+        style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border-light)' }}
+      >
+        <button
+          className="flex items-center justify-center w-8 h-8 rounded-lg transition-all shrink-0"
+          style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-main)' }}
+          onClick={() => navigate('/groups')}
+        >
+          <ArrowLeft size={15} style={{ color: 'var(--text-secondary)' }} />
+        </button>
+        <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-heading)' }}>
+          {group.groupName}
+        </span>
+      </div>
 
-      <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-6">
+      <div className="p-4 sm:p-6 space-y-6">
 
-        {/* ── Back + action row ─────────────────────────────────────────── */}
-        <div className="flex items-center justify-between">
-          <button
-            className="btn-ghost text-sm flex items-center gap-1.5"
-            onClick={() => navigate('/groups')}
-          >
-            <ArrowLeft size={15} /> All Groups
-          </button>
-          {isAdmin && (
+        {/* ── Desktop action row ────────────────────────────────────────── */}
+        {isAdmin && (
+          <div className="hidden md:flex items-center justify-end">
             <div className="flex items-center gap-2">
               <button className="btn-secondary text-sm flex items-center gap-1.5" onClick={openEditModal}>
                 <Pencil size={13} /> Edit
@@ -368,8 +446,8 @@ export default function GroupDetail() {
                 </button>
               )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* ── Group header card ─────────────────────────────────────────── */}
         <div
@@ -496,58 +574,110 @@ export default function GroupDetail() {
         </div>
 
         {/* ── Deadlines card ────────────────────────────────────────────── */}
-        {(() => {
-          const msInfo  = deadlineInfo(group.manuscriptDueDate)
-          const sfInfo  = deadlineInfo(group.systemFeaturesDueDate)
-          return (
-            <div className="rounded-2xl p-5"
-              style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <CalendarDays size={15} style={{ color: '#c9a84c' }} />
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>Deadlines</h3>
-                </div>
-                {canManageDeadlines && group.status === 'Active' && (
-                  <button
-                    onClick={openDeadlineModal}
-                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-                    style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)', border: '1px solid var(--border-main)' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-subtle)'}
-                  >
-                    <Pencil size={11} /> Set Deadlines
-                  </button>
+        <div className="rounded-2xl p-5"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <CalendarDays size={15} style={{ color: '#c9a84c' }} />
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
+                Deadlines
+                {deadlines.length > 0 && (
+                  <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded-md"
+                    style={{ background: 'rgba(201,168,76,0.10)', color: '#c9a84c' }}>
+                    {deadlines.length}
+                  </span>
                 )}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {[
-                  { label: 'Manuscript',      icon: FileText, info: msInfo, date: group.manuscriptDueDate },
-                  { label: 'System Features', icon: Cpu,      info: sfInfo, date: group.systemFeaturesDueDate },
-                ].map(({ label, icon: Icon, info, date }) => (
-                  <div key={label} className="rounded-xl p-4 flex items-start gap-3"
+              </h3>
+            </div>
+            {canManageDeadlines && group.status === 'Active' && (
+              <button
+                onClick={() => openDeadlineModal()}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all btn-primary"
+              >
+                <CalendarDays size={11} /> Add Deadline
+              </button>
+            )}
+          </div>
+
+          {deadlines.length === 0 ? (
+            <div className="py-6 text-center">
+              <CalendarDays size={24} className="mx-auto mb-2" style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No deadlines set</p>
+              {canManageDeadlines && group.status === 'Active' && (
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Click "Add Deadline" to create one and optionally post it as an announcement.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {deadlines.map(dl => {
+                const info = deadlineInfo(dl.dueDate)
+                const isDeleting = deletingDeadlineId === dl.id
+                return (
+                  <div key={dl.id} className="rounded-xl p-4 flex items-start gap-3"
                     style={{ background: info.bg, border: `1px solid ${info.border}` }}>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ background: 'var(--bg-card)' }}>
-                      <Icon size={15} style={{ color: info.color }} />
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 flex-col"
+                      style={{ background: 'var(--bg-card)', minWidth: 36 }}>
+                      <p className="text-xs font-bold leading-none" style={{ color: info.color, fontSize: 9 }}>
+                        {new Date(dl.dueDate).toLocaleString('en-PH', { month: 'short' }).toUpperCase()}
+                      </p>
+                      <p className="text-base font-bold leading-none mt-0.5" style={{ color: info.color }}>
+                        {new Date(dl.dueDate).getDate()}
+                      </p>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</p>
-                      <p className="text-sm font-semibold" style={{ color: date ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                        {fmt(date) ?? 'No deadline set'}
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                        {dl.title}
                       </p>
-                      {date && (
-                        <span className="inline-block text-xs font-semibold mt-1 px-2 py-0.5 rounded-full"
+                      {dl.description && (
+                        <p className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+                          {dl.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                           style={{ background: info.bg, color: info.color, border: `1px solid ${info.border}` }}>
                           {info.label}
                         </span>
-                      )}
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          by {dl.createdBy?.fullName}
+                        </span>
+                      </div>
                     </div>
+                    {canManageDeadlines && group.status === 'Active' && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => openDeadlineModal(dl)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg transition-all"
+                          style={{ color: '#0284c7', background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.15)' }}
+                          title="Edit deadline"
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(14,165,233,0.14)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(14,165,233,0.06)'}
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteDeadline(dl.id)}
+                          disabled={isDeleting}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg transition-all"
+                          style={{ color: '#dc2626', background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.15)' }}
+                          title="Remove deadline"
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(220,38,38,0.14)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(220,38,38,0.06)'}
+                        >
+                          {isDeleting
+                            ? <span className="w-3 h-3 border border-red-400 border-t-transparent rounded-full animate-spin" />
+                            : <Trash2 size={12} />}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
+                )
+              })}
             </div>
-          )
-        })()}
+          )}
+        </div>
 
         {/* ── Main grid ─────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -599,7 +729,7 @@ export default function GroupDetail() {
           <div>
             <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>Quick Links</h3>
             <div className="space-y-2">
-              <QuickLink icon={FileText}    label="Chapters"        desc="Chapter submissions & reviews"  color="#c9a84c"  onClick={() => navigate('/chapters')} />
+              <QuickLink icon={Upload}      label="Documents"       desc="Upload & manage manuscript documents" color="#6366f1" onClick={() => navigate('/documents')} />
               <QuickLink icon={BookOpen}    label="Manuscript"      desc="Collaborative manuscript editor" color="#7c3aed"  onClick={() => navigate('/manuscript')} />
               <QuickLink icon={Calendar}    label="Defense"         desc="Defense schedules & ratings"    color="#3b82f6"  onClick={() => navigate('/defenses')} />
               <QuickLink icon={MessageSquare} label="Consultations" desc="Log & view consultations"       color="#16a34a"  onClick={() => navigate('/consultations')} />
@@ -792,55 +922,122 @@ export default function GroupDetail() {
         </div>
       </Modal>
 
-      {/* ── Set Deadlines modal ──────────────────────────────────────────── */}
+      {/* ── Add / Edit Deadline modal ────────────────────────────────────── */}
       <Modal
         open={showDeadlineModal}
-        onClose={() => setShowDeadlineModal(false)}
-        title="Set Deadlines"
-        size="sm"
+        onClose={() => { if (!deadlineSaving) { setShowDeadlineModal(false); setEditingDeadline(null) } }}
+        title={editingDeadline ? 'Edit Deadline' : 'Add Deadline'}
+        size="md"
         footer={
           <>
-            <button className="btn-secondary" onClick={() => setShowDeadlineModal(false)}>Cancel</button>
+            <button className="btn-secondary" onClick={() => { setShowDeadlineModal(false); setEditingDeadline(null) }} disabled={deadlineSaving}>
+              Cancel
+            </button>
             <button className="btn-primary" onClick={handleDeadlineSave} disabled={deadlineSaving}>
-              {deadlineSaving ? 'Saving…' : 'Save Deadlines'}
+              {deadlineSaving
+                ? (editingDeadline ? 'Saving…' : 'Creating…')
+                : (editingDeadline ? 'Save Changes' : 'Create Deadline')}
             </button>
           </>
         }
       >
-        {deadlineError && (
-          <div className="mb-4 px-3 py-2.5 rounded-xl text-sm flex items-center gap-2"
-            style={{ background: 'rgba(220,38,38,0.07)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
-            <AlertCircle size={13} /> {deadlineError}
-          </div>
-        )}
         <div className="space-y-4">
+          {deadlineError && (
+            <div className="px-3 py-2.5 rounded-xl text-sm flex items-center gap-2"
+              style={{ background: 'rgba(220,38,38,0.07)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
+              <AlertCircle size={13} /> {deadlineError}
+            </div>
+          )}
+
           <div>
-            <label className="block text-sm font-medium mb-1.5 flex items-center gap-1.5"
-              style={{ color: 'var(--text-primary)' }}>
-              <FileText size={13} style={{ color: '#c9a84c' }} /> Manuscript Due Date
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+              Title <span style={{ color: '#dc2626' }}>*</span>
+            </label>
+            <input
+              type="text"
+              className="form-input"
+              autoFocus
+              placeholder="e.g. Chapter 3 Submission, Final Manuscript Draft"
+              value={deadlineForm.title}
+              onChange={e => setDeadlineForm(f => ({ ...f, title: e.target.value }))}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+              Due Date <span style={{ color: '#dc2626' }}>*</span>
             </label>
             <input
               type="date"
               className="form-input"
-              value={deadlineForm.manuscriptDueDate}
-              onChange={e => setDeadlineForm(f => ({ ...f, manuscriptDueDate: e.target.value }))}
+              value={deadlineForm.dueDate}
+              min={editingDeadline ? undefined : new Date().toLocaleDateString('en-CA')}
+              onChange={e => setDeadlineForm(f => ({ ...f, dueDate: e.target.value }))}
             />
           </div>
+
           <div>
-            <label className="block text-sm font-medium mb-1.5 flex items-center gap-1.5"
-              style={{ color: 'var(--text-primary)' }}>
-              <Cpu size={13} style={{ color: '#ec4899' }} /> System Features Due Date
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+              Description <span className="font-normal" style={{ color: 'var(--text-muted)' }}>(optional)</span>
             </label>
-            <input
-              type="date"
-              className="form-input"
-              value={deadlineForm.systemFeaturesDueDate}
-              onChange={e => setDeadlineForm(f => ({ ...f, systemFeaturesDueDate: e.target.value }))}
+            <textarea
+              className="form-input resize-none"
+              rows={2}
+              placeholder="Additional notes or instructions for this deadline…"
+              value={deadlineForm.description}
+              onChange={e => setDeadlineForm(f => ({ ...f, description: e.target.value }))}
             />
           </div>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Leave a field blank to clear that deadline. Deadlines are visible to all group members.
-          </p>
+
+          {/* Announcement toggle — only shown when creating, not editing */}
+          {!editingDeadline && <div className="rounded-xl p-4 space-y-3"
+            style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-light)' }}>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={deadlineForm.postAsAnnouncement}
+                onChange={e => setDeadlineForm(f => ({ ...f, postAsAnnouncement: e.target.checked }))}
+                style={{ accentColor: '#c9a84c', width: 16, height: 16 }}
+              />
+              <div>
+                <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Post as announcement
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Students will see this in their classroom announcements and receive a notification.
+                </p>
+              </div>
+            </label>
+
+            {deadlineForm.postAsAnnouncement && (
+              <div>
+                <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
+                  ANNOUNCEMENT SCOPE
+                </p>
+                <div className="flex gap-2">
+                  {[
+                    { value: 'Group', label: 'This Group Only',  desc: 'Only group members see it' },
+                    { value: 'Class', label: 'Entire Classroom', desc: 'All students in the class' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setDeadlineForm(f => ({ ...f, announcementScope: opt.value }))}
+                      className="flex-1 py-2.5 px-3 rounded-xl text-left transition-all duration-150"
+                      style={{
+                        background: deadlineForm.announcementScope === opt.value ? 'rgba(201,168,76,0.12)' : 'var(--bg-card)',
+                        border: `1px solid ${deadlineForm.announcementScope === opt.value ? 'rgba(201,168,76,0.4)' : 'var(--border-light)'}`,
+                      }}>
+                      <p className="text-xs font-semibold" style={{ color: deadlineForm.announcementScope === opt.value ? '#c9a84c' : 'var(--text-primary)' }}>
+                        {opt.label}
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{opt.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>}
         </div>
       </Modal>
 

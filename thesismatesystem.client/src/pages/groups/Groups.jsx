@@ -7,6 +7,7 @@ import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
 import { Users, Plus, Search, ChevronRight, BookOpen, FileText, Cpu, Pencil, Image } from 'lucide-react'
+import { toast } from '../../utils/toast'
 
 export default function Groups() {
   const { user } = useAuth()
@@ -37,7 +38,7 @@ export default function Groups() {
 
   useEffect(() => {
     const fetch = isStudent
-      ? groupService.myGroup().then(g => [g]).catch(() => [])
+      ? groupService.myGroup().then(g => g ? [g] : []).catch(() => [])
       : groupService.list().catch(() => [])
     fetch.then(setGroups).finally(() => setLoading(false))
   }, [isStudent])
@@ -71,8 +72,10 @@ export default function Groups() {
       })
       setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))
       setShowEditModal(false)
+      toast.success('Group updated.')
     } catch (err) {
       setEditError(err.message)
+      toast.error(err.message || 'Failed to update group.')
     } finally {
       setEditSaving(false)
     }
@@ -97,8 +100,10 @@ export default function Groups() {
       })
       setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))
       setShowVersionModal(false)
+      toast.success('Version tags updated.')
     } catch (err) {
       setVersionError(err.message)
+      toast.error(err.message || 'Failed to update version tags.')
     } finally {
       setVersionSaving(false)
     }
@@ -110,8 +115,9 @@ export default function Groups() {
     try {
       const updated = await groupService.uploadLogo(groupId, file)
       setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))
+      toast.success('Logo uploaded.')
     } catch (err) {
-      alert(err.message || 'Failed to upload logo')
+      toast.error(err.message || 'Failed to upload logo.')
     } finally {
       setLogoUploading(false)
     }
@@ -141,8 +147,10 @@ export default function Groups() {
       })
       setGroups((prev) => [g, ...prev])
       setShowModal(false)
+      toast.success('Group created.')
     } catch (err) {
       setError(err.message)
+      toast.error(err.message || 'Failed to create group.')
     } finally {
       setSaving(false)
     }
