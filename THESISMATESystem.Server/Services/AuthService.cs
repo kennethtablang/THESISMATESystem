@@ -65,6 +65,11 @@ namespace THESISMATESystem.Server.Services
             }
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, dto.Password, lockoutOnFailure: true);
+            if (result.IsLockedOut)
+            {
+                await WriteAuditAsync(user.Id, "Login", "User", dto.Email, success: false);
+                throw new UnauthorizedAccessException("Account temporarily locked due to repeated failed attempts. Please try again in a few minutes.");
+            }
             if (!result.Succeeded)
             {
                 await WriteAuditAsync(user.Id, "Login", "User", dto.Email, success: false);
@@ -402,14 +407,8 @@ namespace THESISMATESystem.Server.Services
             var user = await _userManager.FindByIdAsync(userId)
                 ?? throw new KeyNotFoundException("User not found.");
 
-            if (dto.FirstName is not null) user.FirstName = dto.FirstName.Trim();
-            if (dto.MiddleName is not null) user.MiddleName = string.IsNullOrWhiteSpace(dto.MiddleName) ? null : dto.MiddleName.Trim();
-            if (dto.LastName is not null) user.LastName = dto.LastName.Trim();
-            if (dto.PhoneNumber is not null) user.PhoneNumber = dto.PhoneNumber;
-            if (dto.IsActive.HasValue) user.IsActive = dto.IsActive.Value;
-
-            await _userManager.UpdateAsync(user);
-
+            // Validate the role change up front so an unauthorized/invalid request
+            // doesn't partially apply the profile-field updates below.
             if (dto.Role is not null)
             {
                 if (callerRole != "SuperAdmin")
@@ -417,7 +416,16 @@ namespace THESISMATESystem.Server.Services
 
                 if (!ValidRoles.Contains(dto.Role))
                     throw new ArgumentException($"'{dto.Role}' is not a valid role.");
+            }
 
+            if (dto.FirstName is not null) user.FirstName = dto.FirstName.Trim();
+            if (dto.MiddleName is not null) user.MiddleName = string.IsNullOrWhiteSpace(dto.MiddleName) ? null : dto.MiddleName.Trim();
+            if (dto.LastName is not null) user.LastName = dto.LastName.Trim();
+            if (dto.PhoneNumber is not null) user.PhoneNumber = dto.PhoneNumber;
+            if (dto.IsActive.HasValue) user.IsActive = dto.IsActive.Value;
+
+            if (dto.Role is not null)
+            {
                 var currentRoles = await _userManager.GetRolesAsync(user);
 
                 // Prevent removing the last SuperAdmin
@@ -432,6 +440,8 @@ namespace THESISMATESystem.Server.Services
                     await _userManager.RemoveFromRolesAsync(user, currentRoles);
                 await _userManager.AddToRoleAsync(user, dto.Role);
             }
+
+            await _userManager.UpdateAsync(user);
 
             var roles = await _userManager.GetRolesAsync(user);
             var userDto = _mapper.Map<UserResponseDto>(user);

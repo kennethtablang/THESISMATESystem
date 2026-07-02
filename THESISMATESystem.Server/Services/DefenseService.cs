@@ -268,6 +268,11 @@ namespace THESISMATESystem.Server.Services
             if (!schedule.IsRatingOpen)
                 throw new InvalidOperationException("Rating is currently closed for this presentation. Grades are immutable.");
 
+            var isAssigned = await _db.PanelAssignments
+                .AnyAsync(pa => pa.DefenseScheduleId == dto.DefenseScheduleId && pa.PanelistId == panelistId);
+            if (!isAssigned)
+                throw new InvalidOperationException("You are not assigned to this defense panel.");
+
             var criterion = await _db.DefenseCriteria.FindAsync(dto.DefenseCriterionId)
                 ?? throw new InvalidOperationException("Criterion not found.");
 

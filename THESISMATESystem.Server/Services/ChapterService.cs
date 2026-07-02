@@ -15,19 +15,27 @@ namespace THESISMATESystem.Server.Services
         private readonly IMapper _mapper;
         private readonly INotificationService _notifications;
         private readonly IWebHostEnvironment _env;
+        private readonly IGroupAccessChecker _groupAccess;
 
         public ChapterService(AppDbContext db, IMapper mapper,
-            INotificationService notifications, IWebHostEnvironment env)
+            INotificationService notifications, IWebHostEnvironment env,
+            IGroupAccessChecker groupAccess)
         {
             _db = db;
             _mapper = mapper;
             _notifications = notifications;
             _env = env;
+            _groupAccess = groupAccess;
         }
 
         public async Task<ChapterSubmissionResponseDto> SubmitChapterAsync(
             int groupId, string submittedById, SubmitChapterRequestDto dto)
         {
+            var isMember = await _db.GroupMembers
+                .AnyAsync(gm => gm.CapstoneGroupId == groupId && gm.UserId == submittedById);
+            if (!isMember)
+                throw new UnauthorizedAccessException("You are not a member of this group.");
+
             var latestVersion = await _db.ChapterSubmissions
                 .Where(cs => cs.CapstoneGroupId == groupId && cs.ChapterNumber == dto.ChapterNumber)
                 .MaxAsync(cs => (int?)cs.Version) ?? 0;
@@ -66,12 +74,15 @@ namespace THESISMATESystem.Server.Services
                     chapterId: submission.Id);
             }
 
-            return await GetChapterByIdAsync(submission.Id)
+            return await LoadChapterDtoAsync(submission.Id)
                 ?? throw new InvalidOperationException("Failed to load submission.");
         }
 
-        public async Task<IEnumerable<ChapterSubmissionResponseDto>> GetChaptersByGroupAsync(int groupId)
+        public async Task<IEnumerable<ChapterSubmissionResponseDto>> GetChaptersByGroupAsync(int groupId, string callerId, string callerRole)
         {
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, groupId))
+                throw new UnauthorizedAccessException();
+
             // Fetch all first, then group in memory — EF Core drops Include() through GroupBy/Select/First in SQL.
             var all = await _db.ChapterSubmissions
                 .Include(cs => cs.SubmittedBy)
@@ -87,8 +98,11 @@ namespace THESISMATESystem.Server.Services
             return _mapper.Map<IEnumerable<ChapterSubmissionResponseDto>>(latest);
         }
 
-        public async Task<IEnumerable<ChapterSubmissionResponseDto>> GetChapterHistoryAsync(int groupId, int chapterNumber)
+        public async Task<IEnumerable<ChapterSubmissionResponseDto>> GetChapterHistoryAsync(int groupId, int chapterNumber, string callerId, string callerRole)
         {
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, groupId))
+                throw new UnauthorizedAccessException();
+
             var submissions = await _db.ChapterSubmissions
                 .Include(cs => cs.SubmittedBy)
                 .Include(cs => cs.RevisionNotes).ThenInclude(rn => rn.CreatedBy)
@@ -99,7 +113,22 @@ namespace THESISMATESystem.Server.Services
             return _mapper.Map<IEnumerable<ChapterSubmissionResponseDto>>(submissions);
         }
 
-        public async Task<ChapterSubmissionResponseDto?> GetChapterByIdAsync(int id)
+        public async Task<ChapterSubmissionResponseDto?> GetChapterByIdAsync(int id, string callerId, string callerRole)
+        {
+            var submission = await _db.ChapterSubmissions
+                .Include(cs => cs.SubmittedBy)
+                .Include(cs => cs.RevisionNotes).ThenInclude(rn => rn.CreatedBy)
+                .FirstOrDefaultAsync(cs => cs.Id == id);
+
+            if (submission is null) return null;
+
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, submission.CapstoneGroupId))
+                throw new UnauthorizedAccessException();
+
+            return _mapper.Map<ChapterSubmissionResponseDto>(submission);
+        }
+
+        private async Task<ChapterSubmissionResponseDto?> LoadChapterDtoAsync(int id)
         {
             var submission = await _db.ChapterSubmissions
                 .Include(cs => cs.SubmittedBy)
@@ -110,12 +139,16 @@ namespace THESISMATESystem.Server.Services
         }
 
         public async Task<ChapterSubmissionResponseDto> UpdateChapterStatusAsync(
-            int id, ChapterStatus status, string adviserId)
+            int id, ChapterStatus status, string adviserId, string callerRole)
         {
             var submission = await _db.ChapterSubmissions
                 .Include(cs => cs.CapstoneGroup)
                 .FirstOrDefaultAsync(cs => cs.Id == id)
                 ?? throw new KeyNotFoundException($"Submission {id} not found.");
+
+            // Only the group's adviser may change status; admins bypass
+            if (callerRole == "Faculty" && submission.CapstoneGroup.AdviserId != adviserId)
+                throw new UnauthorizedAccessException("Only the group's adviser can update chapter status.");
 
             submission.Status = status;
             await _db.SaveChangesAsync();
@@ -126,17 +159,21 @@ namespace THESISMATESystem.Server.Services
                 NotificationType.ChapterStatusUpdated,
                 chapterId: id);
 
-            return await GetChapterByIdAsync(id)
+            return await LoadChapterDtoAsync(id)
                 ?? throw new InvalidOperationException("Failed to reload submission.");
         }
 
         public async Task<RevisionNoteResponseDto> AddRevisionNoteAsync(
-            int chapterId, string adviserId, AddRevisionNoteRequestDto dto)
+            int chapterId, string adviserId, string callerRole, AddRevisionNoteRequestDto dto)
         {
             var submission = await _db.ChapterSubmissions
                 .Include(cs => cs.CapstoneGroup)
                 .FirstOrDefaultAsync(cs => cs.Id == chapterId)
                 ?? throw new KeyNotFoundException($"Submission {chapterId} not found.");
+
+            // Only the group's adviser may add revision notes; admins bypass
+            if (callerRole == "Faculty" && submission.CapstoneGroup.AdviserId != adviserId)
+                throw new UnauthorizedAccessException("Only the group's adviser can add revision notes.");
 
             var note = new RevisionNote
             {
@@ -161,10 +198,13 @@ namespace THESISMATESystem.Server.Services
             return _mapper.Map<RevisionNoteResponseDto>(loaded);
         }
 
-        public async Task<string> GetDownloadPathAsync(int chapterId)
+        public async Task<string> GetDownloadPathAsync(int chapterId, string callerId, string callerRole)
         {
             var submission = await _db.ChapterSubmissions.FindAsync(chapterId)
                 ?? throw new KeyNotFoundException($"Submission {chapterId} not found.");
+
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, submission.CapstoneGroupId))
+                throw new UnauthorizedAccessException();
 
             return submission.FilePath;
         }

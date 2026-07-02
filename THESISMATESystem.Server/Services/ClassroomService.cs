@@ -120,8 +120,16 @@ namespace THESISMATESystem.Server.Services
 
         // ── Enrollments ──────────────────────────────────────────────────────
 
-        public async Task<IEnumerable<ClassroomEnrollmentResponseDto>> GetEnrollmentsAsync(int classroomId)
+        public async Task<IEnumerable<ClassroomEnrollmentResponseDto>> GetEnrollmentsAsync(int classroomId, string callerId, string callerRole)
         {
+            if (callerRole == "Faculty")
+            {
+                var ownsClassroom = await _db.Classrooms
+                    .AnyAsync(c => c.Id == classroomId && c.FacultyICId == callerId);
+                if (!ownsClassroom)
+                    throw new UnauthorizedAccessException("You do not own this classroom.");
+            }
+
             var enrollments = await _db.ClassroomEnrollments
                 .Include(e => e.Student)
                 .Where(e => e.ClassroomId == classroomId)
@@ -159,10 +167,13 @@ namespace THESISMATESystem.Server.Services
 
         // ── Announcements ────────────────────────────────────────────────────
 
-        public async Task<AnnouncementResponseDto> PostAnnouncementAsync(int classroomId, string postedById, PostAnnouncementRequestDto dto)
+        public async Task<AnnouncementResponseDto> PostAnnouncementAsync(int classroomId, string postedById, string callerRole, PostAnnouncementRequestDto dto)
         {
-            _ = await _db.Classrooms.FindAsync(classroomId)
+            var classroom = await _db.Classrooms.FindAsync(classroomId)
                 ?? throw new KeyNotFoundException("Classroom not found.");
+
+            if (callerRole == "Faculty" && classroom.FacultyICId != postedById)
+                throw new UnauthorizedAccessException("You do not own this classroom.");
 
             var announcement = new ClassroomAnnouncement
             {
@@ -253,10 +264,23 @@ namespace THESISMATESystem.Server.Services
 
         // ── Group assignment ─────────────────────────────────────────────────
 
-        public async Task AssignStudentsToGroupAsync(string facultyICId, AssignStudentsToGroupRequestDto dto)
+        public async Task AssignStudentsToGroupAsync(string callerId, string callerRole, AssignStudentsToGroupRequestDto dto)
         {
             var targetGroup = await _db.CapstoneGroups.FindAsync(dto.GroupId)
                 ?? throw new KeyNotFoundException("Group not found.");
+
+            // Faculty may only move students who are enrolled in one of their own classrooms
+            if (callerRole == "Faculty")
+            {
+                var eligibleIds = await _db.ClassroomEnrollments
+                    .Where(e => e.Classroom.FacultyICId == callerId && dto.StudentIds.Contains(e.StudentId))
+                    .Select(e => e.StudentId)
+                    .Distinct()
+                    .ToListAsync();
+
+                if (dto.StudentIds.Except(eligibleIds).Any())
+                    throw new UnauthorizedAccessException("You can only assign students enrolled in your own classrooms.");
+            }
 
             foreach (var studentId in dto.StudentIds)
             {

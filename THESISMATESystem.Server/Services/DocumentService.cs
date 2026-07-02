@@ -17,17 +17,25 @@ namespace THESISMATESystem.Server.Services
         private readonly IWebHostEnvironment _env;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly INotificationService _notifications;
+        private readonly IGroupAccessChecker _groupAccess;
 
-        public DocumentService(AppDbContext db, IWebHostEnvironment env, UserManager<ApplicationUser> userManager, INotificationService notifications)
+        public DocumentService(AppDbContext db, IWebHostEnvironment env, UserManager<ApplicationUser> userManager, INotificationService notifications, IGroupAccessChecker groupAccess)
         {
             _db = db;
             _env = env;
             _userManager = userManager;
             _notifications = notifications;
+            _groupAccess = groupAccess;
         }
 
         public async Task<DocumentSubmissionResponseDto> UploadDocumentAsync(string uploadedById, UploadDocumentRequestDto dto)
         {
+            // Uploader must be a member of the target group — prevents IDOR write
+            var isMember = await _db.GroupMembers
+                .AnyAsync(gm => gm.CapstoneGroupId == dto.CapstoneGroupId && gm.UserId == uploadedById);
+            if (!isMember)
+                throw new UnauthorizedAccessException("You are not a member of this group.");
+
             var uploadDir = Path.Combine(_env.WebRootPath, "uploads", "documents", dto.CapstoneGroupId.ToString());
             Directory.CreateDirectory(uploadDir);
 
@@ -116,26 +124,8 @@ namespace THESISMATESystem.Server.Services
 
             var rootId = doc.OriginalDocumentId ?? doc.Id;
 
-            // Admins and SuperAdmins have unrestricted access
-            var isPrivileged = callerRole is "Admin" or "SuperAdmin";
-            if (!isPrivileged)
-            {
-                var groupId = doc.CapstoneGroupId;
-                if (callerRole == "Faculty")
-                {
-                    // Faculty must be the group's adviser to view version history
-                    var advises = await _db.CapstoneGroups
-                        .AnyAsync(g => g.Id == groupId && g.AdviserId == callerId);
-                    if (!advises) throw new UnauthorizedAccessException();
-                }
-                else
-                {
-                    // Student — must be a group member
-                    var isMember = await _db.GroupMembers
-                        .AnyAsync(gm => gm.CapstoneGroupId == groupId && gm.UserId == callerId);
-                    if (!isMember) throw new UnauthorizedAccessException();
-                }
-            }
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, doc.CapstoneGroupId))
+                throw new UnauthorizedAccessException();
 
             var versions = await _db.DocumentSubmissions
                 .Include(d => d.SubmittedBy)
@@ -158,8 +148,11 @@ namespace THESISMATESystem.Server.Services
             });
         }
 
-        public async Task<IEnumerable<DocumentSubmissionResponseDto>> GetDocumentsByGroupAsync(int groupId)
+        public async Task<IEnumerable<DocumentSubmissionResponseDto>> GetDocumentsByGroupAsync(int groupId, string callerId, string callerRole)
         {
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, groupId))
+                throw new UnauthorizedAccessException();
+
             var all = await _db.DocumentSubmissions
                 .Include(d => d.SubmittedBy)
                 .Include(d => d.CapstoneGroup)
@@ -216,7 +209,7 @@ namespace THESISMATESystem.Server.Services
                 .Select(d => MapToDtoWithMeta(d, versionCounts.GetValueOrDefault(d.OriginalDocumentId ?? d.Id, 1)));
         }
 
-        public async Task<DocumentSubmissionResponseDto?> GetDocumentByIdAsync(int id)
+        public async Task<DocumentSubmissionResponseDto?> GetDocumentByIdAsync(int id, string callerId, string callerRole)
         {
             var doc = await _db.DocumentSubmissions
                 .Include(d => d.SubmittedBy)
@@ -226,6 +219,9 @@ namespace THESISMATESystem.Server.Services
 
             if (doc is null) return null;
 
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, doc.CapstoneGroupId))
+                throw new UnauthorizedAccessException();
+
             // Compute total versions for this chain
             var rootId = doc.OriginalDocumentId ?? doc.Id;
             var totalVersions = await _db.DocumentSubmissions
@@ -234,17 +230,24 @@ namespace THESISMATESystem.Server.Services
             return MapToDtoWithMeta(doc, totalVersions);
         }
 
-        public async Task<string> GetDownloadPathAsync(int id)
+        public async Task<(string Path, string FileName)> GetDownloadInfoAsync(int id, string callerId, string callerRole)
         {
             var doc = await _db.DocumentSubmissions.FindAsync(id)
                 ?? throw new KeyNotFoundException("Document not found.");
-            return doc.FilePath;
+
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, doc.CapstoneGroupId))
+                throw new UnauthorizedAccessException();
+
+            return (doc.FilePath, doc.FileName);
         }
 
-        public async Task<DocumentCommentResponseDto> AddCommentAsync(int documentId, string authorId, AddDocumentCommentRequestDto dto)
+        public async Task<DocumentCommentResponseDto> AddCommentAsync(int documentId, string authorId, string authorRole, AddDocumentCommentRequestDto dto)
         {
             var doc = await _db.DocumentSubmissions.FindAsync(documentId)
                 ?? throw new KeyNotFoundException("Document not found.");
+
+            if (!await _groupAccess.CanAccessGroupAsync(authorId, authorRole, doc.CapstoneGroupId))
+                throw new UnauthorizedAccessException();
 
             var comment = new DocumentComment
             {
@@ -259,8 +262,14 @@ namespace THESISMATESystem.Server.Services
             return await BuildCommentResponseAsync(comment);
         }
 
-        public async Task<IEnumerable<DocumentCommentResponseDto>> GetCommentsAsync(int documentId)
+        public async Task<IEnumerable<DocumentCommentResponseDto>> GetCommentsAsync(int documentId, string callerId, string callerRole)
         {
+            var doc = await _db.DocumentSubmissions.FindAsync(documentId)
+                ?? throw new KeyNotFoundException("Document not found.");
+
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, doc.CapstoneGroupId))
+                throw new UnauthorizedAccessException();
+
             var comments = await _db.DocumentComments
                 .Include(c => c.Author)
                 .Where(c => c.DocumentSubmissionId == documentId)
@@ -292,8 +301,18 @@ namespace THESISMATESystem.Server.Services
             bool isPrivileged = callerRole is "Admin" or "SuperAdmin";
             if (!isPrivileged && doc.SubmittedById != userId) return false;
 
-            if (File.Exists(doc.FilePath)) File.Delete(doc.FilePath);
-            _db.DocumentSubmissions.Remove(doc);
+            // Deleting a chain root would violate the OriginalDocumentId FK of its
+            // newer versions, so remove the entire version chain together.
+            var toDelete = doc.OriginalDocumentId is null
+                ? await _db.DocumentSubmissions
+                    .Where(d => d.Id == doc.Id || d.OriginalDocumentId == doc.Id)
+                    .ToListAsync()
+                : new List<DocumentSubmission> { doc };
+
+            foreach (var d in toDelete)
+                if (File.Exists(d.FilePath)) File.Delete(d.FilePath);
+
+            _db.DocumentSubmissions.RemoveRange(toDelete);
             await _db.SaveChangesAsync();
             return true;
         }
