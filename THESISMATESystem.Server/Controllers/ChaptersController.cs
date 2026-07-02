@@ -16,19 +16,35 @@ namespace THESISMATESystem.Server.Controllers
 
         public ChaptersController(IChapterService chapters) => _chapters = chapters;
 
+        private (string UserId, string Role) Caller()
+            => (User.FindFirstValue(ClaimTypes.NameIdentifier)!, User.FindFirstValue(ClaimTypes.Role)!);
+
         [HttpGet]
         public async Task<IActionResult> GetAll(int groupId)
-            => Ok(await _chapters.GetChaptersByGroupAsync(groupId));
+        {
+            var (userId, role) = Caller();
+            try { return Ok(await _chapters.GetChaptersByGroupAsync(groupId, userId, role)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+        }
 
         [HttpGet("{chapterNumber:int}/history")]
         public async Task<IActionResult> GetHistory(int groupId, int chapterNumber)
-            => Ok(await _chapters.GetChapterHistoryAsync(groupId, chapterNumber));
+        {
+            var (userId, role) = Caller();
+            try { return Ok(await _chapters.GetChapterHistoryAsync(groupId, chapterNumber, userId, role)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+        }
 
         [HttpGet("submissions/{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var submission = await _chapters.GetChapterByIdAsync(id);
-            return submission is null ? NotFound() : Ok(submission);
+            var (userId, role) = Caller();
+            try
+            {
+                var submission = await _chapters.GetChapterByIdAsync(id, userId, role);
+                return submission is null ? NotFound() : Ok(submission);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
         }
 
         [HttpPost]
@@ -41,6 +57,7 @@ namespace THESISMATESystem.Server.Controllers
                 var result = await _chapters.SubmitChapterAsync(groupId, userId, dto);
                 return CreatedAtAction(nameof(GetById), new { groupId, id = result.Id }, result);
             }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
@@ -48,8 +65,9 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> UpdateStatus(int id, UpdateChapterStatusRequestDto dto)
         {
-            var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            try { return Ok(await _chapters.UpdateChapterStatusAsync(id, dto.Status, adviserId)); }
+            var (userId, role) = Caller();
+            try { return Ok(await _chapters.UpdateChapterStatusAsync(id, dto.Status, userId, role)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
@@ -57,22 +75,25 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> AddRevisionNote(int id, AddRevisionNoteRequestDto dto)
         {
-            var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            try { return Ok(await _chapters.AddRevisionNoteAsync(id, adviserId, dto)); }
+            var (userId, role) = Caller();
+            try { return Ok(await _chapters.AddRevisionNoteAsync(id, userId, role, dto)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
         [HttpGet("submissions/{id:int}/download")]
         public async Task<IActionResult> Download(int id)
         {
+            var (userId, role) = Caller();
             try
             {
-                var path = await _chapters.GetDownloadPathAsync(id);
+                var path = await _chapters.GetDownloadPathAsync(id, userId, role);
                 if (!System.IO.File.Exists(path)) return NotFound();
                 var bytes = await System.IO.File.ReadAllBytesAsync(path);
                 var fileName = Path.GetFileName(path);
                 return File(bytes, "application/octet-stream", fileName);
             }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
         }
     }

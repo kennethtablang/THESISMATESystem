@@ -18,7 +18,12 @@ namespace THESISMATESystem.Server.Controllers
 
         [HttpGet("group/{groupId:int}")]
         public async Task<IActionResult> GetByGroup(int groupId)
-            => Ok(await _documents.GetDocumentsByGroupAsync(groupId));
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _documents.GetDocumentsByGroupAsync(groupId, userId, role)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+        }
 
         [HttpGet("my-advisees")]
         [Authorize(Roles = "Faculty")]
@@ -36,8 +41,14 @@ namespace THESISMATESystem.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var doc = await _documents.GetDocumentByIdAsync(id);
-            return doc is null ? NotFound() : Ok(doc);
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try
+            {
+                var doc = await _documents.GetDocumentByIdAsync(id, userId, role);
+                return doc is null ? NotFound() : Ok(doc);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
         }
 
         [HttpPost]
@@ -50,20 +61,24 @@ namespace THESISMATESystem.Server.Controllers
                 var result = await _documents.UploadDocumentAsync(userId, dto);
                 return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
             }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpGet("{id:int}/download")]
         public async Task<IActionResult> Download(int id)
         {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
             try
             {
-                var path = await _documents.GetDownloadPathAsync(id);
+                var (path, fileName) = await _documents.GetDownloadInfoAsync(id, userId, role);
                 if (!System.IO.File.Exists(path)) return NotFound();
                 var bytes = await System.IO.File.ReadAllBytesAsync(path);
-                var fileName = Path.GetFileName(path);
-                return File(bytes, "application/octet-stream", fileName);
+                return File(bytes, "application/octet-stream",
+                    string.IsNullOrWhiteSpace(fileName) ? Path.GetFileName(path) : fileName);
             }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
@@ -72,13 +87,21 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> AddComment(int id, [FromBody] AddDocumentCommentRequestDto dto)
         {
             var authorId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            try { return Ok(await _documents.AddCommentAsync(id, authorId, dto)); }
+            var role     = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _documents.AddCommentAsync(id, authorId, role, dto)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
         [HttpGet("{id:int}/comments")]
         public async Task<IActionResult> GetComments(int id)
-            => Ok(await _documents.GetCommentsAsync(id));
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _documents.GetCommentsAsync(id, userId, role)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
 
         [HttpDelete("{id:int}")]
         [Authorize(Roles = "Student,Admin,SuperAdmin")]

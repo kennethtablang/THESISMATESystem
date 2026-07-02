@@ -64,7 +64,10 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> GetEnrollments(int id)
         {
-            try { return Ok(await _classrooms.GetEnrollmentsAsync(id)); }
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _classrooms.GetEnrollmentsAsync(id, userId, role)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
@@ -74,7 +77,9 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> PostAnnouncement(int id, [FromBody] PostAnnouncementRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            try { return Ok(await _classrooms.PostAnnouncementAsync(id, userId, dto)); }
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _classrooms.PostAnnouncementAsync(id, userId, role, dto)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
@@ -98,11 +103,13 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> AssignStudentsToGroup([FromBody] AssignStudentsToGroupRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
             try
             {
-                await _classrooms.AssignStudentsToGroupAsync(userId, dto);
+                await _classrooms.AssignStudentsToGroupAsync(userId, role, dto);
                 return Ok(new { message = "Students assigned successfully." });
             }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
         }
 

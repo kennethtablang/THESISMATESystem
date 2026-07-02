@@ -83,6 +83,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpGet("{id:int}/ratings")]
+        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> GetRatings(int id)
             => Ok(await _defenses.GetRatingsByScheduleAsync(id));
 
