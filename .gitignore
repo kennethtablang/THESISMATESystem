@@ -366,3 +366,6 @@ FodyWeavers.xsd
 /.claude
 /THESISMATESystem.Server/uploads/documents/5
 *.md
+
+# Spec docs that should be tracked despite the blanket *.md ignore
+!thesismatesystem.client/src/assets/SYSTEM_SPECIFICATIONS_STATUS.md
