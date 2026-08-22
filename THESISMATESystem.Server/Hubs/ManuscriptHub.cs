@@ -13,6 +13,9 @@ namespace THESISMATESystem.Server.Hubs
         private static readonly Dictionary<string, List<string>> _pendingUpdates = new();
         private static readonly object _lock = new();
 
+        // Caps the per-room replay buffer so an un-acked room cannot grow without bound.
+        private const int MaxPendingUpdatesPerRoom = 500;
+
         private static readonly HashSet<string> _validSectionKeys =
             ["chapter1", "chapter2", "chapter3", "chapter4", "chapter5", "references"];
 
@@ -23,6 +26,7 @@ namespace THESISMATESystem.Server.Hubs
         public async Task JoinSection(int groupId, string sectionKey)
         {
             await RequireGroupAccessAsync(groupId, sectionKey);
+            sectionKey = Normalize(sectionKey);
 
             var roomKey = RoomKey(groupId, sectionKey);
             await Groups.AddToGroupAsync(Context.ConnectionId, roomKey);
@@ -70,6 +74,13 @@ namespace THESISMATESystem.Server.Hubs
                     list.Clear();
 
                 list.Add(base64Update);
+
+                // A room whose clients never AckSave (no save, or a dropped connection) would
+                // otherwise retain every delta for the process lifetime. Yjs updates are
+                // commutative, so dropping the oldest only costs replay history, not content
+                // already persisted in YjsState.
+                if (list.Count > MaxPendingUpdatesPerRoom)
+                    list.RemoveRange(0, list.Count - MaxPendingUpdatesPerRoom);
             }
             await Clients.OthersInGroup(roomKey).SendAsync("ReceiveDocUpdate", base64Update);
         }
@@ -80,15 +91,14 @@ namespace THESISMATESystem.Server.Hubs
             await Clients.OthersInGroup(RoomKey(groupId, sectionKey)).SendAsync("ReceiveAwareness", base64Update);
         }
 
-        public Task AckSave(int groupId, string sectionKey)
+        public async Task AckSave(int groupId, string sectionKey)
         {
-            // AckSave is low-risk (only clears in-memory queue), but still gate it
-            var userId = UserId();
-            if (string.IsNullOrEmpty(userId)) throw new HubException("Unauthorized.");
+            // Clearing the queue discards updates that later joiners would replay, so this
+            // needs the same group gate as editing — not just "is authenticated".
+            await RequireStudentInGroupAsync(groupId, sectionKey);
 
             var roomKey = RoomKey(groupId, sectionKey);
             lock (_lock) { _pendingUpdates.Remove(roomKey); }
-            return Task.CompletedTask;
         }
 
         // ── Auth helpers ──────────────────────────────────────────────────────
@@ -165,11 +175,15 @@ namespace THESISMATESystem.Server.Hubs
 
         private static void ValidateSectionKey(string sectionKey)
         {
-            if (!_validSectionKeys.Contains(sectionKey?.ToLower() ?? ""))
+            if (!_validSectionKeys.Contains(Normalize(sectionKey)))
                 throw new HubException($"Invalid section key: {sectionKey}");
         }
 
-        private static string RoomKey(int groupId, string sectionKey) => $"{groupId}-{sectionKey}";
+        // Section keys are validated case-insensitively, so they must also be normalized before
+        // use — otherwise "Chapter1" and "chapter1" resolve to two rooms that never sync.
+        private static string Normalize(string? sectionKey) => sectionKey?.ToLowerInvariant() ?? "";
+
+        private static string RoomKey(int groupId, string sectionKey) => $"{groupId}-{Normalize(sectionKey)}";
         private string? UserId() => Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
         private string? UserRole() => Context.User?.FindFirstValue(ClaimTypes.Role);
     }
