@@ -43,6 +43,16 @@ export default {
         '2xl': '16px',
         '3xl': '24px',
       },
+      // Named layers backed by the --z-* custom properties in index.css, so the
+      // Tailwind classes and the inline style={{ zIndex }} sites share one scale.
+      zIndex: {
+        'sticky':   'var(--z-sticky)',
+        'backdrop': 'var(--z-backdrop)',
+        'sidebar':  'var(--z-sidebar)',
+        'dropdown': 'var(--z-dropdown)',
+        'overlay':  'var(--z-overlay)',
+        'toast':    'var(--z-toast)',
+      },
       animation: {
         'fade-in':    'fadeIn 0.25s ease-out',
         'fade-out':   'fadeOut 0.2s ease-in forwards',

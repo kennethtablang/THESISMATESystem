@@ -215,8 +215,26 @@ namespace THESISMATESystem.Server.Services
             return MapAnnouncementToDto(announcement);
         }
 
-        public async Task<IEnumerable<AnnouncementResponseDto>> GetAnnouncementsAsync(int classroomId, int? groupId = null)
+        public async Task<IEnumerable<AnnouncementResponseDto>> GetAnnouncementsAsync(
+            int classroomId, string callerId, string callerRole, int? groupId = null)
         {
+            // Announcements can target a specific group, so reading a classroom by id needs the
+            // same gate as its enrollments. Students have their own scoped endpoint.
+            if (callerRole == "Faculty")
+            {
+                var ownsClassroom = await _db.Classrooms
+                    .AnyAsync(c => c.Id == classroomId && c.FacultyICId == callerId);
+                if (!ownsClassroom)
+                    throw new UnauthorizedAccessException("You do not own this classroom.");
+            }
+            else if (callerRole is not ("Admin" or "SuperAdmin"))
+            {
+                var isEnrolled = await _db.ClassroomEnrollments
+                    .AnyAsync(e => e.ClassroomId == classroomId && e.StudentId == callerId);
+                if (!isEnrolled)
+                    throw new UnauthorizedAccessException("You are not enrolled in this classroom.");
+            }
+
             var query = _db.ClassroomAnnouncements
                 .Include(a => a.PostedBy)
                 .Include(a => a.TargetGroup)

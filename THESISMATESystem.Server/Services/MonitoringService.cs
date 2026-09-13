@@ -11,8 +11,13 @@ namespace THESISMATESystem.Server.Services
     public class MonitoringService : IMonitoringService
     {
         private readonly AppDbContext _db;
+        private readonly IGroupAccessChecker _groupAccess;
 
-        public MonitoringService(AppDbContext db) => _db = db;
+        public MonitoringService(AppDbContext db, IGroupAccessChecker groupAccess)
+        {
+            _db = db;
+            _groupAccess = groupAccess;
+        }
 
         public async Task<MonitoringSummaryDto> GetSummaryAsync(string userId, string role)
         {
@@ -41,8 +46,10 @@ namespace THESISMATESystem.Server.Services
             var group = await LoadGroupAsync(groupId);
             if (group is null) return null;
 
-            // Enforce scope for Adviser
-            if (role == "Faculty" && group.AdviserId != userId) return null;
+            // Same rule the rest of the group-scoped endpoints use. Checking AdviserId directly
+            // here used to hide the group from panelists and Faculty-in-Charge who are allowed
+            // to see everything else about it.
+            if (!await _groupAccess.CanAccessGroupAsync(userId, role, groupId)) return null;
 
             return await ComputeHealthAsync(group);
         }
@@ -232,14 +239,14 @@ namespace THESISMATESystem.Server.Services
 
         private async Task<List<CapstoneGroup>> LoadGroupsForRoleAsync(string userId, string role)
         {
-            var query = _db.CapstoneGroups
-                .Include(g => g.Adviser)
-                .AsQueryable();
+            var query = _groupAccess.FilterAccessible(
+                _db.CapstoneGroups.Include(g => g.Adviser),
+                userId, role);
 
-            if (role == "Faculty")
-                query = query.Where(g => g.AdviserId == userId);
-
-            return await query.OrderBy(g => g.GroupName).ToListAsync();
+            return await query
+                .AsNoTracking()
+                .OrderBy(g => g.GroupName)
+                .ToListAsync();
         }
 
         private Task<CapstoneGroup?> LoadGroupAsync(int groupId) =>

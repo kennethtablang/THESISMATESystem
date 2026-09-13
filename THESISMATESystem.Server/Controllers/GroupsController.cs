@@ -52,6 +52,13 @@ namespace THESISMATESystem.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+
+            // Students may only view their own group; Faculty/Admin need cross-group access
+            if (role == "Student" && !await _groups.CanAccessGroupAsync(userId, role, id))
+                return Forbid();
+
             var group = await _groups.GetGroupByIdAsync(id);
             return group is null ? NotFound() : Ok(group);
         }
@@ -93,7 +100,10 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> SetDeadlines(int id, [FromBody] SetGroupDeadlinesRequestDto dto)
         {
-            try { return Ok(await _groups.SetDeadlinesAsync(id, dto)); }
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _groups.SetDeadlinesAsync(id, userId, role, dto)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
         }
 

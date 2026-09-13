@@ -105,7 +105,12 @@ namespace THESISMATESystem.Server.Services
                 .FirstOrDefaultAsync(s => s.CapstoneGroupId == group.Id && s.SectionKey == sectionKey);
 
             var wordCount = CountWords(dto.Content);
-            var yjsBytes = dto.YjsState != null ? Convert.FromBase64String(dto.YjsState) : null;
+            byte[]? yjsBytes = null;
+            if (dto.YjsState != null)
+            {
+                try { yjsBytes = Convert.FromBase64String(dto.YjsState); }
+                catch (FormatException) { throw new ArgumentException("Invalid collaborative-editing state payload."); }
+            }
 
             if (section is null)
             {

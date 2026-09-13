@@ -12,8 +12,19 @@ namespace THESISMATESystem.Server.Controllers
     public class ConsultationSchedulesController : ControllerBase
     {
         private readonly IConsultationScheduleService _schedules;
+        private readonly IGroupAccessChecker _groupAccess;
 
-        public ConsultationSchedulesController(IConsultationScheduleService schedules) => _schedules = schedules;
+        public ConsultationSchedulesController(IConsultationScheduleService schedules, IGroupAccessChecker groupAccess)
+        {
+            _schedules = schedules;
+            _groupAccess = groupAccess;
+        }
+
+        private async Task<bool> CanAccessGroupAsync(int groupId)
+            => await _groupAccess.CanAccessGroupAsync(
+                User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+                User.FindFirstValue(ClaimTypes.Role)!,
+                groupId);
 
         [HttpGet]
         public async Task<IActionResult> GetAll()
@@ -50,15 +61,21 @@ namespace THESISMATESystem.Server.Controllers
             var facultyICId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             try { return Ok(await _schedules.UpdateScheduleAsync(id, facultyICId, dto)); }
             catch (KeyNotFoundException) { return NotFound(); }
-            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
         }
 
         [HttpPatch("{id:int}/status")]
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateScheduleStatusRequestDto dto)
         {
-            var success = await _schedules.UpdateScheduleStatusAsync(id, dto);
-            return success ? Ok() : NotFound();
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try
+            {
+                var success = await _schedules.UpdateScheduleStatusAsync(id, userId, role, dto);
+                return success ? Ok() : NotFound();
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
         }
 
         [HttpPost("requests")]
@@ -79,7 +96,10 @@ namespace THESISMATESystem.Server.Controllers
         [HttpGet("my-group-requests/{groupId:int}")]
         [Authorize(Roles = "Student")]
         public async Task<IActionResult> GetMyGroupRequests(int groupId)
-            => Ok(await _schedules.GetMyRequestsAsync(groupId));
+        {
+            if (!await CanAccessGroupAsync(groupId)) return Forbid();
+            return Ok(await _schedules.GetMyRequestsAsync(groupId));
+        }
 
         [HttpPatch("requests/{requestId:int}/respond")]
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]

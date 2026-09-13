@@ -19,7 +19,7 @@ namespace THESISMATESystem.Server.Interfaces
         Task<(byte[] bytes, string contentType)?> GetLogoAsync(int groupId);
         Task<CapstoneGroupResponseDto> AddMemberAsync(int groupId, string userId);
         Task<CapstoneGroupResponseDto> RemoveMemberAsync(int groupId, string userId);
-        Task<CapstoneGroupResponseDto> SetDeadlinesAsync(int groupId, SetGroupDeadlinesRequestDto dto);
+        Task<CapstoneGroupResponseDto> SetDeadlinesAsync(int groupId, string callerId, string callerRole, SetGroupDeadlinesRequestDto dto);
 
         Task<bool> CanAccessGroupAsync(string userId, string role, int groupId);
         Task<IEnumerable<GroupDeadlineResponseDto>> GetDeadlinesAsync(int groupId);

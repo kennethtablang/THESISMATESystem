@@ -20,6 +20,17 @@
     --table-border: #f4f0e6;
     --scrollbar-thumb: #c9b99a;
     --scrollbar-thumb-hover: #a8956f;
+
+    /* Stacking order. One scale for the whole app — before this, four separate
+       overlays all sat at z-50 and the rest escalated to 60/100/9999 to out-bid
+       each other, so what ended up on top depended on which was edited last.
+       Anything that floats above the page must use one of these. */
+    --z-sticky:   20;  /* sticky section headers                     */
+    --z-backdrop: 30;  /* mobile sidebar scrim                       */
+    --z-sidebar:  40;  /* app sidebar                                */
+    --z-dropdown: 50;  /* menus/popovers anchored to a control       */
+    --z-overlay:  60;  /* modals, drawers, fullscreen views          */
+    --z-toast:    70;  /* always on top of everything                */
   }
 
   .dark {
@@ -369,6 +380,11 @@
 }
 
 /* ── Toast customization ──────────────────────────────────────────────── */
+/* Toastify ships z-index 9999. Pulling it onto our scale keeps it the single
+   top layer — otherwise the next overlay that reaches for a big number ties it. */
+.Toastify__toast-container {
+  z-index: var(--z-toast) !important;
+}
 .Toastify__toast {
   border-radius: 12px !important;
   font-family: inherit !important;

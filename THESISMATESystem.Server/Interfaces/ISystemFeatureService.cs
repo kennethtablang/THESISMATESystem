@@ -9,8 +9,8 @@ namespace THESISMATESystem.Server.Interfaces
         Task<SystemFeatureResponseDto> CreateFeatureAsync(string createdById, CreateSystemFeatureRequestDto dto);
         Task<IEnumerable<SystemFeatureResponseDto>> GetFeaturesByGroupAsync(int groupId);
         Task<SystemFeatureResponseDto?> GetFeatureByIdAsync(int id);
-        Task<SystemFeatureResponseDto> UpdateFeatureAsync(int id, string updatedById, UpdateSystemFeatureRequestDto dto);
-        Task<bool> DeleteFeatureAsync(int id);
+        Task<SystemFeatureResponseDto> UpdateFeatureAsync(int id, string updatedById, string callerRole, UpdateSystemFeatureRequestDto dto);
+        Task<bool> DeleteFeatureAsync(int id, string webRootPath);
         Task<SystemFeatureCommentResponseDto> AddCommentAsync(int featureId, string authorId, AddSystemFeatureCommentRequestDto dto);
         Task<IEnumerable<SystemFeatureCommentResponseDto>> GetCommentsAsync(int featureId);
         Task<bool> DeleteCommentAsync(int commentId, string userId);

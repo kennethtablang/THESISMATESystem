@@ -86,7 +86,12 @@ namespace THESISMATESystem.Server.Controllers
         // GET /api/classrooms/{id}/announcements?groupId=... — Get announcements for a classroom
         [HttpGet("{id:int}/announcements")]
         public async Task<IActionResult> GetAnnouncements(int id, [FromQuery] int? groupId = null)
-            => Ok(await _classrooms.GetAnnouncementsAsync(id, groupId));
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _classrooms.GetAnnouncementsAsync(id, userId, role, groupId)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+        }
 
         // GET /api/classrooms/announcements/my — Student gets their relevant announcements
         [HttpGet("announcements/my")]

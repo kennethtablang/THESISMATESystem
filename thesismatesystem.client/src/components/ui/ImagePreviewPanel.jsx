@@ -67,14 +67,14 @@ export default function ImagePreviewPanel({ images, startIndex = 0, onClose }) {
     <>
       {/* Backdrop — dim only, no blur */}
       <div
-        className="fixed inset-0 z-40"
+        className="fixed inset-0 z-overlay"
         style={{ background: 'rgba(0,0,0,0.4)' }}
         onClick={onClose}
       />
 
       {/* Panel */}
       <div
-        className="fixed top-0 right-0 h-full z-50 flex flex-col"
+        className="fixed top-0 right-0 h-full z-overlay flex flex-col"
         style={{
           width: 'min(50vw, 760px)',
           background: 'var(--bg-card)',

@@ -12,8 +12,19 @@ namespace THESISMATESystem.Server.Controllers
     public class ConsultationsController : ControllerBase
     {
         private readonly IConsultationService _consultations;
+        private readonly IGroupAccessChecker _groupAccess;
 
-        public ConsultationsController(IConsultationService consultations) => _consultations = consultations;
+        public ConsultationsController(IConsultationService consultations, IGroupAccessChecker groupAccess)
+        {
+            _consultations = consultations;
+            _groupAccess = groupAccess;
+        }
+
+        private async Task<bool> CanAccessGroupAsync(int groupId)
+            => await _groupAccess.CanAccessGroupAsync(
+                User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+                User.FindFirstValue(ClaimTypes.Role)!,
+                groupId);
 
         [HttpGet]
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
@@ -26,19 +37,25 @@ namespace THESISMATESystem.Server.Controllers
 
         [HttpGet("group/{groupId:int}")]
         public async Task<IActionResult> GetByGroup(int groupId)
-            => Ok(await _consultations.GetConsultationsByGroupAsync(groupId));
+        {
+            if (!await CanAccessGroupAsync(groupId)) return Forbid();
+            return Ok(await _consultations.GetConsultationsByGroupAsync(groupId));
+        }
 
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {
             var log = await _consultations.GetConsultationByIdAsync(id);
-            return log is null ? NotFound() : Ok(log);
+            if (log is null) return NotFound();
+            if (!await CanAccessGroupAsync(log.CapstoneGroupId)) return Forbid();
+            return Ok(log);
         }
 
         [HttpPost]
         [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> Create(CreateConsultationRequestDto dto)
         {
+            if (!await CanAccessGroupAsync(dto.CapstoneGroupId)) return Forbid();
             var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var result = await _consultations.CreateConsultationAsync(adviserId, dto);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);

@@ -154,7 +154,7 @@ function SearchModal({ onClose, role }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4"
+      className="fixed inset-0 z-overlay flex items-start justify-center pt-[12vh] px-4"
       style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
     >
@@ -396,7 +396,7 @@ export default function TopBar({ title, subtitle, left }) {
   return (
     <>
       <header
-        className="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-8"
+        className="sticky top-0 z-sticky flex items-center justify-between px-4 sm:px-8"
         style={{
           background: 'var(--bg-topbar)',
           backdropFilter: 'blur(14px)',
@@ -540,7 +540,7 @@ export default function TopBar({ title, subtitle, left }) {
 
             {dropdownOpen && (
               <div
-                className="absolute right-0 mt-2 w-52 rounded-xl overflow-hidden z-50 animate-slide-up"
+                className="absolute right-0 mt-2 w-52 rounded-xl overflow-hidden z-dropdown animate-slide-up"
                 style={{
                   background: 'var(--bg-card)',
                   border: '1px solid var(--border-main)',
@@ -608,7 +608,7 @@ export default function TopBar({ title, subtitle, left }) {
       {/* Logout confirmation modal */}
       {showLogoutModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          className="fixed inset-0 z-overlay flex items-center justify-center px-4"
           style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
         >
           <div

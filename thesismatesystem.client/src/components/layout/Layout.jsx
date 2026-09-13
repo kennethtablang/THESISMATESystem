@@ -1,9 +1,22 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import AppFooter from './Footer'
 import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
+
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="flex gap-1">
+        {[0, 1, 2].map(i => (
+          <span key={i} className="w-2 h-2 rounded-full animate-bounce"
+            style={{ background: '#c9a84c', animationDelay: `${i * 0.15}s` }} />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -24,7 +37,7 @@ export default function Layout() {
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-30 lg:hidden"
+          className="fixed inset-0 z-backdrop lg:hidden"
           style={{ background: 'rgba(0,0,0,0.5)' }}
           onClick={() => setSidebarOpen(false)}
         />
@@ -32,7 +45,7 @@ export default function Layout() {
 
       {/* Sidebar — mobile always w-60, desktop respects collapsed state */}
       <div
-        className={`fixed inset-y-0 left-0 z-40 w-60 transform lg:translate-x-0 ${sidebarCollapsed ? 'lg:w-16' : 'lg:w-60'} ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-sidebar w-60 transform lg:translate-x-0 ${sidebarCollapsed ? 'lg:w-16' : 'lg:w-60'} ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
         style={{ transition: 'transform 300ms ease-in-out, width 300ms ease-in-out' }}
       >
         <Sidebar
@@ -48,7 +61,11 @@ export default function Layout() {
         style={{ transition: 'margin-left 300ms ease-in-out' }}
       >
         <main className="flex-1">
-          <Outlet context={{ toggleSidebar: () => setSidebarOpen((o) => !o) }} />
+          {/* Inner boundary so a code-split page loads without unmounting the shell —
+              otherwise the sidebar and topbar would blank out on every navigation. */}
+          <Suspense fallback={<PageFallback />}>
+            <Outlet context={{ toggleSidebar: () => setSidebarOpen((o) => !o) }} />
+          </Suspense>
         </main>
         <AppFooter />
       </div>

@@ -15,6 +15,15 @@ function getMultipartHeaders() {
   }
 }
 
+// Navigation is async, so callers keep running after a 401 redirect is queued.
+// Throwing stops them from unwrapping an undefined response in the meantime.
+function handleUnauthorized() {
+  sessionStorage.removeItem('tm_token')
+  sessionStorage.removeItem('tm_user')
+  window.location.href = '/login'
+  throw new Error('Your session has expired. Please sign in again.')
+}
+
 async function request(method, path, body) {
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
@@ -22,12 +31,7 @@ async function request(method, path, body) {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
-  if (res.status === 401) {
-    sessionStorage.removeItem('tm_token')
-    sessionStorage.removeItem('tm_user')
-    window.location.href = '/login'
-    return
-  }
+  if (res.status === 401) handleUnauthorized()
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
@@ -51,12 +55,7 @@ async function requestMultipart(method, path, formData) {
     body: formData,
   })
 
-  if (res.status === 401) {
-    sessionStorage.removeItem('tm_token')
-    sessionStorage.removeItem('tm_user')
-    window.location.href = '/login'
-    return
-  }
+  if (res.status === 401) handleUnauthorized()
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
@@ -225,6 +224,7 @@ async function downloadBlobAuth(path, filename) {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
+  if (res.status === 401) handleUnauthorized()
   if (!res.ok) throw new Error(`Download failed: ${res.statusText}`)
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)

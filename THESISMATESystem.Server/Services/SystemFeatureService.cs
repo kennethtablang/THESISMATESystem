@@ -50,6 +50,9 @@ namespace THESISMATESystem.Server.Services
                 .Include(f => f.CapstoneGroup)
                 .Include(f => f.Comments)
                 .Include(f => f.Screenshots)
+                // Comments and Screenshots are both collections; joining them in one query
+                // returns every comment paired with every screenshot.
+                .AsSplitQuery()
                 .Where(f => f.CapstoneGroupId == groupId)
                 .OrderBy(f => f.FeatureType)
                 .ThenBy(f => f.SortOrder)
@@ -64,19 +67,34 @@ namespace THESISMATESystem.Server.Services
                 .Include(f => f.CapstoneGroup)
                 .Include(f => f.Comments)
                 .Include(f => f.Screenshots)
+                // Comments and Screenshots are both collections; joining them in one query
+                // returns every comment paired with every screenshot.
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(f => f.Id == id);
 
             return feature is null ? null : MapToDto(feature);
         }
 
-        public async Task<SystemFeatureResponseDto> UpdateFeatureAsync(int id, string updatedById, UpdateSystemFeatureRequestDto dto)
+        public async Task<SystemFeatureResponseDto> UpdateFeatureAsync(int id, string updatedById, string callerRole, UpdateSystemFeatureRequestDto dto)
         {
             var feature = await _db.SystemFeatures
                 .Include(f => f.CapstoneGroup)
                 .Include(f => f.Comments)
                 .Include(f => f.Screenshots)
+                // Comments and Screenshots are both collections; joining them in one query
+                // returns every comment paired with every screenshot.
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(f => f.Id == id)
                 ?? throw new KeyNotFoundException("Feature not found.");
+
+            // Students may only touch features belonging to their own group
+            if (callerRole == "Student")
+            {
+                var isMember = await _db.GroupMembers
+                    .AnyAsync(gm => gm.CapstoneGroupId == feature.CapstoneGroupId && gm.UserId == updatedById);
+                if (!isMember)
+                    throw new UnauthorizedAccessException("You are not a member of this group.");
+            }
 
             var previousStatus = feature.Status;
 
@@ -135,7 +153,9 @@ namespace THESISMATESystem.Server.Services
 
                 if (memberIds.Count > 0)
                 {
-                    _ = _notifications.SendSystemFeatureNotificationAsync(
+                    // Awaited: this shares our scoped DbContext, so it must finish before the
+                    // request scope is disposed. Email delivery inside is still fire-and-forget.
+                    await _notifications.SendSystemFeatureNotificationAsync(
                         memberIds, updaterName, feature.Name, autoMessage,
                         NotificationType.SystemFeatureStatusUpdated,
                         id, feature.CapstoneGroupId);
@@ -145,12 +165,21 @@ namespace THESISMATESystem.Server.Services
             return MapToDto(feature);
         }
 
-        public async Task<bool> DeleteFeatureAsync(int id)
+        public async Task<bool> DeleteFeatureAsync(int id, string webRootPath)
         {
             var feature = await _db.SystemFeatures
                 .Include(f => f.Screenshots)
                 .FirstOrDefaultAsync(f => f.Id == id);
             if (feature is null) return false;
+
+            // Remove screenshot files from disk before the rows cascade-delete
+            foreach (var shot in feature.Screenshots)
+            {
+                var relative = shot.Path.TrimStart('/', '\\').Replace('/', Path.DirectorySeparatorChar);
+                var fullPath = Path.Combine(webRootPath, relative);
+                if (File.Exists(fullPath)) File.Delete(fullPath);
+            }
+
             _db.SystemFeatures.Remove(feature);
             await _db.SaveChangesAsync();
             return true;
@@ -203,7 +232,7 @@ namespace THESISMATESystem.Server.Services
             if (recipientIds.Count > 0)
             {
                 var authorName = $"{author.FirstName} {author.LastName}";
-                _ = _notifications.SendSystemFeatureNotificationAsync(
+                await _notifications.SendSystemFeatureNotificationAsync(
                     recipientIds, authorName, feature.Name,
                     $"{authorName} commented on \"{feature.Name}\".",
                     NotificationType.SystemFeatureCommented,
@@ -276,6 +305,9 @@ namespace THESISMATESystem.Server.Services
                 .Include(f => f.CapstoneGroup)
                 .Include(f => f.Comments)
                 .Include(f => f.Screenshots)
+                // Comments and Screenshots are both collections; joining them in one query
+                // returns every comment paired with every screenshot.
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(f => f.Id == featureId)
                 ?? throw new KeyNotFoundException("Feature not found.");
 
@@ -318,6 +350,9 @@ namespace THESISMATESystem.Server.Services
                 .Include(f => f.CapstoneGroup)
                 .Include(f => f.Comments)
                 .Include(f => f.Screenshots)
+                // Comments and Screenshots are both collections; joining them in one query
+                // returns every comment paired with every screenshot.
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(f => f.Id == featureId)
                 ?? throw new KeyNotFoundException("Feature not found.");
 

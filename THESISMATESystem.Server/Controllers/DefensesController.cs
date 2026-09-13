@@ -13,8 +13,23 @@ namespace THESISMATESystem.Server.Controllers
     public class DefensesController : ControllerBase
     {
         private readonly IDefenseService _defenses;
+        private readonly IGroupAccessChecker _groupAccess;
 
-        public DefensesController(IDefenseService defenses) => _defenses = defenses;
+        public DefensesController(IDefenseService defenses, IGroupAccessChecker groupAccess)
+        {
+            _defenses = defenses;
+            _groupAccess = groupAccess;
+        }
+
+        private async Task<bool> CanAccessGroupAsync(int groupId)
+            => await _groupAccess.CanAccessGroupAsync(
+                User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+                User.FindFirstValue(ClaimTypes.Role)!,
+                groupId);
+
+        // Resolves the group behind a defense schedule, or null when the schedule is missing.
+        private async Task<int?> GroupOfScheduleAsync(int scheduleId)
+            => (await _defenses.GetScheduleByIdAsync(scheduleId))?.CapstoneGroupId;
 
         [HttpGet]
         [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
@@ -30,13 +45,18 @@ namespace THESISMATESystem.Server.Controllers
 
         [HttpGet("group/{groupId:int}")]
         public async Task<IActionResult> GetByGroup(int groupId)
-            => Ok(await _defenses.GetSchedulesByGroupAsync(groupId));
+        {
+            if (!await CanAccessGroupAsync(groupId)) return Forbid();
+            return Ok(await _defenses.GetSchedulesByGroupAsync(groupId));
+        }
 
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {
             var schedule = await _defenses.GetScheduleByIdAsync(id);
-            return schedule is null ? NotFound() : Ok(schedule);
+            if (schedule is null) return NotFound();
+            if (!await CanAccessGroupAsync(schedule.CapstoneGroupId)) return Forbid();
+            return Ok(schedule);
         }
 
         [HttpPost]
@@ -85,11 +105,20 @@ namespace THESISMATESystem.Server.Controllers
         [HttpGet("{id:int}/ratings")]
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> GetRatings(int id)
-            => Ok(await _defenses.GetRatingsByScheduleAsync(id));
+        {
+            var groupId = await GroupOfScheduleAsync(id);
+            if (groupId is null) return NotFound();
+            if (!await CanAccessGroupAsync(groupId.Value)) return Forbid();
+            return Ok(await _defenses.GetRatingsByScheduleAsync(id));
+        }
 
         [HttpGet("{id:int}/consolidated")]
         public async Task<IActionResult> GetConsolidated(int id)
         {
+            var groupId = await GroupOfScheduleAsync(id);
+            if (groupId is null) return NotFound();
+            if (!await CanAccessGroupAsync(groupId.Value)) return Forbid();
+
             try { return Ok(await _defenses.GetConsolidatedRatingAsync(id)); }
             catch (KeyNotFoundException) { return NotFound(); }
         }

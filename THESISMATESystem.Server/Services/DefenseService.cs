@@ -175,6 +175,25 @@ namespace THESISMATESystem.Server.Services
 
             if (dto.PanelistIds is not null)
             {
+                // Ratings are keyed by PanelistId, not by PanelAssignment, so dropping an
+                // assignment leaves that panelist's scores attached to the schedule where
+                // BuildConsolidatedRating would keep averaging them in. Remove the scores of
+                // panelists who are no longer on the panel; finalized ones are left untouched.
+                var removedPanelistIds = schedule.PanelAssignments
+                    .Select(pa => pa.PanelistId)
+                    .Except(dto.PanelistIds)
+                    .ToList();
+
+                if (removedPanelistIds.Count > 0)
+                {
+                    var staleRatings = await _db.DefenseRatings
+                        .Where(r => r.DefenseScheduleId == schedule.Id
+                                 && !r.IsFinalized
+                                 && removedPanelistIds.Contains(r.PanelistId))
+                        .ToListAsync();
+                    _db.DefenseRatings.RemoveRange(staleRatings);
+                }
+
                 _db.PanelAssignments.RemoveRange(schedule.PanelAssignments);
                 var assignments = dto.PanelistIds.Select(pid => new PanelAssignment
                 {
@@ -335,6 +354,9 @@ namespace THESISMATESystem.Server.Services
             var schedule = await _db.DefenseSchedules
                 .Include(s => s.PanelAssignments)
                 .Include(s => s.DefenseRatings).ThenInclude(r => r.DefenseCriterion)
+                // Panellists × ratings is a cartesian product in a single query, and the
+                // consolidated average is computed off both.
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(s => s.Id == scheduleId)
                 ?? throw new KeyNotFoundException($"Schedule {scheduleId} not found.");
 
@@ -436,7 +458,8 @@ namespace THESISMATESystem.Server.Services
             _db.DefenseSchedules
                 .Include(s => s.CapstoneGroup)
                 .Include(s => s.PanelAssignments).ThenInclude(pa => pa.Panelist)
-                .Include(s => s.DefenseRatings).ThenInclude(r => r.DefenseCriterion);
+                .Include(s => s.DefenseRatings).ThenInclude(r => r.DefenseCriterion)
+                .AsSplitQuery();
 
         private async Task<IEnumerable<DefenseScheduleResponseDto>> MapSchedules(IEnumerable<DefenseSchedule> schedules)
         {
@@ -472,7 +495,10 @@ namespace THESISMATESystem.Server.Services
 
             var totalCriteria = await _db.DefenseCriteria.CountAsync(c => c.IsActive && c.Phase == schedule.Phase);
             var totalRatingsExpected = panelCount * totalCriteria;
-            var allSubmitted = schedule.DefenseRatings.Count >= totalRatingsExpected;
+            // With no panel or no rubric nothing can be submitted, so a >= comparison against 0
+            // would otherwise report a fully-rated defense.
+            var allSubmitted = totalRatingsExpected > 0
+                && schedule.DefenseRatings.Count >= totalRatingsExpected;
 
             return new ConsolidatedRatingDto
             {

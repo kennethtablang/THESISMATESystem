@@ -82,7 +82,7 @@ namespace THESISMATESystem.Server
             builder.Services.AddAuthorization();
 
             // AutoMapper
-            builder.Services.AddAutoMapper(cfg => cfg.AddProfile<MappingProfile>());
+            builder.Services.AddAutoMapper(typeof(MappingProfile));
 
             // Services
             builder.Services.AddScoped<IEmailService, EmailService>();
@@ -99,6 +99,7 @@ namespace THESISMATESystem.Server
             builder.Services.AddScoped<IClassroomService, ClassroomService>();
             builder.Services.AddScoped<IManuscriptService, ManuscriptService>();
             builder.Services.AddScoped<IMonitoringService, MonitoringService>();
+            builder.Services.AddScoped<IGroupAccessChecker, GroupAccessChecker>();
 
             builder.Services.AddSignalR(options =>
             {
@@ -171,6 +172,22 @@ namespace THESISMATESystem.Server
             Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "chapters"));
             Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "manuscripts"));
             Directory.CreateDirectory(Path.Combine(wwwroot, "uploads", "system-features"));
+
+            // Submitted documents and chapters live under wwwroot but are private: they are only
+            // ever served through /api/documents/{id}/download and the chapters equivalent, which
+            // run a group-access check first. Without this any static handler below would serve the
+            // same bytes to anyone holding the URL, bypassing that check entirely.
+            app.Use(async (ctx, next) =>
+            {
+                var path = ctx.Request.Path;
+                if (path.StartsWithSegments("/uploads/documents") ||
+                    path.StartsWithSegments("/uploads/chapters"))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+                await next();
+            });
 
             app.UseDefaultFiles();
             app.MapStaticAssets();

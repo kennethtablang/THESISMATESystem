@@ -10,7 +10,7 @@ namespace THESISMATESystem.Server.Interfaces
         Task<IEnumerable<ConsultationScheduleResponseDto>> GetSchedulesByFacultyICAsync(string facultyICId);
         Task<ConsultationScheduleResponseDto?> GetScheduleByIdAsync(int id);
         Task<ConsultationScheduleResponseDto> UpdateScheduleAsync(int id, string facultyICId, UpdateConsultationScheduleRequestDto dto);
-        Task<bool> UpdateScheduleStatusAsync(int id, UpdateScheduleStatusRequestDto dto);
+        Task<bool> UpdateScheduleStatusAsync(int id, string callerId, string callerRole, UpdateScheduleStatusRequestDto dto);
         Task<ConsultationRequestResponseDto> RequestSlotAsync(string requestedById, RequestConsultationSlotDto dto);
         Task<IEnumerable<ConsultationRequestResponseDto>> GetRequestsByScheduleAsync(int scheduleId);
         Task<IEnumerable<ConsultationRequestResponseDto>> GetMyRequestsAsync(int groupId);

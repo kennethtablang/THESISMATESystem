@@ -1102,7 +1102,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
                 position: 'absolute', right: 0, top: 'calc(100% + 4px)',
                 background: 'var(--bg-card)', border: '1px solid var(--border-main)',
                 borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-                minWidth: 210, zIndex: 60, overflow: 'hidden',
+                minWidth: 210, zIndex: 'var(--z-dropdown)', overflow: 'hidden',
               }}>
                 <button onClick={handleExportSection}
                   className="w-full text-left flex items-center gap-2.5 px-3.5 py-2.5 text-xs transition-colors"
@@ -1442,7 +1442,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
             flexDirection: showCommentInput ? 'column' : 'row',
             alignItems: showCommentInput ? 'stretch' : 'center',
             gap: showCommentInput ? 6 : 2,
-            zIndex: 100,
+            zIndex: 'var(--z-dropdown)',
             boxShadow: '0 6px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(100,160,255,0.08)',
             minWidth: showCommentInput ? 220 : undefined,
           }}>

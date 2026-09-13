@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 
 namespace THESISMATESystem.Server.Controllers
@@ -55,6 +56,9 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Student")]
         public async Task<IActionResult> Upload([FromForm] UploadDocumentRequestDto dto)
         {
+            if (!UploadValidation.HasAllowedExtension(dto.File?.FileName, UploadValidation.DocumentExtensions))
+                return BadRequest(new { message = $"Only {UploadValidation.DescribeAllowed(UploadValidation.DocumentExtensions)} files are allowed." });
+
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             try
             {
@@ -117,10 +121,13 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Student")]
         public async Task<IActionResult> UploadNewVersion(int id, IFormFile file)
         {
+            if (!UploadValidation.HasAllowedExtension(file?.FileName, UploadValidation.DocumentExtensions))
+                return BadRequest(new { message = $"Only {UploadValidation.DescribeAllowed(UploadValidation.DocumentExtensions)} files are allowed." });
+
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             try
             {
-                var result = await _documents.UploadNewVersionAsync(id, userId, file);
+                var result = await _documents.UploadNewVersionAsync(id, userId, file!);
                 return Ok(result);
             }
             catch (UnauthorizedAccessException) { return Forbid(); }

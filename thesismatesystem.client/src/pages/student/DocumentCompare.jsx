@@ -602,7 +602,7 @@ export default function DocumentCompare({ versions, initialIdA, initialIdB, sect
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
+      position: 'fixed', inset: 0, zIndex: 'var(--z-overlay)',
       display: 'flex', flexDirection: 'column',
       fontFamily: 'system-ui, -apple-system, sans-serif',
     }}>

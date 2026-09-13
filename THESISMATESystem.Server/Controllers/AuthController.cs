@@ -164,7 +164,8 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> DeactivateUser(string userId)
         {
-            var success = await _auth.DeactivateUserAsync(userId);
+            var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var success = await _auth.DeactivateUserAsync(userId, callerId);
             return success ? Ok() : NotFound();
         }
 

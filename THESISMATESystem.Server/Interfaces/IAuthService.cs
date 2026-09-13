@@ -13,7 +13,7 @@ namespace THESISMATESystem.Server.Interfaces
         Task<bool> ResetPasswordAsync(ResetPasswordRequestDto dto);
         Task<UserResponseDto?> GetProfileAsync(string userId);
         Task<UserResponseDto> UpdateUserAsync(string userId, UpdateUserRequestDto dto, string callerRole);
-        Task<bool> DeactivateUserAsync(string userId);
+        Task<bool> DeactivateUserAsync(string userId, string performedByUserId);
         Task<IEnumerable<UserResponseDto>> GetAllUsersAsync();
         Task AdminForceSetPasswordAsync(string userId, string newPassword);
         Task<UserResponseDto> AdminSetEmailAsync(string userId, string newEmail);

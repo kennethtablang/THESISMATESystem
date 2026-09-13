@@ -26,6 +26,7 @@ namespace THESISMATESystem.Server.Services
                 .Include(g => g.Adviser)
                 .Include(g => g.Members).ThenInclude(m => m.User)
                 .Include(g => g.ChapterSubmissions)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(g => g.Id == groupId)
                 ?? throw new KeyNotFoundException($"Group {groupId} not found.");
 
@@ -127,6 +128,7 @@ namespace THESISMATESystem.Server.Services
                 .Include(g => g.Adviser)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)
+                .AsSplitQuery()
                 .Where(g => g.AcademicYear == academicYear)
                 .OrderBy(g => g.GroupName)
                 .ToListAsync();
@@ -205,6 +207,7 @@ namespace THESISMATESystem.Server.Services
                 .Include(s => s.PanelAssignments).ThenInclude(pa => pa.Panelist)
                 .Include(s => s.DefenseRatings).ThenInclude(r => r.DefenseCriterion)
                 .Include(s => s.DefenseRatings).ThenInclude(r => r.Panelist)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(s => s.Id == scheduleId)
                 ?? throw new KeyNotFoundException($"Schedule {scheduleId} not found.");
 
@@ -310,6 +313,7 @@ namespace THESISMATESystem.Server.Services
                 .Include(g => g.Adviser)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)
+                .AsSplitQuery()
                 .AsQueryable();
 
             if (adviserId is not null) query = query.Where(g => g.AdviserId == adviserId);

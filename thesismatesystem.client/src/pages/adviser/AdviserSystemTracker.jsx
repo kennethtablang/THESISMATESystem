@@ -173,7 +173,7 @@ function GanttDateModal({ feature, onClose, onSave }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+    <div className="fixed inset-0 z-overlay flex items-center justify-center px-4" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
       <div className="w-full max-w-md rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-main)' }}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold" style={{ color: 'var(--text-heading)' }}>Gantt Dates — {feature.name}</h3>

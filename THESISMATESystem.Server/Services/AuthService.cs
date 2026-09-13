@@ -363,6 +363,19 @@ namespace THESISMATESystem.Server.Services
             var user = await _userManager.FindByIdAsync(userId)
                 ?? throw new UnauthorizedAccessException("Invalid session. Please log in again.");
 
+            // Re-assert the same gates LoginAsync applies. This endpoint is reachable on its own,
+            // and the account can be deactivated between the password step and code entry.
+            if (!user.IsActive)
+            {
+                await WriteAuditAsync(user.Id, "Login2FA", "User", user.Email, success: false);
+                throw new UnauthorizedAccessException("Account is deactivated.");
+            }
+            if (!user.EmailConfirmed)
+            {
+                await WriteAuditAsync(user.Id, "Login2FA", "User", user.Email, success: false);
+                throw new UnauthorizedAccessException("Please verify your email address before logging in.");
+            }
+
             var valid = await _userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultEmailProvider, code);
             if (!valid)
             {
@@ -449,14 +462,15 @@ namespace THESISMATESystem.Server.Services
             return userDto;
         }
 
-        public async Task<bool> DeactivateUserAsync(string userId)
+        public async Task<bool> DeactivateUserAsync(string userId, string performedByUserId)
         {
             var user = await _userManager.FindByIdAsync(userId);
             if (user is null) return false;
 
             user.IsActive = false;
             await _userManager.UpdateAsync(user);
-            await WriteAuditAsync(userId, "DeactivateAccount", "User", userId, success: true);
+            // Actor is the admin performing the action; the target is the entity id.
+            await WriteAuditAsync(performedByUserId, "DeactivateAccount", "User", userId, success: true);
             return true;
         }
 

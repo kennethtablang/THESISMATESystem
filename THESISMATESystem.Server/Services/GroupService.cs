@@ -70,6 +70,9 @@ namespace THESISMATESystem.Server.Services
                 .Include(g => g.Members).ThenInclude(m => m.User)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)
+                // Three collection includes in one query multiply out: a group with 4 members,
+                // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(g => g.Id == id);
 
             if (group is null) return null;
@@ -87,6 +90,9 @@ namespace THESISMATESystem.Server.Services
                 .Include(g => g.Members).ThenInclude(m => m.User)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)
+                // Three collection includes in one query multiply out: a group with 4 members,
+                // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
+                .AsSplitQuery()
                 .AsQueryable();
 
             if (status.HasValue)
@@ -109,6 +115,9 @@ namespace THESISMATESystem.Server.Services
                 .Include(g => g.Members).ThenInclude(m => m.User)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)
+                // Three collection includes in one query multiply out: a group with 4 members,
+                // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
+                .AsSplitQuery()
                 .Where(g => g.AdviserId == adviserId)
                 .OrderByDescending(g => g.CreatedAt)
                 .ToListAsync();
@@ -129,6 +138,7 @@ namespace THESISMATESystem.Server.Services
                 .Include(gm => gm.CapstoneGroup).ThenInclude(g => g.Members).ThenInclude(m => m.User)
                 .Include(gm => gm.CapstoneGroup).ThenInclude(g => g.ChapterSubmissions)
                 .Include(gm => gm.CapstoneGroup).ThenInclude(g => g.DefenseSchedules)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(gm => gm.UserId == studentId &&
                     gm.CapstoneGroup.Status == GroupStatus.Active);
 
@@ -257,10 +267,13 @@ namespace THESISMATESystem.Server.Services
                 ?? throw new InvalidOperationException("Failed to reload group.");
         }
 
-        public async Task<CapstoneGroupResponseDto> SetDeadlinesAsync(int groupId, SetGroupDeadlinesRequestDto dto)
+        public async Task<CapstoneGroupResponseDto> SetDeadlinesAsync(int groupId, string callerId, string callerRole, SetGroupDeadlinesRequestDto dto)
         {
             var group = await _db.CapstoneGroups.FindAsync(groupId)
                 ?? throw new KeyNotFoundException("Group not found.");
+
+            if (callerRole == "Faculty" && group.AdviserId != callerId)
+                throw new UnauthorizedAccessException("Only the group's adviser can set deadlines.");
 
             group.ManuscriptDueDate = dto.ManuscriptDueDate;
             group.SystemFeaturesDueDate = dto.SystemFeaturesDueDate;
@@ -517,6 +530,9 @@ namespace THESISMATESystem.Server.Services
                 .Include(g => g.Members).ThenInclude(m => m.User)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)
+                // Three collection includes in one query multiply out: a group with 4 members,
+                // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
+                .AsSplitQuery()
                 .Where(g => groupIds.Contains(g.Id))
                 .OrderByDescending(g => g.CreatedAt)
                 .ToListAsync();
@@ -537,6 +553,9 @@ namespace THESISMATESystem.Server.Services
                 .Include(g => g.Members).ThenInclude(m => m.User)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)
+                // Three collection includes in one query multiply out: a group with 4 members,
+                // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(g => g.Id == groupId)
                 ?? throw new KeyNotFoundException("Group not found.");
 

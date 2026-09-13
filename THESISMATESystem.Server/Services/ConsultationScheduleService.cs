@@ -88,10 +88,14 @@ namespace THESISMATESystem.Server.Services
             return await BuildResponseAsync(id);
         }
 
-        public async Task<bool> UpdateScheduleStatusAsync(int id, UpdateScheduleStatusRequestDto dto)
+        public async Task<bool> UpdateScheduleStatusAsync(int id, string callerId, string callerRole, UpdateScheduleStatusRequestDto dto)
         {
             var schedule = await _db.ConsultationSchedules.FindAsync(id);
             if (schedule is null) return false;
+
+            if (callerRole == "Faculty" && schedule.FacultyICId != callerId)
+                throw new UnauthorizedAccessException("You can only manage your own schedules.");
+
             schedule.Status = dto.Status;
             await _db.SaveChangesAsync();
             return true;
@@ -106,6 +110,16 @@ namespace THESISMATESystem.Server.Services
 
             if (schedule.Status != ConsultationScheduleStatus.Open)
                 throw new InvalidOperationException("This schedule is not open for requests.");
+
+            // Requester must belong to the group they are booking for
+            var isMember = await _db.GroupMembers
+                .AnyAsync(gm => gm.CapstoneGroupId == dto.CapstoneGroupId && gm.UserId == requestedById);
+            if (!isMember)
+                throw new InvalidOperationException("You are not a member of this group.");
+
+            // Duplicate requests hit a unique DB index — surface a friendly error instead of a 500
+            if (schedule.Requests.Any(r => r.CapstoneGroupId == dto.CapstoneGroupId))
+                throw new InvalidOperationException("Your group has already requested a slot on this schedule.");
 
             var approved = schedule.Requests.Count(r => r.Status == ConsultationRequestStatus.Approved);
             if (approved >= schedule.MaxGroups)
@@ -165,27 +179,22 @@ namespace THESISMATESystem.Server.Services
 
             if (dto.Status == ConsultationRequestStatus.Approved)
             {
-                var approvedCount = await _db.ConsultationRequests
+                // Count other approved requests (excluding this one, so re-approving is idempotent)
+                var otherApproved = await _db.ConsultationRequests
                     .CountAsync(r => r.ConsultationScheduleId == request.ConsultationScheduleId
-                                  && r.Status == ConsultationRequestStatus.Approved);
-                if (approvedCount >= request.ConsultationSchedule.MaxGroups)
+                                  && r.Status == ConsultationRequestStatus.Approved
+                                  && r.Id != requestId);
+                if (otherApproved >= request.ConsultationSchedule.MaxGroups)
                     throw new InvalidOperationException("Schedule is already full.");
+
+                // Auto-close schedule once this approval fills the last slot
+                if (otherApproved + 1 >= request.ConsultationSchedule.MaxGroups)
+                    request.ConsultationSchedule.Status = ConsultationScheduleStatus.Full;
             }
 
             request.Status = dto.Status;
             request.ResponseNotes = dto.ResponseNotes;
             request.RespondedAt = PhilippineTime.Now;
-
-            // Auto-close schedule if full after approval.
-            // Count is from DB (pre-save), so +1 accounts for the current approval being added.
-            if (dto.Status == ConsultationRequestStatus.Approved)
-            {
-                var approvedCount = await _db.ConsultationRequests
-                    .CountAsync(r => r.ConsultationScheduleId == request.ConsultationScheduleId
-                                  && r.Status == ConsultationRequestStatus.Approved);
-                if (approvedCount + 1 >= request.ConsultationSchedule.MaxGroups)
-                    request.ConsultationSchedule.Status = ConsultationScheduleStatus.Full;
-            }
 
             await _db.SaveChangesAsync();
             return await BuildRequestResponseAsync(requestId);

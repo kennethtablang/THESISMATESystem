@@ -1,53 +1,54 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import Layout from './components/layout/Layout'
 import Login from './pages/auth/Login'
-import Register from './pages/auth/Register'
-import CheckEmail from './pages/auth/CheckEmail'
-import VerifyEmail from './pages/auth/VerifyEmail'
-import ForgotPassword from './pages/auth/ForgotPassword'
-import ResetPassword from './pages/auth/ResetPassword'
-import TwoFactorVerify from './pages/auth/TwoFactorVerify'
+
+// Every route below is code-split. Loading them eagerly pulled the rich-text editor,
+// Yjs/SignalR collaboration stack and docx export into the initial bundle, so the very
+// first paint had to download and parse all of it regardless of which page was opened.
+const Register        = lazy(() => import('./pages/auth/Register'))
+const CheckEmail      = lazy(() => import('./pages/auth/CheckEmail'))
+const VerifyEmail     = lazy(() => import('./pages/auth/VerifyEmail'))
+const ForgotPassword  = lazy(() => import('./pages/auth/ForgotPassword'))
+const ResetPassword   = lazy(() => import('./pages/auth/ResetPassword'))
+const TwoFactorVerify = lazy(() => import('./pages/auth/TwoFactorVerify'))
 
 // Dashboard (handles all roles internally)
-import Dashboard from './pages/dashboard/Dashboard'
+const Dashboard = lazy(() => import('./pages/dashboard/Dashboard'))
 
 // Shared pages
-import Notifications from './pages/notifications/Notifications'
-import Profile from './pages/profile/Profile'
-import Reports from './pages/reports/Reports'
-import Defenses from './pages/defenses/Defenses'
-import DefenseScheduler from './pages/defenses/DefenseScheduler'
-import RubricManager from './pages/defenses/RubricManager'
-import GroupsLayout from './pages/groups/GroupsLayout'
-import GroupDetail from './pages/groups/GroupDetail'
-import Chapters from './pages/chapters/Chapters'
+const Notifications    = lazy(() => import('./pages/notifications/Notifications'))
+const Profile          = lazy(() => import('./pages/profile/Profile'))
+const Reports          = lazy(() => import('./pages/reports/Reports'))
+const Defenses         = lazy(() => import('./pages/defenses/Defenses'))
+const DefenseScheduler = lazy(() => import('./pages/defenses/DefenseScheduler'))
+const RubricManager    = lazy(() => import('./pages/defenses/RubricManager'))
+const GroupsLayout     = lazy(() => import('./pages/groups/GroupsLayout'))
+const GroupDetail      = lazy(() => import('./pages/groups/GroupDetail'))
+const Chapters         = lazy(() => import('./pages/chapters/Chapters'))
 
 // Student pages
-import DocumentUpload from './pages/student/DocumentUpload'
-import StudentSystemTracker from './pages/student/StudentSystemTracker'
+const DocumentUpload        = lazy(() => import('./pages/student/DocumentUpload'))
+const StudentSystemTracker  = lazy(() => import('./pages/student/StudentSystemTracker'))
+const JoinClass             = lazy(() => import('./pages/student/JoinClass'))
+const ManuscriptEditor      = lazy(() => import('./pages/student/ManuscriptEditor'))
 
 // Adviser pages
-import ManuscriptReview from './pages/adviser/ManuscriptReview'
-import AdviserSystemTracker from './pages/adviser/AdviserSystemTracker'
-
-// Student pages (additional)
-import JoinClass from './pages/student/JoinClass'
-import ManuscriptEditor from './pages/student/ManuscriptEditor'
-
-// Adviser/monitor pages
-import DocumentReview from './pages/adviser/DocumentReview'
+const ManuscriptReview     = lazy(() => import('./pages/adviser/ManuscriptReview'))
+const AdviserSystemTracker = lazy(() => import('./pages/adviser/AdviserSystemTracker'))
+const DocumentReview       = lazy(() => import('./pages/adviser/DocumentReview'))
 
 // Admin pages
-import UserManagement from './pages/admin/UserManagement'
-import Advisers from './pages/admin/Advisers'
-import ClassroomAdmin from './pages/admin/ClassroomAdmin'
+const UserManagement = lazy(() => import('./pages/admin/UserManagement'))
+const Advisers       = lazy(() => import('./pages/admin/Advisers'))
+const ClassroomAdmin = lazy(() => import('./pages/admin/ClassroomAdmin'))
 
 // Monitoring
-import MonitoringDashboard from './pages/monitoring/MonitoringDashboard'
+const MonitoringDashboard = lazy(() => import('./pages/monitoring/MonitoringDashboard'))
 
 // Panel pages
-import Ratings from './pages/ratings/Ratings'
+const Ratings = lazy(() => import('./pages/ratings/Ratings'))
 
 
 function DocumentsPage() {
@@ -73,27 +74,29 @@ function SystemFeaturesPage() {
   return <StudentSystemTracker />
 }
 
+function BrandLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-page)' }}>
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #c9a84c 0%, #d4b565 100%)' }}>
+          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L2 7v10l10 5 10-5V7L12 2z" stroke="#0a1628" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <div className="flex gap-1">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: '#c9a84c', animationDelay: `${i * 0.15}s` }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-page)' }}>
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #c9a84c 0%, #d4b565 100%)' }}>
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L2 7v10l10 5 10-5V7L12 2z" stroke="#0a1628" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <div className="flex gap-1">
-            {[0, 1, 2].map((i) => (
-              <span key={i} className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: '#c9a84c', animationDelay: `${i * 0.15}s` }} />
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <BrandLoader />
 
   return user ? children : <Navigate to="/login" replace />
 }
@@ -113,7 +116,8 @@ function RoleGuard({ roles, children }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
+      <Suspense fallback={<BrandLoader />}>
+        <Routes>
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
         <Route path="/check-email" element={<CheckEmail />} />
@@ -180,8 +184,9 @@ export default function App() {
           <Route path="profile" element={<Profile />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }

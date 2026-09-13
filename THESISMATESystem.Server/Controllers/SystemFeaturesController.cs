@@ -13,28 +13,46 @@ namespace THESISMATESystem.Server.Controllers
     {
         private readonly ISystemFeatureService _features;
         private readonly IWebHostEnvironment _env;
+        private readonly IGroupAccessChecker _groupAccess;
 
-        public SystemFeaturesController(ISystemFeatureService features, IWebHostEnvironment env)
+        public SystemFeaturesController(ISystemFeatureService features, IWebHostEnvironment env,
+            IGroupAccessChecker groupAccess)
         {
             _features = features;
             _env = env;
+            _groupAccess = groupAccess;
+        }
+
+        private (string UserId, string Role) Caller()
+            => (User.FindFirstValue(ClaimTypes.NameIdentifier)!, User.FindFirstValue(ClaimTypes.Role)!);
+
+        private async Task<bool> CanAccessGroupAsync(int groupId)
+        {
+            var (userId, role) = Caller();
+            return await _groupAccess.CanAccessGroupAsync(userId, role, groupId);
         }
 
         [HttpGet("group/{groupId:int}")]
         public async Task<IActionResult> GetByGroup(int groupId)
-            => Ok(await _features.GetFeaturesByGroupAsync(groupId));
+        {
+            if (!await CanAccessGroupAsync(groupId)) return Forbid();
+            return Ok(await _features.GetFeaturesByGroupAsync(groupId));
+        }
 
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {
             var feature = await _features.GetFeatureByIdAsync(id);
-            return feature is null ? NotFound() : Ok(feature);
+            if (feature is null) return NotFound();
+            if (!await CanAccessGroupAsync(feature.CapstoneGroupId)) return Forbid();
+            return Ok(feature);
         }
 
         [HttpPost]
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> Create([FromBody] CreateSystemFeatureRequestDto dto)
         {
+            if (!await CanAccessGroupAsync(dto.CapstoneGroupId)) return Forbid();
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var result = await _features.CreateFeatureAsync(userId, dto);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
@@ -44,8 +62,12 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Faculty,Admin,SuperAdmin,Student")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateSystemFeatureRequestDto dto)
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var role = User.FindFirstValue(ClaimTypes.Role)!;
+            var (userId, role) = Caller();
+
+            var existing = await _features.GetFeatureByIdAsync(id);
+            if (existing is null) return NotFound();
+            if (!await CanAccessGroupAsync(existing.CapstoneGroupId)) return Forbid();
+
             // Students may only set status to InProgress
             if (role == "Student")
             {
@@ -53,7 +75,8 @@ namespace THESISMATESystem.Server.Controllers
                     return Forbid();
                 dto = new UpdateSystemFeatureRequestDto { Status = Enums.SystemFeatureStatus.InProgress };
             }
-            try { return Ok(await _features.UpdateFeatureAsync(id, userId, dto)); }
+            try { return Ok(await _features.UpdateFeatureAsync(id, userId, role, dto)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
@@ -61,7 +84,11 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> Delete(int id)
         {
-            var success = await _features.DeleteFeatureAsync(id);
+            var feature = await _features.GetFeatureByIdAsync(id);
+            if (feature is null) return NotFound();
+            if (!await CanAccessGroupAsync(feature.CapstoneGroupId)) return Forbid();
+
+            var success = await _features.DeleteFeatureAsync(id, _env.WebRootPath);
             return success ? Ok() : NotFound();
         }
 
@@ -78,14 +105,25 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
         public async Task<IActionResult> UpdateDates(int id, [FromBody] UpdateSystemFeatureRequestDto dto)
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            try { return Ok(await _features.UpdateFeatureAsync(id, userId, dto)); }
+            var (userId, role) = Caller();
+
+            var existing = await _features.GetFeatureByIdAsync(id);
+            if (existing is null) return NotFound();
+            if (!await CanAccessGroupAsync(existing.CapstoneGroupId)) return Forbid();
+
+            try { return Ok(await _features.UpdateFeatureAsync(id, userId, role, dto)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
         [HttpGet("{id:int}/comments")]
         public async Task<IActionResult> GetComments(int id)
-            => Ok(await _features.GetCommentsAsync(id));
+        {
+            var feature = await _features.GetFeatureByIdAsync(id);
+            if (feature is null) return NotFound();
+            if (!await CanAccessGroupAsync(feature.CapstoneGroupId)) return Forbid();
+            return Ok(await _features.GetCommentsAsync(id));
+        }
 
         [HttpDelete("{featureId:int}/comments/{commentId:int}")]
         public async Task<IActionResult> DeleteComment(int featureId, int commentId)
@@ -93,7 +131,7 @@ namespace THESISMATESystem.Server.Controllers
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             try { return Ok(await _features.DeleteCommentAsync(commentId, userId)); }
             catch (KeyNotFoundException) { return NotFound(); }
-            catch (UnauthorizedAccessException e) { return Forbid(e.Message); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
         }
 
         [HttpPatch("{id:int}/student-test")]
