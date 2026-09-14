@@ -369,3 +369,4 @@ FodyWeavers.xsd
 
 # Spec docs that should be tracked despite the blanket *.md ignore
 !thesismatesystem.client/src/assets/SYSTEM_SPECIFICATIONS_STATUS.md
+!thesismatesystem.client/src/assets/System_Specification_report.md

@@ -1,0 +1,1 @@
+import{n as e}from"./index-D2rDB-_Z.js";var t={position:`bottom-right`,autoClose:3500,closeOnClick:!0,pauseOnHover:!0},n={success:n=>e.success(n,t),error:n=>e.error(n,t),info:n=>e.info(n,t)};export{n as t};
