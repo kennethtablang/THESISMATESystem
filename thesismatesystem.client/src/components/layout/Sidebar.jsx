@@ -1,12 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import logo from '../../assets/ThesisMate-logo.png'
-import {
-  LayoutDashboard, Users, FileText, Calendar,
-  Bell, BarChart3, UserCircle, Star, Upload, Cpu,
-  ShieldCheck, BookOpen, Megaphone, PenLine, Activity,
-  ChevronLeft, ChevronRight, GraduationCap, Building2, CalendarRange, ClipboardList,
-} from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { navByRole, accountItems } from './navConfig'
 
 // ── Role config ───────────────────────────────────────────────────────
 const roleConfig = {
@@ -15,77 +11,6 @@ const roleConfig = {
   Faculty:    { color: '#34d399', label: 'Faculty' },
   Student:    { color: '#38bdf8', label: 'Student' },
 }
-
-// ── Nav definitions ───────────────────────────────────────────────────
-// { divider: true, label: 'Section' } entries render as labeled section breaks
-const navByRole = {
-  SuperAdmin: [
-    { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
-    { divider: true, label: 'Management' },
-    { label: 'User Management',  icon: ShieldCheck,     to: '/users' },
-    { label: 'Classrooms',       icon: Building2,       to: '/classrooms' },
-    { label: 'Advisers',         icon: GraduationCap,   to: '/advisers' },
-    { label: 'Manage Groups',    icon: Users,           to: '/groups' },
-    { label: 'All Documents',    icon: FileText,        to: '/documents' },
-    { divider: true, label: 'Academic' },
-    { label: 'System Tracker',   icon: Cpu,             to: '/system-features' },
-    { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
-    { divider: true, label: 'Defenses' },
-    { label: 'Defense Schedules',  icon: Calendar,       to: '/defenses' },
-    { label: 'Defense Scheduler',  icon: CalendarRange,  to: '/defense-scheduler' },
-    { label: 'Rubric Manager',     icon: ClipboardList,  to: '/rubric-manager' },
-    { divider: true, label: 'Reports' },
-    { label: 'Reports',            icon: BarChart3,      to: '/reports' },
-  ],
-  Admin: [
-    { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
-    { divider: true, label: 'Management' },
-    { label: 'User Management',  icon: ShieldCheck,     to: '/users' },
-    { label: 'Classrooms',       icon: Building2,       to: '/classrooms' },
-    { label: 'Advisers',         icon: GraduationCap,   to: '/advisers' },
-    { label: 'Manage Groups',    icon: Users,           to: '/groups' },
-    { divider: true, label: 'Academic' },
-    { label: 'Chapters',         icon: FileText,        to: '/chapters' },
-    { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
-    { divider: true, label: 'Defenses' },
-    { label: 'Defense Schedules',  icon: Calendar,       to: '/defenses' },
-    { label: 'Defense Scheduler',  icon: CalendarRange,  to: '/defense-scheduler' },
-    { label: 'Rubric Manager',     icon: ClipboardList,  to: '/rubric-manager' },
-    { divider: true, label: 'Reports' },
-    { label: 'Reports',            icon: BarChart3,      to: '/reports' },
-  ],
-  Faculty: [
-    { label: 'Dashboard',             icon: LayoutDashboard, to: '/dashboard' },
-    { divider: true, label: 'Academic' },
-    { label: 'My Groups',             icon: Users,           to: '/groups' },
-    { label: 'Manuscripts',           icon: BookOpen,        to: '/documents' },
-    { label: 'System Tracker',        icon: Cpu,             to: '/system-features' },
-    { label: 'Monitoring',            icon: Activity,        to: '/monitoring' },
-    { divider: true, label: 'Defenses' },
-    { label: 'Defense Schedules',  icon: Calendar,      to: '/defenses' },
-    { label: 'Defense Scheduler',  icon: CalendarRange, to: '/defense-scheduler' },
-    { label: 'Rate Defenses',      icon: Star,          to: '/ratings' },
-    { divider: true, label: 'Reports' },
-    { label: 'Reports',               icon: BarChart3,       to: '/reports' },
-  ],
-  Student: [
-    { label: 'Dashboard',            icon: LayoutDashboard, to: '/dashboard' },
-    { divider: true, label: 'My Work' },
-    { label: 'My Class',             icon: Megaphone,       to: '/my-class' },
-    { label: 'My Group',             icon: Users,           to: '/groups' },
-    { label: 'Manuscript',           icon: PenLine,         to: '/manuscript' },
-    { label: 'Upload Documents',     icon: Upload,          to: '/documents' },
-    { label: 'System Tracker',       icon: Cpu,             to: '/system-features' },
-    { label: 'Monitoring',           icon: Activity,        to: '/monitoring' },
-    { divider: true, label: 'Schedule' },
-    { label: 'Defense Schedule',     icon: Calendar,        to: '/defenses' },
-  ],
-}
-
-const accountItems = [
-  { label: 'Notifications', icon: Bell,        to: '/notifications' },
-  { label: 'My Profile',    icon: UserCircle,  to: '/profile' },
-]
 
 export default function Sidebar({ onClose, collapsed, onToggleCollapse }) {
   const { user } = useAuth()

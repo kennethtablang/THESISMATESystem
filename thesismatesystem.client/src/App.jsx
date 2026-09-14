@@ -172,15 +172,27 @@ export default function App() {
           </Route>
           <Route path="chapters" element={<Chapters />} />
           <Route path="defenses" element={<Defenses />} />
-          <Route path="defense-scheduler" element={<DefenseScheduler />} />
-          <Route path="rubric-manager" element={<RubricManager />} />
+          <Route path="defense-scheduler" element={
+            <RoleGuard roles={['Admin', 'SuperAdmin', 'Faculty']}>
+              <DefenseScheduler />
+            </RoleGuard>
+          } />
+          <Route path="rubric-manager" element={
+            <RoleGuard roles={['Admin', 'SuperAdmin']}>
+              <RubricManager />
+            </RoleGuard>
+          } />
           <Route path="ratings" element={
             <RoleGuard roles={['Faculty']}>
               <Ratings />
             </RoleGuard>
           } />
           <Route path="notifications" element={<Notifications />} />
-          <Route path="reports" element={<Reports />} />
+          <Route path="reports" element={
+            <RoleGuard roles={['Admin', 'SuperAdmin', 'Faculty']}>
+              <Reports />
+            </RoleGuard>
+          } />
           <Route path="profile" element={<Profile />} />
         </Route>
 

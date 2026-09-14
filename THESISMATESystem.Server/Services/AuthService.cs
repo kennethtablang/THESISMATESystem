@@ -1,10 +1,12 @@
 using AutoMapper;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Request;
@@ -23,6 +25,7 @@ namespace THESISMATESystem.Server.Services
         private readonly AppDbContext _db;
         private readonly IEmailService _email;
         private readonly ILogger<AuthService> _logger;
+        private readonly ITimeLimitedDataProtector _twoFactorChallenge;
 
         public AuthService(
             UserManager<ApplicationUser> userManager,
@@ -31,8 +34,12 @@ namespace THESISMATESystem.Server.Services
             IMapper mapper,
             AppDbContext db,
             IEmailService email,
-            ILogger<AuthService> logger)
+            ILogger<AuthService> logger,
+            IDataProtectionProvider dataProtection)
         {
+            _twoFactorChallenge = dataProtection
+                .CreateProtector("ThesisMate.Auth.TwoFactorChallenge")
+                .ToTimeLimitedDataProtector();
             _userManager = userManager;
             _signInManager = signInManager;
             _config = config;
@@ -89,7 +96,11 @@ namespace THESISMATESystem.Server.Services
                     _logger.LogError(ex, "Failed to send 2FA code to {Email}", user.Email);
                     throw new InvalidOperationException("Failed to send your login code. Please try again.");
                 }
-                return new AuthResponseDto { TwoFactorRequired = true, TempUserId = user.Id };
+                // A signed, short-lived challenge rather than the raw user id. Email 2FA codes are
+                // time-based and verify whether or not one was sent, so accepting a bare id let anyone
+                // who knew it guess the code and sign in without the password.
+                var challenge = _twoFactorChallenge.Protect(user.Id, TimeSpan.FromMinutes(10));
+                return new AuthResponseDto { TwoFactorRequired = true, TempUserId = challenge };
             }
 
             var roles = await _userManager.GetRolesAsync(user);
@@ -358,8 +369,16 @@ namespace THESISMATESystem.Server.Services
             await _userManager.SetTwoFactorEnabledAsync(user, false);
         }
 
-        public async Task<AuthResponseDto> TwoFactorLoginAsync(string userId, string code)
+        public async Task<AuthResponseDto> TwoFactorLoginAsync(string challenge, string code)
         {
+            string userId;
+            try { userId = _twoFactorChallenge.Unprotect(challenge); }
+            catch (CryptographicException)
+            {
+                // Tampered, forged, or older than 10 minutes.
+                throw new UnauthorizedAccessException("Your sign-in session has expired. Please sign in again.");
+            }
+
             var user = await _userManager.FindByIdAsync(userId)
                 ?? throw new UnauthorizedAccessException("Invalid session. Please log in again.");
 
@@ -376,12 +395,22 @@ namespace THESISMATESystem.Server.Services
                 throw new UnauthorizedAccessException("Please verify your email address before logging in.");
             }
 
+            // Wrong codes count toward the same lockout as wrong passwords, so the 6-digit code
+            // cannot be brute-forced within its validity window.
+            if (await _userManager.IsLockedOutAsync(user))
+            {
+                await WriteAuditAsync(user.Id, "Login2FA", "User", user.Email, success: false);
+                throw new UnauthorizedAccessException("Account temporarily locked due to repeated failed attempts. Please try again in a few minutes.");
+            }
+
             var valid = await _userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultEmailProvider, code);
             if (!valid)
             {
+                await _userManager.AccessFailedAsync(user);
                 await WriteAuditAsync(user.Id, "Login2FA", "User", user.Email, success: false);
                 throw new UnauthorizedAccessException("Invalid or expired code. Please try again.");
             }
+            await _userManager.ResetAccessFailedCountAsync(user);
 
             var roles = await _userManager.GetRolesAsync(user);
             var role = roles.FirstOrDefault() ?? string.Empty;
@@ -477,17 +506,23 @@ namespace THESISMATESystem.Server.Services
         public async Task<IEnumerable<UserResponseDto>> GetAllUsersAsync()
         {
             var users = await _userManager.Users.OrderBy(u => u.LastName).ToListAsync();
-            var dtos = new List<UserResponseDto>();
 
-            foreach (var u in users)
+            // One query for every user's role instead of GetRolesAsync per user, which issued a
+            // separate round-trip for each account on every load of the user list.
+            var roleByUser = (await (
+                    from ur in _db.UserRoles
+                    join r in _db.Roles on ur.RoleId equals r.Id
+                    select new { ur.UserId, r.Name })
+                .ToListAsync())
+                .GroupBy(x => x.UserId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Name).First());
+
+            return users.Select(u =>
             {
-                var roles = await _userManager.GetRolesAsync(u);
                 var dto = _mapper.Map<UserResponseDto>(u);
-                dto.Role = roles.FirstOrDefault() ?? string.Empty;
-                dtos.Add(dto);
-            }
-
-            return dtos;
+                dto.Role = roleByUser.GetValueOrDefault(u.Id) ?? string.Empty;
+                return dto;
+            }).ToList();
         }
 
         public async Task AdminForceSetPasswordAsync(string userId, string newPassword)

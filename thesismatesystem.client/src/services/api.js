@@ -1,18 +1,19 @@
 const BASE_URL = '/api'
 
-function getHeaders() {
-  const token = sessionStorage.getItem('tm_token')
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  }
+// Used when the server gives no message of its own. Bodyless responses such as Forbid()
+// are common, and statusText is empty over HTTP/2, so it cannot be relied on as a fallback.
+const STATUS_MESSAGES = {
+  400: 'The request could not be processed. Please check your input and try again.',
+  403: 'You do not have permission to perform this action.',
+  404: 'The requested record could not be found.',
+  409: 'This record was changed by someone else. Please refresh and try again.',
+  413: 'The file is too large to upload.',
+  500: 'An unexpected server error occurred. Please try again.',
 }
 
-function getMultipartHeaders() {
+function authHeaders() {
   const token = sessionStorage.getItem('tm_token')
-  return {
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  }
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 // Navigation is async, so callers keep running after a 401 redirect is queued.
@@ -24,51 +25,67 @@ function handleUnauthorized() {
   throw new Error('Your session has expired. Please sign in again.')
 }
 
-async function request(method, path, body) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: getHeaders(),
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+async function errorMessage(res) {
+  const body = await res.json().catch(() => null)
+  // ASP.NET Core validation errors use { title, errors } instead of { message }
+  const detail = body?.message || (body?.errors && Object.values(body.errors).flat().join(' '))
+  return detail
+    || STATUS_MESSAGES[res.status]
+    || (res.status >= 500 ? STATUS_MESSAGES[500] : `Request failed (${res.status}).`)
+}
 
-  if (res.status === 401) handleUnauthorized()
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }))
-    // ASP.NET Core validation errors use { title, errors } instead of { message }
-    const message =
-      err.message ||
-      (err.errors && Object.values(err.errors).flat().join(' ')) ||
-      err.title ||
-      `Request failed: ${res.status}`
-    throw new Error(message)
+async function send(path, init = {}) {
+  const hadToken = !!sessionStorage.getItem('tm_token')
+  let res
+  try {
+    res = await fetch(`${BASE_URL}${path}`, { ...init, headers: { ...authHeaders(), ...init.headers } })
+  } catch {
+    throw new Error('Unable to reach the server. Please check your connection and try again.')
   }
 
+  // A 401 on a request that carried a token means the session is no longer valid. Without one
+  // (login, 2FA login) it is a rejected credential, and the server's message has to reach the
+  // form — redirecting would reload the login page and discard it.
+  if (res.status === 401 && hadToken) handleUnauthorized()
+  if (!res.ok) {
+    // status lets callers treat expected outcomes (e.g. 404 "no group yet") as states, not errors
+    const error = new Error(await errorMessage(res))
+    error.status = res.status
+    throw error
+  }
+  return res
+}
+
+async function parseJson(res) {
   const text = await res.text()
   return text ? JSON.parse(text) : null
 }
 
-async function requestMultipart(method, path, formData) {
-  const res = await fetch(`${BASE_URL}${path}`, {
+async function request(method, path, body) {
+  const res = await send(path, {
     method,
-    headers: getMultipartHeaders(),
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   })
+  return parseJson(res)
+}
 
-  if (res.status === 401) handleUnauthorized()
+// Matches the server's request limit in Program.cs. Checked up front so an oversized file fails
+// immediately with a clear reason instead of after a long upload that the server then rejects.
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }))
-    const message =
-      err.message ||
-      (err.errors && Object.values(err.errors).flat().join(' ')) ||
-      err.title ||
-      `Request failed: ${res.status}`
-    throw new Error(message)
+async function requestMultipart(method, path, formData) {
+  for (const value of formData.values()) {
+    if (value instanceof File && value.size > MAX_UPLOAD_BYTES)
+      throw new Error(`"${value.name}" is too large. The maximum upload size is 50 MB.`)
   }
+  const res = await send(path, { method, body: formData })
+  return parseJson(res)
+}
 
-  const text = await res.text()
-  return text ? JSON.parse(text) : null
+async function fetchBlob(path) {
+  const res = await send(path)
+  return res.blob()
 }
 
 const api = {
@@ -213,20 +230,22 @@ export const consultationService = {
   delete: (id) => api.delete(`/consultations/${id}`),
 }
 
+// Fired after notifications are marked read so the top bar's unread indicator can refresh.
+export const NOTIFICATIONS_CHANGED = 'tm:notifications-changed'
+const announceNotificationsChanged = (result) => {
+  window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED))
+  return result
+}
+
 export const notificationService = {
   list: () => api.get('/notifications'),
-  markRead: (id) => api.patch(`/notifications/${id}/read`),
-  markAllRead: () => api.patch('/notifications/read-all'),
+  unreadCount: () => api.get('/notifications/unread-count'),
+  markRead: (id) => api.patch(`/notifications/${id}/read`).then(announceNotificationsChanged),
+  markAllRead: () => api.patch('/notifications/read-all').then(announceNotificationsChanged),
 }
 
 async function downloadBlobAuth(path, filename) {
-  const token = sessionStorage.getItem('tm_token')
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-  if (res.status === 401) handleUnauthorized()
-  if (!res.ok) throw new Error(`Download failed: ${res.statusText}`)
-  const blob = await res.blob()
+  const blob = await fetchBlob(path)
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -266,14 +285,7 @@ export const documentService = {
     return requestMultipart('POST', `/documents/${id}/new-version`, fd)
   },
   versions: (id) => api.get(`/documents/${id}/versions`),
-  fetchBlob: async (id) => {
-    const token = sessionStorage.getItem('tm_token')
-    const res = await fetch(`${BASE_URL}/documents/${id}/download`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-    if (!res.ok) throw new Error(`Failed to load document (${res.status})`)
-    return res.blob()
-  },
+  fetchBlob: (id) => fetchBlob(`/documents/${id}/download`),
   finalizeChapter: (groupId, chapterNumber) =>
     api.post(`/documents/groups/${groupId}/chapters/${chapterNumber}/finalize`),
   finalizeSection: (groupId, sectionKey, formData) =>

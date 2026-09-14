@@ -1,12 +1,11 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { classroomService, authService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import { PageLoader } from '../../components/ui/Spinner'
 import {
-  School, Plus, Copy, Check, Users, Search, Mail, RefreshCw,
-  Clock, CheckCircle2, AlertCircle, ChevronRight, UserPlus,
+  School, Plus, Copy, Check, Users, Search, Mail,
+  CheckCircle2, AlertCircle, UserPlus,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 
@@ -65,8 +64,6 @@ function EnrollmentRow({ e }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ClassroomAdmin() {
-  const navigate = useNavigate()
-
   const [classrooms,   setClassrooms]   = useState([])
   const [selected,     setSelected]     = useState(null)
   const [enrollments,  setEnrollments]  = useState([])
@@ -91,16 +88,16 @@ export default function ClassroomAdmin() {
   // Search enrollments
   const [enrSearch,    setEnrSearch]    = useState('')
 
+  // Id of the classroom whose enrollments belong on screen, so a slow response for a
+  // previously selected classroom cannot overwrite the current list.
+  const activeClassroomId = useRef(null)
+
   useEffect(() => {
     async function load() {
       try {
-        let data
-        try {
-          data = await classroomService.allClassrooms()
-        } catch {
-          // allClassrooms requires a server restart to activate; fall back to own classrooms
-          data = await classroomService.myClassrooms()
-        }
+        // No fallback to myClassrooms: it silently showed an admin only their own classrooms
+        // whenever this call failed for any reason.
+        const data = await classroomService.allClassrooms()
         const list = Array.isArray(data) ? data : []
         setClassrooms(list)
         if (list.length > 0) selectClassroom(list[0])
@@ -114,16 +111,18 @@ export default function ClassroomAdmin() {
   }, [])
 
   async function selectClassroom(cls) {
+    activeClassroomId.current = cls.id
     setSelected(cls)
     setEnrSearch('')
+    setEnrollments([])
     setEnrLoading(true)
     try {
       const data = await classroomService.enrollments(cls.id)
-      setEnrollments(Array.isArray(data) ? data : [])
-    } catch {
-      setEnrollments([])
+      if (activeClassroomId.current === cls.id) setEnrollments(Array.isArray(data) ? data : [])
+    } catch (err) {
+      if (activeClassroomId.current === cls.id) toast.error(err.message || 'An error occurred while loading enrollments.')
     } finally {
-      setEnrLoading(false)
+      if (activeClassroomId.current === cls.id) setEnrLoading(false)
     }
   }
 
@@ -157,7 +156,7 @@ export default function ClassroomAdmin() {
       setStudLoading(true)
       authService.allUsers()
         .then(users => setAllStudents(users.filter(u => u.role === 'Student' && u.isActive)))
-        .catch(() => {})
+        .catch(err => toast.error(err.message || 'An error occurred while loading students.'))
         .finally(() => setStudLoading(false))
     }
   }
@@ -165,7 +164,7 @@ export default function ClassroomAdmin() {
   const enrolledIds = useMemo(() => new Set(enrollments.map(e => e.student?.id)), [enrollments])
 
   const uninvited = useMemo(() => {
-    const q = inviteSearch.toLowerCase()
+    const q = inviteSearch.trim().toLowerCase()
     return allStudents.filter(s =>
       !enrolledIds.has(s.id) &&
       (q === '' || s.fullName?.toLowerCase().includes(q) || s.email?.toLowerCase().includes(q) ||
@@ -192,7 +191,7 @@ export default function ClassroomAdmin() {
 
   // ── Filtered enrollments ────────────────────────────────────────────────────
   const filteredEnr = useMemo(() => {
-    const q = enrSearch.toLowerCase()
+    const q = enrSearch.trim().toLowerCase()
     return enrollments.filter(e =>
       q === '' ||
       e.student?.fullName?.toLowerCase().includes(q) ||

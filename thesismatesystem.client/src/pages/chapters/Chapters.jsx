@@ -55,7 +55,8 @@ export default function Chapters() {
           const results = await Promise.all(
             groups.map(g =>
               chapterService.listByGroup(g.id)
-                .then(chs => chs.map(c => ({ ...c, groupName: g.groupName })))
+                // Faculty also see groups they panel or teach, but only the adviser may review.
+                .then(chs => chs.map(c => ({ ...c, groupName: g.groupName, isMyAdvisee: g.adviser?.id === user?.id })))
                 .catch(() => [])
             )
           )
@@ -67,7 +68,7 @@ export default function Chapters() {
     } else {
       setLoading(false)
     }
-  }, [isStudent, isAdmin, isAdviser])
+  }, [isStudent, isAdmin, isAdviser, user?.id])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -116,7 +117,7 @@ export default function Chapters() {
         await chapterService.addRevisionNote(groupId, selected.id, { notes: reviewForm.note.trim() })
       }
       const refreshed = await chapterService.listByGroup(groupId)
-        .then(chs => chs.map(c => ({ ...c, groupName: selected.groupName })))
+        .then(chs => chs.map(c => ({ ...c, groupName: selected.groupName, isMyAdvisee: selected.isMyAdvisee })))
       setChapters(prev => {
         const others = prev.filter(c => c.capstoneGroupId !== groupId)
         return [...others, ...refreshed].sort((a, b) => {
@@ -204,7 +205,7 @@ export default function Chapters() {
         ) : chapters.length === 0 ? (
           <EmptyState icon={FileText} title="No chapter submissions" description="Chapter submissions from students will appear here." />
         ) : (
-          <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+          <div className="rounded-2xl overflow-x-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -232,7 +233,7 @@ export default function Chapters() {
                         <button className="btn-ghost text-xs" onClick={() => openView(c)}>
                           <Eye size={13} /> View
                         </button>
-                        {isAdviser && c.status === 'PendingReview' && (
+                        {isAdviser && c.isMyAdvisee && c.status === 'PendingReview' && (
                           <button className="btn-primary text-xs px-3 py-1.5" onClick={() => { openView(c); setShowReview(true) }}>
                             Review
                           </button>
@@ -281,7 +282,7 @@ export default function Chapters() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-              Upload File <span className="font-normal text-xs" style={{ color: 'var(--text-muted)' }}>(PDF, DOCX up to 50MB)</span>
+              Upload File <span className="font-normal text-xs" style={{ color: 'var(--text-muted)' }}>(PDF, DOC, DOCX up to 50MB)</span>
             </label>
             <div
               className="border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer"
@@ -294,14 +295,14 @@ export default function Chapters() {
               ) : (
                 <>
                   <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Click to upload or drag and drop</p>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>PDF, DOCX up to 50MB</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>PDF, DOC, DOCX up to 50MB</p>
                 </>
               )}
               <input
                 ref={fileRef}
                 type="file"
                 className="hidden"
-                accept=".pdf,.docx"
+                accept=".pdf,.doc,.docx"
                 onChange={e => setSubmitForm(f => ({ ...f, file: e.target.files[0] ?? null }))}
               />
             </div>

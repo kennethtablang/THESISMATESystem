@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { useSearchParams, Link, useNavigate } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { ArrowLeft, KeyRound, CheckCircle, Eye, EyeOff } from 'lucide-react'
 import logo from '../../assets/ThesisMate-logo.png'
 import { authService } from '../../services/api'
+import { passwordError } from '../../utils/passwordPolicy'
 
 export default function ResetPassword() {
   const [params] = useSearchParams()
-  const navigate = useNavigate()
   const email = params.get('email') ?? ''
   const token = params.get('token') ?? ''
 
@@ -24,16 +24,9 @@ export default function ResetPassword() {
       setError('Passwords do not match.')
       return
     }
-    if (form.newPassword.length < 8) {
-      setError('Password must be at least 8 characters.')
-      return
-    }
-    if (!/[A-Z]/.test(form.newPassword)) {
-      setError('Password must contain at least one uppercase letter.')
-      return
-    }
-    if (!/[0-9]/.test(form.newPassword)) {
-      setError('Password must contain at least one number.')
+    const pwProblem = passwordError(form.newPassword)
+    if (pwProblem) {
+      setError(pwProblem)
       return
     }
 

@@ -44,6 +44,7 @@ function CommentThread({ featureId, currentUserId, refreshKey }) {
   useEffect(() => {
     systemFeatureService.comments(featureId)
       .then(setComments)
+      .catch(err => toast.error(err.message || 'Unable to load comments.'))
       .finally(() => setLoaded(true))
   }, [featureId, refreshKey])
 
@@ -54,8 +55,8 @@ function CommentThread({ featureId, currentUserId, refreshKey }) {
       const c = await systemFeatureService.addComment(featureId, { content: text.trim() })
       setComments(prev => [...prev, c])
       setText('')
-    } catch {
-      toast.error('Failed to post comment.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to post comment.')
     } finally {
       setSending(false)
     }
@@ -66,8 +67,8 @@ function CommentThread({ featureId, currentUserId, refreshKey }) {
     try {
       await systemFeatureService.deleteComment(featureId, commentId)
       setComments(prev => prev.filter(c => c.id !== commentId))
-    } catch {
-      toast.error('Failed to delete comment.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete comment.')
     } finally {
       setDeletingId(null)
     }
@@ -179,8 +180,8 @@ function FeatureCard({ feature: initial, onUpdate, currentUserId }) {
       onUpdate?.(updated)
       setCommentRefreshKey(k => k + 1)
       toast.success('Test result submitted.')
-    } catch {
-      toast.error('Failed to submit test result.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to submit test result.')
     } finally {
       setSubmitting(false)
     }
@@ -194,8 +195,8 @@ function FeatureCard({ feature: initial, onUpdate, currentUserId }) {
       onUpdate?.(updated)
       setCommentRefreshKey(k => k + 1)
       toast.success('Feature marked as In Progress.')
-    } catch {
-      toast.error('Failed to update status.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to update status.')
     } finally {
       setMarkingInProgress(false)
     }
@@ -210,8 +211,8 @@ function FeatureCard({ feature: initial, onUpdate, currentUserId }) {
       setFeature(updated)
       onUpdate?.(updated)
       toast.success('Screenshot uploaded.')
-    } catch {
-      toast.error('Failed to upload screenshot.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to upload screenshot.')
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -328,7 +329,7 @@ function FeatureCard({ feature: initial, onUpdate, currentUserId }) {
             {/* Screenshots */}
             <div className="mb-3">
               <div className="flex items-center gap-3 mb-2">
-                <input type="file" accept="image/*" ref={fileRef} className="hidden" onChange={handleScreenshot} />
+                <input type="file" accept=".jpg,.jpeg,.png,.gif,.webp" ref={fileRef} className="hidden" onChange={handleScreenshot} />
                 <button
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading}

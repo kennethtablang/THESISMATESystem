@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using THESISMATESystem.Server.Enums;
 
 namespace THESISMATESystem.Server.DTOs.Request
@@ -13,7 +14,8 @@ namespace THESISMATESystem.Server.DTOs.Request
 
     public class AddDocumentCommentRequestDto
     {
-        public string Content { get; set; } = string.Empty;
+        // Rich-text HTML from the review editor, hence the larger cap.
+        [Required, MaxLength(20000)] public string Content { get; set; } = string.Empty;
     }
 
     public class UpdateDocumentCommentRequestDto

@@ -113,9 +113,10 @@ export default function GroupsLayout() {
     finally { setSaving(false) }
   }
 
+  const query = search.trim().toLowerCase()
   const filtered = groups.filter(g =>
-    (g.groupName ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    (g.projectTitle ?? '').toLowerCase().includes(search.toLowerCase())
+    (g.groupName ?? '').toLowerCase().includes(query) ||
+    (g.projectTitle ?? '').toLowerCase().includes(query)
   )
 
   const title = isAdmin ? 'Manage Groups' : user?.role === 'Faculty' ? 'My Groups' : 'My Group'
@@ -134,9 +135,11 @@ export default function GroupsLayout() {
 
         {/* ── Left panel: Group list ──────────────────────────────────────── */}
         <div
-          className={selectedId ? 'hidden md:flex md:flex-col' : 'flex flex-col w-full md:w-auto'}
+          // Width lives in classes: an inline width overrode `w-full`, so on phones the list was
+          // stuck at 300px instead of filling the screen.
+          className={`${selectedId ? 'hidden md:flex md:flex-col' : 'flex flex-col w-full'} md:w-[300px] md:min-w-[300px]`}
           style={{
-            width: 300, minWidth: 300, flexShrink: 0,
+            flexShrink: 0,
             borderRight: '1px solid var(--border-light)',
             overflowY: 'auto',
             background: 'var(--bg-card)',
@@ -375,7 +378,7 @@ function GroupListItem({ group, selected, onClick, onEdit, onEditVersion, onUplo
         )}
         {onUploadLogo && (
           <>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden"
+            <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.gif,.webp" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) onUploadLogo(f); e.target.value = '' }} />
             <button
               title="Upload logo"

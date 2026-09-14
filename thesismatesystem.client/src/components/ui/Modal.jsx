@@ -115,14 +115,16 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         tabIndex={-1}
-        className={clsx('relative w-full rounded-2xl', sizeClasses[size], closing ? 'animate-slide-down' : 'animate-slide-up')}
+        // Capped to the viewport with a scrolling body: the overlay centres the dialog, so anything
+        // taller than the screen would otherwise be cut off above and below with no way to reach it.
+        className={clsx('relative w-full rounded-2xl flex flex-col max-h-[calc(100vh-2rem)]', sizeClasses[size], closing ? 'animate-slide-down' : 'animate-slide-up')}
         style={{
           background: 'var(--bg-card)',
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
           border: '1px solid var(--border-main)',
         }}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--border-main)' }}>
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b shrink-0" style={{ borderColor: 'var(--border-main)' }}>
           <h2 id={titleId} className="font-display font-semibold text-lg" style={{ color: 'var(--text-heading)', letterSpacing: '-0.3px' }}>
             {title}
           </h2>
@@ -138,11 +140,11 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
           </button>
         </div>
 
-        <div className="px-6 py-5">{children}</div>
+        <div className="px-6 py-5 overflow-y-auto min-h-0">{children}</div>
 
         {footer && (
           <div
-            className="flex items-center justify-end gap-3 px-6 py-4 border-t"
+            className="flex flex-wrap items-center justify-end gap-3 px-6 py-4 border-t shrink-0"
             style={{ borderColor: 'var(--border-main)', background: 'var(--bg-subtle)', borderRadius: '0 0 16px 16px' }}
           >
             {footer}

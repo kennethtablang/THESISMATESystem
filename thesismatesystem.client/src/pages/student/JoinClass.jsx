@@ -27,6 +27,7 @@ export default function JoinClass() {
   }, [])
 
   async function handleAccept(inv) {
+    setError('')
     setAcceptingId(inv.enrollmentId)
     try {
       await classroomService.acceptInvitation(inv.enrollmentId)
@@ -61,9 +62,13 @@ export default function JoinClass() {
 
   if (checking) {
     return (
+      <>
+      {/* TopBar while loading too: on phones it holds the only menu button */}
+      <TopBar title="My Class" />
       <div className="p-8 flex items-center justify-center">
         <div className="flex gap-1">{[0,1,2].map(i => <span key={i} className="w-2 h-2 rounded-full animate-bounce" style={{background:'#c9a84c',animationDelay:`${i*0.15}s`}} />)}</div>
       </div>
+      </>
     )
   }
 

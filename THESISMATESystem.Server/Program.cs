@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using QuestPDF.Infrastructure;
+using System.Security.Claims;
 using System.Text;
 using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.Hubs;
@@ -77,11 +79,32 @@ namespace THESISMATESystem.Server
                         if (!string.IsNullOrEmpty(access) && path.StartsWithSegments("/hubs"))
                             ctx.Token = access;
                         return Task.CompletedTask;
+                    },
+                    // A JWT stays valid for 8 hours, so without this a deactivated (or deleted) account
+                    // kept full API access until its token expired. Cached briefly per user so this is
+                    // not a database round-trip on every request; deactivation applies within 30s.
+                    OnTokenValidated = async ctx =>
+                    {
+                        var userId = ctx.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+                        if (string.IsNullOrEmpty(userId)) { ctx.Fail("Token has no subject."); return; }
+
+                        var services = ctx.HttpContext.RequestServices;
+                        var isActive = await services.GetRequiredService<IMemoryCache>().GetOrCreateAsync(
+                            $"user-active:{userId}",
+                            async entry =>
+                            {
+                                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+                                return await services.GetRequiredService<AppDbContext>().Users
+                                    .AnyAsync(u => u.Id == userId && u.IsActive);
+                            });
+
+                        if (!isActive) ctx.Fail("Account is deactivated.");
                     }
                 };
             });
 
             builder.Services.AddAuthorization();
+            builder.Services.AddMemoryCache();
 
             // AutoMapper
             builder.Services.AddAutoMapper(typeof(MappingProfile));
@@ -149,10 +172,13 @@ namespace THESISMATESystem.Server
                 });
             });
 
-            // Allow large file uploads (50 MB)
+            // Allow large file uploads (50 MB). Kestrel caps request bodies at ~28.6 MB by default and
+            // that cap applies before FormOptions, so both must be raised for the 50 MB limit to hold.
+            const long maxUploadBytes = 52_428_800;
+            builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxUploadBytes);
             builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
             {
-                o.MultipartBodyLengthLimit = 52_428_800;
+                o.MultipartBodyLengthLimit = maxUploadBytes;
             });
 
             // CORS for SPA development
@@ -166,6 +192,15 @@ namespace THESISMATESystem.Server
             });
 
             var app = builder.Build();
+
+            // Last-resort handler for anything a controller does not catch. The middleware logs the
+            // exception with its stack trace; the client only gets a generic message, so database,
+            // file-system and SMTP details never leave the server.
+            app.UseExceptionHandler(errorApp => errorApp.Run(async ctx =>
+            {
+                ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                await ctx.Response.WriteAsJsonAsync(new { message = "An unexpected error occurred. Please try again." });
+            }));
 
             // Ensure wwwroot exists for file uploads
             var wwwroot = Path.Combine(app.Environment.ContentRootPath, "wwwroot");

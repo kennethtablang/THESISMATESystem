@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { groupService, authService, classroomService } from '../../services/api'
 import Modal from '../../components/ui/Modal'
 import { PageLoader } from '../../components/ui/Spinner'
 import {
-  ArrowLeft, Users, BookOpen, FileText, Calendar, MessageSquare,
+  ArrowLeft, Users, BookOpen, FileText, Calendar,
   TrendingUp, Pencil, UserPlus, UserMinus, Search, Image,
   GraduationCap, Archive, CheckCircle2, Clock, AlertCircle, Cpu,
   ChevronRight, CalendarDays, Trash2, Upload,
@@ -24,11 +24,6 @@ function deadlineInfo(dueDate) {
   if (diffDays <= 7)  return { label: `Due in ${diffDays}d`,  color: '#f59e0b', bg: 'rgba(245,158,11,0.10)',  border: 'rgba(245,158,11,0.25)' }
   if (diffDays <= 14) return { label: `Due in ${diffDays}d`,  color: '#0284c7', bg: 'rgba(14,165,233,0.10)',  border: 'rgba(14,165,233,0.25)' }
   return { label: `${diffDays}d left`,                        color: '#16a34a', bg: 'rgba(34,197,94,0.10)',   border: 'rgba(34,197,94,0.25)'  }
-}
-
-function fmt(iso) {
-  if (!iso) return null
-  return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
@@ -123,10 +118,13 @@ export default function GroupDetail() {
   const { id } = useParams()
   const { user } = useAuth()
   const navigate = useNavigate()
+  // GroupsLayout's list sits beside this panel; changes made here must reach it too.
+  const { setGroups } = useOutletContext() ?? {}
 
   const [group,      setGroup]      = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [notFound,   setNotFound]   = useState(false)
+  const [loadError,  setLoadError]  = useState('')
 
   // Member management
   const [showAddModal,  setShowAddModal]  = useState(false)
@@ -164,20 +162,39 @@ export default function GroupDetail() {
   const [deletingDeadlineId, setDeletingDeadlineId] = useState(null)
 
   const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
-  const canManageDeadlines = ['Admin', 'SuperAdmin', 'Faculty'].includes(user?.role)
+  // The API lets only Admins and the group's own adviser manage deadlines; panelists and
+  // classroom FICs are Faculty too but got a 403 from these buttons.
+  const canManageDeadlines = isAdmin || (user?.role === 'Faculty' && group?.adviser?.id === user?.id)
+
+  function applyGroupUpdate(updated) {
+    setGroup(updated)
+    setGroups?.(prev => prev.map(g => (g.id === updated.id ? updated : g)))
+  }
 
   // ── Load group + deadlines ──────────────────────────────────────────────────
   useEffect(() => {
+    let cancelled = false   // a slow response for the previously opened group must not land here
     setLoading(true)
     setDeadlines([])   // clear stale data from previous group immediately
     setGroup(null)
+    setNotFound(false)  // otherwise one missing group left every later group showing "not found"
+    setLoadError('')
     Promise.all([
       groupService.get(id),
       groupService.getDeadlines(id).catch(() => []),
     ])
-      .then(([grp, dl]) => { setGroup(grp); setDeadlines(Array.isArray(dl) ? dl : []) })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false))
+      .then(([grp, dl]) => {
+        if (cancelled) return
+        setGroup(grp)
+        setDeadlines(Array.isArray(dl) ? dl : [])
+      })
+      .catch(err => {
+        if (cancelled) return
+        if (err.status === 404 || err.status === 403) setNotFound(true)
+        else setLoadError(err.message || 'An error occurred while loading the group.')
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [id])
 
   // ── Add member modal ────────────────────────────────────────────────────────
@@ -188,19 +205,20 @@ export default function GroupDetail() {
     if (allStudents.length === 0) {
       setStudentsLoading(true)
       classroomService.activeStudents()
-        .then(setAllStudents)
-        .catch(() => {})
+        .then(us => setAllStudents(Array.isArray(us) ? us : []))
+        .catch(err => toast.error(err.message || 'An error occurred while loading students.'))
         .finally(() => setStudentsLoading(false))
     }
   }
 
   const currentMemberIds = new Set(group?.members?.map(m => m.id) ?? [])
+  const memberQuery = memberSearch.trim().toLowerCase()
   const availableStudents = allStudents.filter(
     s => !currentMemberIds.has(s.id) &&
-      (memberSearch === '' ||
-        s.fullName?.toLowerCase().includes(memberSearch.toLowerCase()) ||
-        s.email?.toLowerCase().includes(memberSearch.toLowerCase()) ||
-        s.studentId?.toLowerCase().includes(memberSearch.toLowerCase()))
+      (memberQuery === '' ||
+        s.fullName?.toLowerCase().includes(memberQuery) ||
+        s.email?.toLowerCase().includes(memberQuery) ||
+        s.studentId?.toLowerCase().includes(memberQuery))
   )
 
   async function handleAddMember(student) {
@@ -209,7 +227,7 @@ export default function GroupDetail() {
     try {
       const updated = await groupService.addMember(id, student.id)
       toast.success(`${student.fullName} added to group.`)
-      setGroup(updated)
+      applyGroupUpdate(updated)
     } catch (err) {
       setMemberError(err.message || 'Failed to add member.')
       toast.error(err.message || 'Failed to add member.')
@@ -228,7 +246,7 @@ export default function GroupDetail() {
     setConfirmRemove(null)
     try {
       const updated = await groupService.removeMember(id, confirmRemove.id)
-      setGroup(updated)
+      applyGroupUpdate(updated)
       toast.success('Member removed.')
     } catch (err) {
       setMemberError(err.message || 'Failed to remove member.')
@@ -250,7 +268,7 @@ export default function GroupDetail() {
     if (advisers.length === 0) {
       authService.allUsers()
         .then(users => setAdvisers(users.filter(u => u.role === 'Faculty')))
-        .catch(() => {})
+        .catch(err => toast.error(err.message || 'An error occurred while loading advisers.'))
     }
   }
 
@@ -265,7 +283,7 @@ export default function GroupDetail() {
         projectTitle: editForm.projectTitle.trim() || null,
         adviserId:    editForm.adviserId,
       })
-      setGroup(updated)
+      applyGroupUpdate(updated)
       setShowEditModal(false)
       toast.success('Group updated.')
     } catch (err) {
@@ -285,6 +303,7 @@ export default function GroupDetail() {
     setConfirmArchive(false)
     try {
       await groupService.archive(id)
+      setGroups?.(prev => prev.map(g => (g.id === group.id ? { ...g, status: 'Archived' } : g)))
       toast.success('Group archived.')
       navigate('/groups')
     } catch (err) {
@@ -300,7 +319,7 @@ export default function GroupDetail() {
     setLogoError(false)
     try {
       const updated = await groupService.uploadLogo(id, file)
-      setGroup(updated)
+      applyGroupUpdate(updated)
       toast.success('Logo uploaded.')
     } catch (err) {
       toast.error(err.message || 'Failed to upload logo.')
@@ -389,6 +408,14 @@ export default function GroupDetail() {
   // ── Render states ───────────────────────────────────────────────────────────
   if (loading) return <PageLoader />
 
+  if (loadError) return (
+    <div className="p-8 text-center">
+      <AlertCircle size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+      <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>{loadError}</p>
+      <button className="btn-secondary" onClick={() => navigate(0)}>Try again</button>
+    </div>
+  )
+
   if (notFound) return (
     <div className="p-8 text-center">
       <AlertCircle size={40} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
@@ -475,7 +502,7 @@ export default function GroupDetail() {
               {isAdmin && (
                 <>
                   <input
-                    ref={fileRef} type="file" accept="image/*"
+                    ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.gif,.webp"
                     className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); e.target.value = '' }}
                   />
@@ -732,7 +759,6 @@ export default function GroupDetail() {
               <QuickLink icon={Upload}      label="Documents"       desc="Upload & manage manuscript documents" color="#6366f1" onClick={() => navigate('/documents')} />
               <QuickLink icon={BookOpen}    label="Manuscript"      desc="Collaborative manuscript editor" color="#7c3aed"  onClick={() => navigate('/manuscript')} />
               <QuickLink icon={Calendar}    label="Defense"         desc="Defense schedules & ratings"    color="#3b82f6"  onClick={() => navigate('/defenses')} />
-              <QuickLink icon={MessageSquare} label="Consultations" desc="Log & view consultations"       color="#16a34a"  onClick={() => navigate('/consultations')} />
               <QuickLink icon={TrendingUp}  label="Monitoring"      desc="Group health & progress"        color="#f59e0b"  onClick={() => navigate('/monitoring')} />
               {isAdmin && (
                 <QuickLink icon={Cpu}       label="System Features" desc="Feature tracker"                color="#ec4899"  onClick={() => navigate(`/system-features`)} />

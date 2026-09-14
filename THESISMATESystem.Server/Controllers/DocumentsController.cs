@@ -66,7 +66,6 @@ namespace THESISMATESystem.Server.Controllers
                 return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
             }
             catch (UnauthorizedAccessException) { return Forbid(); }
-            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpGet("{id:int}/download")]
@@ -132,7 +131,6 @@ namespace THESISMATESystem.Server.Controllers
             }
             catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException) { return NotFound(); }
-            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpGet("{id:int}/versions")]

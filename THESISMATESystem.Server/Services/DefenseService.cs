@@ -295,6 +295,10 @@ namespace THESISMATESystem.Server.Services
             var criterion = await _db.DefenseCriteria.FindAsync(dto.DefenseCriterionId)
                 ?? throw new InvalidOperationException("Criterion not found.");
 
+            // Removed criteria are soft-deleted; a score against one would still count toward the total.
+            if (!criterion.IsActive)
+                throw new InvalidOperationException($"Criterion '{criterion.Name}' has been removed from the rubric.");
+
             if (criterion.Phase != schedule.Phase)
                 throw new InvalidOperationException($"Criterion '{criterion.Name}' does not belong to the {schedule.Phase} rubric.");
 

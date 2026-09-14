@@ -12,7 +12,7 @@ import interactionPlugin, { Draggable } from '@fullcalendar/interaction'
 import listPlugin from '@fullcalendar/list'
 import {
   GripVertical, AlertCircle, CheckCircle2, CalendarDays, MapPin,
-  Users, Clock, Trash2, ChevronRight, Info, Pencil, X, RefreshCw, GraduationCap,
+  Users, Clock, Trash2, ChevronRight, Info, Pencil, RefreshCw, GraduationCap,
   Download,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
@@ -172,7 +172,6 @@ export default function DefenseScheduler() {
   const [outcomeForm,   setOutcomeForm]   = useState({ defenseOutcome: '', revisionLevel: '', requiresReDefense: false })
   const [outcomeSaving, setOutcomeSaving] = useState(false)
 
-  const canSchedule = ['Admin', 'SuperAdmin', 'Faculty'].includes(user?.role)
   const canModify   = ['Admin', 'SuperAdmin'].includes(user?.role)
 
   // ── Load ────────────────────────────────────────────────────────────────────
@@ -345,8 +344,8 @@ export default function DefenseScheduler() {
         requiresReDefense: outcomeForm.requiresReDefense,
       })
       toast.success('Defense outcome saved.')
-    } catch {
-      toast.error('Failed to save outcome.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to save outcome.')
     } finally {
       setOutcomeSaving(false)
     }

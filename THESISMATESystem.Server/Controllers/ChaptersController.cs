@@ -62,7 +62,6 @@ namespace THESISMATESystem.Server.Controllers
                 return CreatedAtAction(nameof(GetById), new { groupId, id = result.Id }, result);
             }
             catch (UnauthorizedAccessException) { return Forbid(); }
-            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPatch("submissions/{id:int}/status")]

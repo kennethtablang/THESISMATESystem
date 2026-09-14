@@ -158,7 +158,11 @@ export default function ManuscriptEditor() {
   useEffect(() => {
     groupService.myGroup()
       .then(g => setGroup(g))
-      .catch(() => setGroup(null))
+      .catch(err => {
+        // Only a 404 means "no group"; other failures should not tell the student they have none.
+        if (err.status !== 404) toast.error(err.message || 'An error occurred while loading your group.')
+        setGroup(null)
+      })
   }, [])
 
   useEffect(() => {
@@ -169,7 +173,7 @@ export default function ManuscriptEditor() {
         data.forEach(s => { map[s.sectionKey] = s })
         setSections(map)
       })
-      .catch(() => {})
+      .catch(err => toast.error(err.message || 'An error occurred while loading the manuscript.'))
     manuscriptService.voteStatus().then(setVoteStatus).catch(() => {})
     manuscriptService.myRevisionSummary().then(setRevSummary).catch(() => {})
   }, [group])
@@ -243,12 +247,15 @@ export default function ManuscriptEditor() {
     let binary = ''
     for (let i = 0; i < state.length; i++) binary += String.fromCharCode(state[i])
     const b64 = btoa(binary)
+    // Pin the section now: reading the ref after the await filed the result (and the AckSave)
+    // under whichever section the student had switched to while the save was in flight.
+    const sectionKey = activeKeyRef.current
     setSaving(true)
     setSaveError('')
     try {
-      const result = await manuscriptService.saveSection(activeKeyRef.current, { content: html, yjsState: b64 })
-      setSections(prev => ({ ...prev, [activeKeyRef.current]: result }))
-      connectionRef.current?.invoke('AckSave', group.id, activeKeyRef.current).catch(() => {})
+      const result = await manuscriptService.saveSection(sectionKey, { content: html, yjsState: b64 })
+      setSections(prev => ({ ...prev, [sectionKey]: result }))
+      connectionRef.current?.invoke('AckSave', group.id, sectionKey).catch(() => {})
     } catch (err) {
       setSaveError(err.message)
     } finally {

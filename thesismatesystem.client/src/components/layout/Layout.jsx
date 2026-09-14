@@ -1,4 +1,4 @@
-import { Suspense, useState } from 'react'
+import { Suspense, useState, useSyncExternalStore } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import AppFooter from './Footer'
@@ -18,7 +18,21 @@ function PageFallback() {
   )
 }
 
+// Matches Tailwind's `lg` breakpoint, where the sidebar stops being an off-canvas drawer.
+const DESKTOP_QUERY = '(min-width: 1024px)'
+
+function subscribeDesktop(onChange) {
+  const mq = window.matchMedia(DESKTOP_QUERY)
+  mq.addEventListener('change', onChange)
+  return () => mq.removeEventListener('change', onChange)
+}
+
+function useIsDesktop() {
+  return useSyncExternalStore(subscribeDesktop, () => window.matchMedia(DESKTOP_QUERY).matches)
+}
+
 export default function Layout() {
+  const isDesktop = useIsDesktop()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true' } catch { return false }
@@ -27,7 +41,7 @@ export default function Layout() {
   function handleToggleCollapse() {
     setSidebarCollapsed(v => {
       const next = !v
-      try { localStorage.setItem('sidebar-collapsed', String(next)) } catch {}
+      try { localStorage.setItem('sidebar-collapsed', String(next)) } catch { /* storage unavailable — keep in-memory state */ }
       return next
     })
   }
@@ -50,7 +64,9 @@ export default function Layout() {
       >
         <Sidebar
           onClose={() => setSidebarOpen(false)}
-          collapsed={sidebarCollapsed}
+          // Collapsing is a desktop preference. The mobile drawer is always full width and has no
+          // collapse toggle, so honouring it there left an icon-only rail the user could not expand.
+          collapsed={sidebarCollapsed && isDesktop}
           onToggleCollapse={handleToggleCollapse}
         />
       </div>

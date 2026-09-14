@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useAuth } from '../../contexts/AuthContext'
 import TopBar from '../../components/layout/TopBar'
 import { BarChart3, Users, Calendar, TrendingUp, FileDown } from 'lucide-react'
 import { groupService, defenseService, reportService } from '../../services/api'
+import { useAuth } from '../../contexts/AuthContext'
 import { PageLoader } from '../../components/ui/Spinner'
 import { useSort, SortIcon } from '../../hooks/useSort.jsx'
+import { toast } from '../../utils/toast'
 
 function PdfButton({ onClick, downloading }) {
   return (
@@ -22,6 +23,8 @@ function PdfButton({ onClick, downloading }) {
 
 export default function Reports() {
   const { user } = useAuth()
+  // The all-groups export is Admin-only on the API; Faculty got a 403 from this button.
+  const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
   const [groups, setGroups] = useState([])
   const [defenses, setDefenses] = useState([])
   const [loading, setLoading] = useState(true)
@@ -31,7 +34,7 @@ export default function Reports() {
 
   async function handlePdf(key, fn) {
     setDownloading(prev => ({ ...prev, [key]: true }))
-    try { await fn() } catch (err) { alert(err.message || 'Failed to generate PDF') }
+    try { await fn() } catch (err) { toast.error(err.message || 'Failed to generate PDF') }
     finally { setDownloading(prev => ({ ...prev, [key]: false })) }
   }
 
@@ -94,14 +97,16 @@ export default function Reports() {
               </button>
             ))}
           </div>
-          <button
-            onClick={() => handlePdf('allGroups', () => reportService.allGroups())}
-            disabled={downloading.allGroups}
-            className="btn-primary flex items-center gap-2 text-sm"
-          >
-            <FileDown size={15} />
-            {downloading.allGroups ? 'Generating…' : 'Export All Groups PDF'}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => handlePdf('allGroups', () => reportService.allGroups())}
+              disabled={downloading.allGroups}
+              className="btn-primary flex items-center gap-2 text-sm"
+            >
+              <FileDown size={15} />
+              {downloading.allGroups ? 'Generating…' : 'Export All Groups PDF'}
+            </button>
+          )}
         </div>
 
         {activeTab === 'overview' && (
@@ -161,7 +166,7 @@ export default function Reports() {
                 <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>No groups found</p>
               </div>
             ) : (
-              <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+              <div className="rounded-2xl overflow-x-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -269,7 +274,7 @@ export default function Reports() {
                     <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>No defenses for {yearFilter}</p>
                   </div>
                 ) : (
-                  <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+                  <div className="rounded-2xl overflow-x-auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
                     <table className="data-table">
                       <thead>
                         <tr>

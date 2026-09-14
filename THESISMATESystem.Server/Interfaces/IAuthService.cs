@@ -24,6 +24,6 @@ namespace THESISMATESystem.Server.Interfaces
         Task EnableTwoFactorSendCodeAsync(string userId);
         Task<bool> VerifyAndEnableTwoFactorAsync(string userId, string code);
         Task DisableTwoFactorAsync(string userId, string password);
-        Task<AuthResponseDto> TwoFactorLoginAsync(string userId, string code);
+        Task<AuthResponseDto> TwoFactorLoginAsync(string challenge, string code);
     }
 }

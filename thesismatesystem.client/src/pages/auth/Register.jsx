@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { passwordError } from '../../utils/passwordPolicy'
 import {
   Eye, EyeOff, ArrowRight, ArrowLeft,
   User, Mail, IdCard, Lock, CheckCircle2, AlertCircle,
@@ -97,9 +98,8 @@ export default function Register() {
     setDuplicateId(false)
     if (!form.studentId.trim()) { triggerError('Student ID is required.'); return }
     if (form.password !== form.confirmPassword) { triggerError('Passwords do not match.'); return }
-    if (form.password.length < 8) { triggerError('Password must be at least 8 characters.'); return }
-    if (!/[A-Z]/.test(form.password)) { triggerError('Password must contain at least one uppercase letter.'); return }
-    if (!/[0-9]/.test(form.password)) { triggerError('Password must contain at least one number.'); return }
+    const pwProblem = passwordError(form.password)
+    if (pwProblem) { triggerError(pwProblem); return }
     setLoading(true)
     try {
       await register({

@@ -40,6 +40,8 @@ namespace THESISMATESystem.Server.DTOs.Request
 
     public class TwoFactorLoginRequestDto
     {
+        // Carries the signed challenge returned as TempUserId by login, not a raw user id.
+        // The name is kept so existing clients keep working.
         [Required] public string UserId { get; set; } = string.Empty;
         [Required] public string Code { get; set; } = string.Empty;
     }

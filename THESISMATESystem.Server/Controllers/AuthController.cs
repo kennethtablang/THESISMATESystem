@@ -12,8 +12,13 @@ namespace THESISMATESystem.Server.Controllers
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _auth;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(IAuthService auth) => _auth = auth;
+        public AuthController(IAuthService auth, ILogger<AuthController> logger)
+        {
+            _auth = auth;
+            _logger = logger;
+        }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginRequestDto dto)
@@ -53,6 +58,10 @@ namespace THESISMATESystem.Server.Controllers
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+            // Self-service covers personal details only. Status and role go through the admin
+            // endpoint; accepting IsActive here let a just-deactivated user reactivate themselves.
+            dto.IsActive = null;
+            dto.Role = null;
             try { return Ok(await _auth.UpdateUserAsync(userId, dto, callerRole)); }
             catch (KeyNotFoundException) { return NotFound(); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
@@ -112,7 +121,13 @@ namespace THESISMATESystem.Server.Controllers
                 await _auth.EnableTwoFactorSendCodeAsync(userId);
                 return Ok(new { message = "Verification code sent to your email." });
             }
-            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (Exception ex)
+            {
+                // SMTP failures carry server and credential details that must not reach the client.
+                _logger.LogError(ex, "Failed to send 2FA setup code to user {UserId}", userId);
+                return BadRequest(new { message = "Unable to send the verification code. Please try again later." });
+            }
         }
 
         [HttpPost("2fa/verify-setup")]
@@ -134,7 +149,9 @@ namespace THESISMATESystem.Server.Controllers
                 await _auth.DisableTwoFactorAsync(userId, dto.Password);
                 return Ok(new { message = "Two-factor authentication disabled." });
             }
-            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            // 400, not 401: the caller is authenticated and only mistyped their password.
+            // A 401 tells the client the session is invalid, and it would sign the user out.
+            catch (UnauthorizedAccessException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPost("2fa/login")]

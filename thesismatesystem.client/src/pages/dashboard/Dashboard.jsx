@@ -16,6 +16,7 @@ import {
   monitoringService, classroomService, notificationService,
   documentService,
 } from '../../services/api'
+import { toast } from '../../utils/toast'
 
 // ── Phase config ─────────────────────────────────────────────────────────────
 const PHASE_META = {
@@ -88,8 +89,11 @@ function WelcomeBanner({ badge, badgeColor, name, sub, gradient, extra, tags }) 
 }
 
 function StatCard({ icon: Icon, label, value, sub, color, onClick }) {
+  // Rendered as a button only when it navigates somewhere; otherwise it would look and
+  // announce itself as clickable while doing nothing.
+  const Wrapper = onClick ? 'button' : 'div'
   return (
-    <button type="button" className="stat-card w-full text-left group relative overflow-hidden" onClick={onClick}>
+    <Wrapper {...(onClick ? { type: 'button', onClick } : {})} className="stat-card w-full text-left group relative overflow-hidden">
       <div className="absolute inset-y-0 left-0 w-[3px] rounded-l-2xl" style={{ background: color.icon }} />
       <div className="absolute inset-x-0 top-0 h-16 pointer-events-none"
         style={{ background: `linear-gradient(180deg, ${color.bg} 0%, transparent 100%)`, opacity: 0.6 }} />
@@ -99,15 +103,17 @@ function StatCard({ icon: Icon, label, value, sub, color, onClick }) {
             style={{ background: color.bg, border: `1px solid ${color.icon}25`, boxShadow: `0 0 12px ${color.icon}20` }}>
             <Icon size={18} style={{ color: color.icon }} strokeWidth={1.75} />
           </div>
-          <ChevronRight size={15} className="opacity-0 group-hover:opacity-60 transition-opacity mt-0.5 shrink-0"
-            style={{ color: 'var(--text-muted)' }} />
+          {onClick && (
+            <ChevronRight size={15} className="opacity-0 group-hover:opacity-60 transition-opacity mt-0.5 shrink-0"
+              style={{ color: 'var(--text-muted)' }} />
+          )}
         </div>
         <p className="font-display font-bold leading-none mb-2"
           style={{ color: 'var(--text-heading)', fontSize: '1.9rem', letterSpacing: '-1.5px' }}>{value}</p>
         <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>{label}</p>
         {sub && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
       </div>
-    </button>
+    </Wrapper>
   )
 }
 
@@ -418,7 +424,9 @@ function RecentNotifications({ className = 'px-4 sm:px-6 lg:px-8 mt-6 mb-6' }) {
     try {
       await notificationService.markRead(id)
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
-    } catch {}
+    } catch (err) {
+      toast.error(err.message || 'Unable to update the notification.')
+    }
   }
 
   async function handleMarkAllRead() {
@@ -426,7 +434,9 @@ function RecentNotifications({ className = 'px-4 sm:px-6 lg:px-8 mt-6 mb-6' }) {
     try {
       await notificationService.markAllRead()
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
-    } catch {} finally {
+    } catch (err) {
+      toast.error(err.message || 'Unable to update notifications.')
+    } finally {
       setMarkingAll(false)
     }
   }
@@ -597,7 +607,6 @@ function StudentDashboard({ user }) {
           icon={MessageSquare} label="Consultations" value={consultations.length}
           sub="logged this semester"
           color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
-          onClick={() => navigate('/consultations')}
         />
         <StatCard
           icon={Calendar}
@@ -617,7 +626,10 @@ function StudentDashboard({ user }) {
           <SectionHeader title="Upcoming Deadlines" />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {upcomingDeadlines.map(dl => {
-              const days   = Math.ceil((new Date(dl.dueDate) - now) / 86400000)
+              const due    = new Date(dl.dueDate)
+              const days   = Math.round(
+                (new Date(due.getFullYear(), due.getMonth(), due.getDate()) -
+                 new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000)
               const urgent = days <= 3
               const warn   = days <= 7
               const color  = urgent ? '#dc2626' : warn ? '#f59e0b' : '#3b82f6'
@@ -746,7 +758,7 @@ function StudentDashboard({ user }) {
               <QuickActions items={[
                 { icon: Upload,        label: 'Upload a document',     desc: 'Submit chapter or file',    to: '/documents'       },
                 { icon: BookOpen,      label: 'Manuscript editor',     desc: 'Edit your thesis draft',    to: '/manuscript'      },
-                { icon: CalendarClock, label: 'Consultation calendar', desc: 'View your schedule',        to: '/calendar'        },
+                { icon: Calendar,      label: 'Defense schedule',      desc: 'View your defense dates',   to: '/defenses'        },
                 { icon: Cpu,           label: 'System tracker',        desc: 'Monitor feature progress',  to: '/system-features' },
               ]} />
             </Card>
@@ -892,8 +904,7 @@ function FacultyDashboard({ user }) {
           onClick={() => navigate('/defenses')} />
         <StatCard icon={MessageSquare} label="Consultations" value={thisMonthConsultations.length}
           sub="this month"
-          color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
-          onClick={() => navigate('/consultations')} />
+          color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -1147,10 +1158,7 @@ function FacultyDashboard({ user }) {
           {/* Upcoming consultation slots */}
           {upcomingSlots.length > 0 && (
             <div>
-              <SectionHeader
-                title="Upcoming Consultation Slots"
-                action={<button className="btn-ghost text-xs" onClick={() => navigate('/consultation-manager')}>Manage</button>}
-              />
+              <SectionHeader title="Upcoming Consultation Slots" />
               <Card>
                 <div>
                   {upcomingSlots.map((s, idx) => (
@@ -1183,8 +1191,8 @@ function FacultyDashboard({ user }) {
               <QuickActions items={[
                 { icon: BookOpen,      label: 'Review Manuscripts',   desc: 'View group manuscripts',    to: '/manuscript'           },
                 { icon: LayoutDashboard, label: 'Defense Scheduler',  desc: 'Manage defense calendar',   to: '/defense-scheduler'    },
-                { icon: ClipboardList, label: 'Rubric Manager',       desc: 'Manage evaluation rubrics', to: '/rubric-manager'       },
-                { icon: CalendarClock, label: 'Consultation Manager', desc: 'Manage consultation slots', to: '/consultation-manager' },
+                { icon: Star,          label: 'Rate Defenses',        desc: 'Score assigned defenses',   to: '/ratings'              },
+                { icon: TrendingUp,    label: 'Monitoring',           desc: 'Track group health',        to: '/monitoring'           },
               ]} />
             </Card>
           </div>
@@ -1250,7 +1258,7 @@ function AdminDashboard({ user }) {
         name={user?.fullName ?? 'Admin'}
         sub={
           atRiskGroups.length > 0
-            ? `${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} need attention · ${scheduledDefs.length} defense${scheduledDefs.length !== 1 ? 's' : ''} scheduled`
+            ? `${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} below consultation threshold · ${scheduledDefs.length} defense${scheduledDefs.length !== 1 ? 's' : ''} scheduled`
             : `${activeGroups.length} active groups · ${scheduledDefs.length} defense${scheduledDefs.length !== 1 ? 's' : ''} upcoming`
         }
       />
@@ -1567,7 +1575,7 @@ function SuperAdminDashboard({ user }) {
   const twoFaPct     = users.length > 0 ? Math.round((twoFaUsers.length / users.length) * 100) : 0
 
   const recentUsers = [...users]
-    .sort((a, b) => (b.id > a.id ? 1 : -1))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 5)
 
   return (
@@ -1579,7 +1587,7 @@ function SuperAdminDashboard({ user }) {
         name={user?.fullName ?? 'SuperAdmin'}
         sub={
           atRiskGroups.length > 0
-            ? `${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} need attention · ${users.length} users · full system access`
+            ? `${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} below consultation threshold · ${users.length} users · full system access`
             : `${users.length} users · ${activeGroups.length} active groups · ${activeClassrooms.length} classrooms`
         }
       />

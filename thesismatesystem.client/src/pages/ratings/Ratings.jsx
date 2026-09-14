@@ -12,24 +12,27 @@ import { useAuth } from '../../contexts/AuthContext'
 export default function Ratings() {
   const { user } = useAuth()
   const [defenses, setDefenses] = useState([])
-  const [criteria, setCriteria] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [rating, setRating] = useState(null)
+  // Each phase has its own rubric, and the API rejects a score for a criterion from another
+  // phase. Loading every criterion made each submission fail partway through.
+  const criteria = rating?.criteria ?? []
 
   useEffect(() => {
-    Promise.all([
-      defenseService.mySchedules().catch(() => []),
-      defenseService.criteria().catch(() => []),
-    ]).then(([defs, crit]) => {
-      setDefenses(defs ?? [])
-      setCriteria(crit ?? [])
-    }).finally(() => setLoading(false))
+    defenseService.mySchedules()
+      .then(defs => setDefenses(Array.isArray(defs) ? defs : []))
+      .catch(err => setLoadError(err.message || 'An error occurred while loading your defenses.'))
+      .finally(() => setLoading(false))
   }, [])
 
   async function openRating(defense) {
-    setRating({ defense, scores: {}, comments: {}, submitting: false, error: '', loadingRatings: true })
+    setRating({ defense, criteria: [], scores: {}, comments: {}, submitting: false, error: '', loadingRatings: true })
     try {
-      const existing = await defenseService.getRatings(defense.id)
+      const [phaseCriteria, existing] = await Promise.all([
+        defenseService.criteria(defense.phase),
+        defenseService.getRatings(defense.id),
+      ])
       const scores = {}
       const comments = {}
       // Only pre-fill the current panelist's own previously submitted scores.
@@ -41,9 +44,9 @@ export default function Ratings() {
           scores[r.criterion.id] = r.score.toString()
           comments[r.criterion.id] = r.comments ?? ''
         })
-      setRating(r => ({ ...r, scores, comments, loadingRatings: false }))
-    } catch {
-      setRating(r => ({ ...r, loadingRatings: false }))
+      setRating(r => ({ ...r, criteria: phaseCriteria ?? [], scores, comments, loadingRatings: false }))
+    } catch (err) {
+      setRating(r => ({ ...r, loadingRatings: false, error: err.message || 'Unable to load the rubric for this defense.' }))
     }
   }
 
@@ -52,6 +55,16 @@ export default function Ratings() {
     const missing = criteria.filter(c => !rating.scores[c.id]?.trim())
     if (missing.length > 0) {
       setRating(r => ({ ...r, error: `Please enter a score for all ${criteria.length} criteria.` }))
+      return
+    }
+    // Scores are saved one criterion at a time, so reject bad values up front rather than
+    // leaving some criteria saved and the rest failing.
+    const outOfRange = criteria.find(c => {
+      const n = Number(rating.scores[c.id])
+      return Number.isNaN(n) || n < 0 || n > c.maxScore
+    })
+    if (outOfRange) {
+      setRating(r => ({ ...r, error: `Score for "${outOfRange.name}" must be between 0 and ${outOfRange.maxScore}.` }))
       return
     }
     setRating(r => ({ ...r, submitting: true, error: '' }))
@@ -86,7 +99,9 @@ export default function Ratings() {
         subtitle={ratable.length > 0 ? `${ratable.length} defense${ratable.length !== 1 ? 's' : ''} open for rating` : 'No defenses open for rating'}
       />
       <div className="p-4 sm:p-8">
-        {defenses.length === 0 ? (
+        {loadError ? (
+          <EmptyState icon={AlertCircle} title="Unable to load defenses" description={loadError} />
+        ) : defenses.length === 0 ? (
           <EmptyState
             icon={Star}
             title="No defenses assigned"

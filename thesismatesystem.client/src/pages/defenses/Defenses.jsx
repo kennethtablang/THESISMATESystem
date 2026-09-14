@@ -9,7 +9,7 @@ import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
 import {
   Calendar, Clock, MapPin, Users, Plus, Star, Lock, Unlock,
-  ToggleRight, Pencil, ChevronDown, ChevronUp, Scale, Trash2,
+  ToggleRight, Pencil, Scale, Trash2,
   AlertCircle,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
@@ -114,12 +114,8 @@ export default function Defenses() {
   const [cancelTarget,  setCancelTarget]  = useState(null)
   const [cancelling,    setCancelling]    = useState(false)
 
-  // Criteria panel
-  const [showCriteria, setShowCriteria] = useState(false)
+  // Criteria summary (editing lives in Rubric Manager, which is phase-aware)
   const [criteriaList, setCriteriaList] = useState([])
-  const [newCrit, setNewCrit] = useState({ name: '', description: '', weight: '', maxScore: '100' })
-  const [critSaving, setCritSaving] = useState(false)
-  const [critError,  setCritError]  = useState('')
 
   const isAdmin   = ['Admin', 'SuperAdmin'].includes(user?.role)
   const isFaculty = user?.role === 'Faculty'
@@ -186,6 +182,12 @@ export default function Defenses() {
     return counts
   }, [defenses])
 
+  // The date/time inputs are in the user's local time. Sent without an offset, the API reads the
+  // value as UTC, shifting the defense by 8 hours — and every re-save of an edit shifted it again.
+  function toUtcIso(date, time) {
+    return new Date(`${date}T${time || '08:00'}:00`).toISOString()
+  }
+
   // ── Create ────────────────────────────────────────────────────────────────
   async function handleCreate(e) {
     e.preventDefault()
@@ -197,7 +199,7 @@ export default function Defenses() {
     try {
       const created = await defenseService.create({
         capstoneGroupId:   parseInt(form.groupId),
-        scheduledDateTime: `${form.date}T${form.time || '08:00'}:00`,
+        scheduledDateTime: toUtcIso(form.date, form.time),
         venue:             form.venue,
         phase:             form.phase,
         durationMinutes:   form.durationMinutes,
@@ -241,7 +243,7 @@ export default function Defenses() {
     setEditSaving(true); setEditError('')
     try {
       const updated = await defenseService.update(editTarget.id, {
-        scheduledDateTime: `${editForm.date}T${editForm.time || '08:00'}:00`,
+        scheduledDateTime: toUtcIso(editForm.date, editForm.time),
         venue:             editForm.venue,
         phase:             editForm.phase,
         durationMinutes:   editForm.durationMinutes,
@@ -292,33 +294,6 @@ export default function Defenses() {
     }
   }
 
-  // ── Criteria ──────────────────────────────────────────────────────────────
-  async function handleAddCriterion(e) {
-    e.preventDefault()
-    const w  = parseFloat(newCrit.weight)
-    const ms = parseInt(newCrit.maxScore)
-    if (!newCrit.name.trim())                          { setCritError('Name is required.');          return }
-    if (!newCrit.weight || isNaN(w) || w <= 0 || w > 100) { setCritError('Weight must be 0.01–100.'); return }
-    if (!newCrit.maxScore || isNaN(ms) || ms < 1)     { setCritError('Max score must be ≥ 1.');    return }
-    setCritSaving(true); setCritError('')
-    try {
-      const created = await defenseService.createCriterion({
-        name:        newCrit.name.trim(),
-        description: newCrit.description.trim() || null,
-        weight:      w,
-        maxScore:    ms,
-      })
-      setCriteriaList(prev => [...prev, created])
-      setNewCrit({ name: '', description: '', weight: '', maxScore: '100' })
-      toast.success('Criterion added.')
-    } catch (err) {
-      setCritError(err.message || 'Failed to create criterion.')
-      toast.error(err.message || 'Failed to add criterion.')
-    } finally {
-      setCritSaving(false)
-    }
-  }
-
   function togglePanelist(id, setFormFn) {
     setFormFn(f => ({
       ...f,
@@ -330,7 +305,12 @@ export default function Defenses() {
 
   if (loading) return <><TopBar title="Defense Schedules" /><PageLoader /></>
 
-  const totalWeight = criteriaList.reduce((s, c) => s + Number(c.weight), 0)
+  // Rubrics are per phase: mixing them showed e.g. "15 criteria · 300% total" and a permanent
+  // "weights ≠ 100%" warning even when every phase was balanced.
+  const rubricByPhase = PHASE_KEYS.map(key => {
+    const items = criteriaList.filter(c => c.phase === key)
+    return { key, count: items.length, weight: items.reduce((sum, c) => sum + Number(c.weight), 0) }
+  })
 
   return (
     <div>
@@ -352,111 +332,30 @@ export default function Defenses() {
           </div>
         )}
 
-        {/* ── Criteria panel ────────────────────────────────────────────── */}
+        {/* ── Rubric summary ────────────────────────────────────────────── */}
         {isAdmin && (
-          <div className="mb-6 rounded-2xl overflow-hidden"
+          <div className="mb-6 rounded-2xl px-5 py-4 flex flex-wrap items-center gap-3"
             style={{ border: '1px solid var(--border-main)', background: 'var(--bg-card)' }}>
-            <button
-              className="w-full flex items-center justify-between px-5 py-4 text-left"
-              onClick={() => setShowCriteria(s => !s)}>
-              <div className="flex items-center gap-2.5">
-                <Scale size={15} style={{ color: '#c9a84c' }} />
-                <span className="font-semibold text-sm" style={{ color: 'var(--text-heading)' }}>
-                  Rating Criteria
+            <div className="flex items-center gap-2.5 mr-auto">
+              <Scale size={15} style={{ color: '#c9a84c' }} />
+              <span className="font-semibold text-sm" style={{ color: 'var(--text-heading)' }}>Rating Criteria</span>
+            </div>
+            {rubricByPhase.map(({ key, count, weight }) => {
+              const balanced = count > 0 && Math.abs(weight - 100) < 0.01
+              return (
+                <span key={key} className="text-xs px-2.5 py-1 rounded-full font-medium"
+                  title={balanced ? undefined : 'Weights for this phase do not total 100%'}
+                  style={{
+                    background: balanced ? PHASES[key].bg : 'rgba(220,38,38,0.08)',
+                    color: balanced ? PHASES[key].color : '#dc2626',
+                  }}>
+                  {PHASES[key].short} · {count} · {weight.toFixed(0)}%
                 </span>
-                {criteriaList.length > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                    style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
-                    {criteriaList.length} · {totalWeight.toFixed(0)}% total
-                  </span>
-                )}
-                {totalWeight > 0 && totalWeight !== 100 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                    style={{ background: 'rgba(220,38,38,0.08)', color: '#dc2626' }}>
-                    weights ≠ 100%
-                  </span>
-                )}
-              </div>
-              {showCriteria
-                ? <ChevronUp  size={15} style={{ color: 'var(--text-muted)' }} />
-                : <ChevronDown size={15} style={{ color: 'var(--text-muted)' }} />}
+              )
+            })}
+            <button className="btn-secondary text-sm" onClick={() => navigate('/rubric-manager')}>
+              Manage rubrics
             </button>
-
-            {showCriteria && (
-              <div className="px-5 pb-5 border-t" style={{ borderColor: 'var(--border-main)' }}>
-                {criteriaList.length === 0 ? (
-                  <p className="text-sm italic py-4 text-center" style={{ color: 'var(--text-muted)' }}>
-                    No criteria yet — add one so panelists can rate defenses.
-                  </p>
-                ) : (
-                  <div className="mt-4 space-y-2 mb-5">
-                    {criteriaList.map(c => (
-                      <div key={c.id} className="flex items-center justify-between p-3 rounded-xl"
-                        style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-main)' }}>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm" style={{ color: 'var(--text-heading)' }}>{c.name}</p>
-                          {c.description && (
-                            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.description}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 ml-3 shrink-0">
-                          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                            style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
-                            {Number(c.weight).toFixed(0)}% weight
-                          </span>
-                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>/ {c.maxScore}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="pt-4" style={{ borderTop: '1px dashed var(--border-main)' }}>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
-                    Add Criterion
-                  </p>
-                  {critError && (
-                    <div className="mb-3 px-3 py-2 rounded-lg text-sm flex items-center gap-2"
-                      style={{ background: 'rgba(220,38,38,0.07)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
-                      <AlertCircle size={13} /> {critError}
-                    </div>
-                  )}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Name *</label>
-                      <input type="text" className="form-input" placeholder="e.g. Technical Depth"
-                        value={newCrit.name}
-                        onChange={e => setNewCrit(n => ({ ...n, name: e.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Description</label>
-                      <input type="text" className="form-input" placeholder="Optional"
-                        value={newCrit.description}
-                        onChange={e => setNewCrit(n => ({ ...n, description: e.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                        Weight (%) * — remaining: {Math.max(0, 100 - totalWeight).toFixed(0)}%
-                      </label>
-                      <input type="number" className="form-input" placeholder="e.g. 25"
-                        min="0.01" max="100" step="0.5"
-                        value={newCrit.weight}
-                        onChange={e => setNewCrit(n => ({ ...n, weight: e.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Max Score *</label>
-                      <input type="number" className="form-input" placeholder="100"
-                        min="1" max="100"
-                        value={newCrit.maxScore}
-                        onChange={e => setNewCrit(n => ({ ...n, maxScore: e.target.value }))} />
-                    </div>
-                  </div>
-                  <button className="btn-primary text-sm" onClick={handleAddCriterion} disabled={critSaving}>
-                    <Plus size={13} /> {critSaving ? 'Adding…' : 'Add Criterion'}
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -497,10 +396,10 @@ export default function Defenses() {
 
         {/* ── Faculty criteria info ─────────────────────────────────────── */}
         {isFaculty && criteriaList.length > 0 && (
-          <div className="mb-5 text-xs flex items-center gap-2 px-3 py-2 rounded-xl"
+          <div className="mb-5 text-xs flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl"
             style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
             <Scale size={12} />
-            {criteriaList.length} rating criteria · {totalWeight.toFixed(0)}% total weight
+            Rating criteria: {rubricByPhase.map(r => `${PHASES[r.key].label} ${r.count}`).join(' · ')}
           </div>
         )}
 
@@ -890,9 +789,6 @@ function DefenseCard({ defense, isFaculty, isAdmin, toggling, onView, onToggleRa
   const isCancelled = defense.status === 'Cancelled'
   const p = PHASES[defense.phase]
 
-  const dateStr = defense.scheduledDateTime
-    ? new Date(defense.scheduledDateTime).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-    : '—'
   const timeStr = defense.scheduledDateTime
     ? new Date(defense.scheduledDateTime).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
     : '—'

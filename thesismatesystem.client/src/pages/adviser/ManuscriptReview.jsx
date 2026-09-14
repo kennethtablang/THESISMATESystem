@@ -126,14 +126,12 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
 
   useEffect(() => {
     let revokeUrl = null
+    // Guards against a slow response for the previous document landing after a switch.
+    let cancelled = false
     setLoading(true); setError(null); setPdfUrl(null)
-    const token = sessionStorage.getItem('tm_token')
-    fetch(`/api/documents/${docId}/download`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(async res => {
-        if (!res.ok) throw new Error(`Failed to load document (${res.status})`)
-        const blob = await res.blob()
+    documentService.fetchBlob(docId)
+      .then(async blob => {
+        if (cancelled) return
         if (isDocx(mimeType, fileName)) {
           const arrayBuffer = await blob.arrayBuffer()
           if (containerRef.current) {
@@ -149,10 +147,13 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
           setError('Preview not available for this file type.')
         }
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-    return () => { if (revokeUrl) URL.revokeObjectURL(revokeUrl) }
-  }, [docId])
+      .catch(err => { if (!cancelled) setError(err.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => {
+      cancelled = true
+      if (revokeUrl) URL.revokeObjectURL(revokeUrl)
+    }
+  }, [docId]) // eslint-disable-line react-hooks/exhaustive-deps -- fileName/mimeType always change together with docId
 
   return (
     <div className="flex flex-col rounded-2xl overflow-hidden h-full"
@@ -196,7 +197,10 @@ function CommentThread({ docId }) {
   const [sending, setSending]   = useState(false)
 
   useEffect(() => {
-    documentService.comments(docId).then(setComments).catch(() => {}).finally(() => setLoadingC(false))
+    documentService.comments(docId)
+      .then(setComments)
+      .catch(err => toast.error(err.message || 'Unable to load comments.'))
+      .finally(() => setLoadingC(false))
   }, [docId])
 
   async function handleSend() {
@@ -280,8 +284,12 @@ export default function ManuscriptReview() {
 
   useEffect(() => {
     if (!selectedGroupId) { setGroupDetail(null); return }
+    let cancelled = false   // the previously selected group's response must not replace this one
     setGroupDetail(null)
-    groupService.get(selectedGroupId).then(setGroupDetail).catch(() => {})
+    groupService.get(selectedGroupId)
+      .then(g => { if (!cancelled) setGroupDetail(g) })
+      .catch(err => { if (!cancelled) toast.error(err.message || 'An error occurred while loading the group.') })
+    return () => { cancelled = true }
   }, [selectedGroupId])
 
   // Unique groups derived from docs
@@ -295,7 +303,7 @@ export default function ManuscriptReview() {
   })()
 
   const filteredGroups = allGroups.filter(g =>
-    g.name.toLowerCase().includes(search.toLowerCase())
+    g.name.toLowerCase().includes(search.trim().toLowerCase())
   )
 
   // Docs for the selected group, deduplicated by section so that if the same
@@ -338,7 +346,9 @@ export default function ManuscriptReview() {
       try {
         const v = await documentService.versions(doc.id)
         setVersions(prev => ({ ...prev, [doc.id]: v }))
-      } catch {}
+      } catch (err) {
+        toast.error(err.message || 'An error occurred while loading the version history.')
+      }
     }
   }
 

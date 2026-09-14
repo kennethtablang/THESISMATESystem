@@ -4,12 +4,12 @@ import { authService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
 import { User, Mail, Shield, Camera, Save, KeyRound, Eye, EyeOff, ShieldCheck, ShieldOff } from 'lucide-react'
 import { toast } from '../../utils/toast'
+import { passwordError } from '../../utils/passwordPolicy'
 
 const roleColors = {
   Student:    { bg: 'rgba(59,130,246,0.12)',  text: '#3b82f6' },
-  Adviser:    { bg: 'rgba(34,197,94,0.12)',   text: '#16a34a' },
-  Panel:      { bg: 'rgba(124,58,237,0.12)',  text: '#7c3aed' },
-  FacultyIC:  { bg: 'rgba(6,182,212,0.12)',   text: '#0891b2' },
+  // Adviser / Panel / FacultyIC were merged into Faculty; without this entry Faculty fell back to Student's colour.
+  Faculty:    { bg: 'rgba(34,197,94,0.12)',   text: '#16a34a' },
   Admin:      { bg: 'rgba(245,158,11,0.12)',  text: '#f59e0b' },
   SuperAdmin: { bg: 'rgba(239,68,68,0.12)',   text: '#ef4444' },
 }
@@ -142,8 +142,9 @@ export default function Profile() {
       setPwError('New passwords do not match.')
       return
     }
-    if (pwForm.newPassword.length < 8) {
-      setPwError('New password must be at least 8 characters.')
+    const pwProblem = passwordError(pwForm.newPassword)
+    if (pwProblem) {
+      setPwError(pwProblem)
       return
     }
     setPwSaving(true)

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using THESISMATESystem.Server.DTOs.Request;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 
 namespace THESISMATESystem.Server.Controllers
@@ -148,10 +149,10 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Student")]
         public async Task<IActionResult> UploadScreenshot(int id, IFormFile file)
         {
-            if (file is null || file.Length == 0) return BadRequest("No file provided.");
-            var allowed = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
-            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (!allowed.Contains(ext)) return BadRequest("Only image files are allowed.");
+            // Errors use { message } like every other endpoint; the client reads that field.
+            if (file is null || file.Length == 0) return BadRequest(new { message = "No file provided." });
+            if (!UploadValidation.HasAllowedExtension(file.FileName, UploadValidation.ImageExtensions))
+                return BadRequest(new { message = $"Only {UploadValidation.DescribeAllowed(UploadValidation.ImageExtensions)} images are allowed." });
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             try { return Ok(await _features.UploadScreenshotAsync(id, userId, file, _env.WebRootPath)); }
             catch (KeyNotFoundException) { return NotFound(); }

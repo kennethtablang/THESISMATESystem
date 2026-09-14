@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { notificationService } from '../../services/api'
+import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
@@ -11,6 +12,8 @@ const iconMap = {
   ChapterStatusUpdated: FileText,
   RevisionNoteAdded: FileText,
   DocumentUploaded: FileText,
+  DocumentSubmitted: FileText,
+  DocumentStatusUpdated: FileText,
   DocumentCommented: MessageSquare,
   ConsultationLogged: MessageSquare,
   ConsultationRequested: MessageSquare,
@@ -32,6 +35,8 @@ const typeLabels = {
   ChapterStatusUpdated: 'Chapter Status Updated',
   RevisionNoteAdded: 'Revision Note Added',
   DocumentUploaded: 'Document Uploaded',
+  DocumentSubmitted: 'Document Submitted',
+  DocumentStatusUpdated: 'Document Status Updated',
   DocumentCommented: 'Document Comment',
   ConsultationLogged: 'Consultation Logged',
   ConsultationRequested: 'Consultation Requested',
@@ -66,23 +71,32 @@ export default function Notifications() {
       .finally(() => setLoading(false))
   }, [])
 
+  // Optimistic, but rolled back on failure — a silent catch left items shown as read
+  // that the server still counted as unread.
   function markRead(id) {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true, isRead: true } : n)))
-    notificationService.markRead(id).catch(() => {})
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))
+    notificationService.markRead(id).catch((err) => {
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: false } : n)))
+      toast.error(err.message || 'Unable to update the notification.')
+    })
   }
 
   function markAllRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true, isRead: true })))
-    notificationService.markAllRead().catch(() => {})
+    const previous = notifications
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    notificationService.markAllRead().catch((err) => {
+      setNotifications(previous)
+      toast.error(err.message || 'Unable to update notifications.')
+    })
   }
 
   function handleClick(n) {
-    markRead(n.id)
+    if (!n.isRead) markRead(n.id)
     const route = typeRoutes[n.type]
     if (route) navigate(route)
   }
 
-  const unread = notifications.filter((n) => !(n.read ?? n.isRead)).length
+  const unread = notifications.filter((n) => !n.isRead).length
 
   if (loading) return <><TopBar title="Notifications" /><PageLoader /></>
 
@@ -110,7 +124,7 @@ export default function Notifications() {
         ) : (
           <div className="space-y-2">
             {notifications.map((n) => {
-              const isRead = n.read ?? n.isRead ?? false
+              const isRead = n.isRead ?? false
               const Icon = iconMap[n.type] ?? Bell
               return (
                 <div

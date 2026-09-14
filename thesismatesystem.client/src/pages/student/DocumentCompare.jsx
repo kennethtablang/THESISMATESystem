@@ -476,8 +476,6 @@ export default function DocumentCompare({ versions, initialIdA, initialIdB, sect
   const [blobB, setBlobB]             = useState(null)
   const [groups, setGroups]           = useState(null)
   const [stats, setStats]             = useState(null)
-  const [parasA, setParasA]           = useState([])
-  const [parasB, setParasB]           = useState([])
   const [currentChange, setCurrentChange] = useState(0)
   const [zoom, setZoom] = useState(100)
 
@@ -567,7 +565,6 @@ export default function DocumentCompare({ versions, initialIdA, initialIdB, sect
       ])
       if (cancelled) return
 
-      setParasA(pA); setParasB(pB)
 
       setLoadingStep('Computing differences…')
       await new Promise(r => setTimeout(r, 0))
@@ -590,14 +587,20 @@ export default function DocumentCompare({ versions, initialIdA, initialIdB, sect
     if (!blobA || !refA.current) return
     const el = refA.current
     el.innerHTML = ''
-    ;(async () => { try { await renderAsync(blobA, el) } catch {} })()
+    ;(async () => {
+      try { await renderAsync(blobA, el) }
+      catch { setError('Unable to display this version for comparison. Try downloading it instead.') }
+    })()
   }, [blobA])
 
   useEffect(() => {
     if (!blobB || !refB.current) return
     const el = refB.current
     el.innerHTML = ''
-    ;(async () => { try { await renderAsync(blobB, el) } catch {} })()
+    ;(async () => {
+      try { await renderAsync(blobB, el) }
+      catch { setError('Unable to display this version for comparison. Try downloading it instead.') }
+    })()
   }, [blobB])
 
   return (

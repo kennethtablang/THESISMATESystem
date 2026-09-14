@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DOMPurify from 'dompurify'
 import {
   Upload, MessageSquare, Download, Clock, ChevronDown, ChevronUp,
@@ -107,17 +107,15 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
 
   useEffect(() => {
     let revokeUrl = null
+    // Guards against a slow response for the previous document landing after a switch.
+    let cancelled = false
     setLoading(true)
     setError(null)
     setPdfUrl(null)
 
-    const token = sessionStorage.getItem('tm_token')
-    fetch(`/api/documents/${docId}/download`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(async res => {
-        if (!res.ok) throw new Error(`Failed to load document (${res.status})`)
-        const blob = await res.blob()
+    documentService.fetchBlob(docId)
+      .then(async blob => {
+        if (cancelled) return
 
         if (isDocx(mimeType, fileName)) {
           const arrayBuffer = await blob.arrayBuffer()
@@ -138,10 +136,13 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
           setError('Preview not available for this file type. Use Download instead.')
         }
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch(err => { if (!cancelled) setError(err.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
 
-    return () => { if (revokeUrl) URL.revokeObjectURL(revokeUrl) }
+    return () => {
+      cancelled = true
+      if (revokeUrl) URL.revokeObjectURL(revokeUrl)
+    }
   }, [docId, fileName, mimeType])
 
   return (
@@ -214,9 +215,14 @@ function CommentThread({ docId }) {
   const [loadingC, setLoadingC] = useState(true)
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
-    documentService.comments(docId).then(setComments).finally(() => setLoadingC(false))
+    documentService.comments(docId)
+      .then(cs => setComments(Array.isArray(cs) ? cs : []))
+      // Previously unhandled: a failed load showed "No comments yet" and hid adviser feedback.
+      .catch(err => setLoadError(err.message || 'Unable to load comments.'))
+      .finally(() => setLoadingC(false))
   }, [docId])
 
   async function handleSend() {
@@ -237,6 +243,8 @@ function CommentThread({ docId }) {
       </p>
       {loadingC ? (
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading…</p>
+      ) : loadError ? (
+        <p className="text-xs mb-3" style={{ color: '#dc2626' }}>{loadError}</p>
       ) : comments.length === 0 ? (
         <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>No comments yet.</p>
       ) : (
@@ -291,7 +299,9 @@ export default function DocumentUpload() {
     groupService.myGroup()
       .then(g => { setGroup(g); return documentService.byGroup(g.id) })
       .then(docs => setDocs(docs.map(normalizeDoc)))
-      .catch(() => {})
+      // 404 = no group yet (handled by the empty state). Anything else would otherwise show every
+      // section as "not uploaded" and invite needless re-uploads.
+      .catch(err => { if (err.status !== 404) toast.error(err.message || 'An error occurred while loading your documents.') })
       .finally(() => setLoading(false))
   }, [])
 
@@ -349,7 +359,9 @@ export default function DocumentUpload() {
       try {
         const v = await documentService.versions(doc.id)
         setVersions(prev => ({ ...prev, [doc.id]: v }))
-      } catch { /* ignore */ }
+      } catch (err) {
+        toast.error(err.message || 'An error occurred while loading the version history.')
+      }
     }
   }
 

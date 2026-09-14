@@ -1,74 +1,16 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import {
-  Bell, Search, Sun, Moon, Menu, LogOut, UserCircle, ChevronDown,
-  LayoutDashboard, Users, FileText, Calendar, BarChart3,
-  Upload, Cpu, Activity, BookOpen, Building2,
-  GraduationCap, CalendarRange, ClipboardList, Star, PenLine, X, ArrowRight,
-} from 'lucide-react'
+import { Bell, Search, Sun, Moon, Menu, LogOut, UserCircle, ChevronDown, X, ArrowRight } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
-import { groupService, authService } from '../../services/api'
+import { groupService, authService, notificationService, NOTIFICATIONS_CHANGED } from '../../services/api'
+import { navByRole, accountItems } from './navConfig'
 
 const ROLE_COLORS = {
   Student:    '#38bdf8',
   Faculty:    '#34d399',
   Admin:      '#fb923c',
   SuperAdmin: '#f87171',
-}
-
-// ── Nav shortcuts per role ─────────────────────────────────────────────────────
-const NAV_BY_ROLE = {
-  SuperAdmin: [
-    { label: 'Dashboard',         icon: LayoutDashboard, to: '/dashboard'          },
-    { label: 'User Management',   icon: Users,           to: '/users'              },
-    { label: 'Manage Groups',     icon: Users,           to: '/groups'             },
-    { label: 'Classrooms',        icon: Building2,       to: '/classrooms'         },
-    { label: 'Advisers',          icon: GraduationCap,   to: '/advisers'           },
-    { label: 'System Tracker',    icon: Cpu,             to: '/system-features'    },
-    { label: 'Defense Scheduler', icon: CalendarRange,   to: '/defense-scheduler'  },
-    { label: 'Rubric Manager',    icon: ClipboardList,   to: '/rubric-manager'     },
-    { label: 'Monitoring',        icon: Activity,        to: '/monitoring'         },
-    { label: 'Reports',           icon: BarChart3,       to: '/reports'            },
-    { label: 'Notifications',     icon: Bell,            to: '/notifications'      },
-    { label: 'My Profile',        icon: UserCircle,      to: '/profile'            },
-  ],
-  Admin: [
-    { label: 'Dashboard',         icon: LayoutDashboard, to: '/dashboard'          },
-    { label: 'User Management',   icon: Users,           to: '/users'              },
-    { label: 'Manage Groups',     icon: Users,           to: '/groups'             },
-    { label: 'Classrooms',        icon: Building2,       to: '/classrooms'         },
-    { label: 'Chapters',          icon: FileText,        to: '/chapters'           },
-    { label: 'Defense Scheduler', icon: CalendarRange,   to: '/defense-scheduler'  },
-    { label: 'Rubric Manager',    icon: ClipboardList,   to: '/rubric-manager'     },
-    { label: 'Monitoring',        icon: Activity,        to: '/monitoring'         },
-    { label: 'Reports',           icon: BarChart3,       to: '/reports'            },
-    { label: 'Notifications',     icon: Bell,            to: '/notifications'      },
-    { label: 'My Profile',        icon: UserCircle,      to: '/profile'            },
-  ],
-  Faculty: [
-    { label: 'Dashboard',             icon: LayoutDashboard, to: '/dashboard'          },
-    { label: 'My Groups',             icon: Users,           to: '/groups'             },
-    { label: 'Manuscripts',           icon: BookOpen,        to: '/documents'          },
-    { label: 'Defense Schedules',     icon: Calendar,        to: '/defenses'           },
-    { label: 'Defense Scheduler',     icon: CalendarRange,   to: '/defense-scheduler'  },
-    { label: 'Rubric Manager',        icon: ClipboardList,   to: '/rubric-manager'     },
-    { label: 'Rate Defenses',         icon: Star,            to: '/ratings'            },
-    { label: 'Monitoring',            icon: Activity,        to: '/monitoring'         },
-    { label: 'Notifications',         icon: Bell,            to: '/notifications'      },
-    { label: 'My Profile',            icon: UserCircle,      to: '/profile'            },
-  ],
-  Student: [
-    { label: 'Dashboard',             icon: LayoutDashboard, to: '/dashboard'   },
-    { label: 'My Group',              icon: Users,           to: '/groups'      },
-    { label: 'Manuscript',            icon: PenLine,         to: '/manuscript'  },
-    { label: 'Upload Documents',      icon: Upload,          to: '/documents'   },
-    { label: 'System Tracker',        icon: Cpu,             to: '/system-features' },
-    { label: 'Defense Schedule',      icon: Calendar,        to: '/defenses'    },
-    { label: 'Monitoring',            icon: Activity,        to: '/monitoring'  },
-    { label: 'Notifications',         icon: Bell,            to: '/notifications' },
-    { label: 'My Profile',            icon: UserCircle,      to: '/profile'     },
-  ],
 }
 
 // ── Search Modal ───────────────────────────────────────────────────────────────
@@ -84,18 +26,22 @@ function SearchModal({ onClose, role }) {
   const [selIdx,   setSelIdx]   = useState(0)
 
   const isAdmin = role === 'Admin' || role === 'SuperAdmin'
-  const navItems = NAV_BY_ROLE[role] ?? NAV_BY_ROLE.Student
+  const navItems = [...(navByRole[role] ?? navByRole.Student).filter(n => !n.divider), ...accountItems]
 
   // Fetch data once on mount
   useEffect(() => {
-    const fetches = [groupService.list().catch(() => [])]
+    // GET /groups is staff-only; a student can only look up their own group.
+    const groupFetch = role === 'Student'
+      ? groupService.myGroup().then(g => (g ? [g] : [])).catch(() => [])
+      : groupService.list().catch(() => [])
+    const fetches = [groupFetch]
     if (isAdmin) fetches.push(authService.allUsers().catch(() => []))
     Promise.all(fetches).then(([gs, us]) => {
       setGroups(Array.isArray(gs) ? gs : [])
       setUsers(Array.isArray(us) ? us : [])
     }).finally(() => setLoading(false))
     inputRef.current?.focus()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- role is fixed for the modal's lifetime
 
   // Build results
   const q = query.trim().toLowerCase()
@@ -358,7 +304,21 @@ export default function TopBar({ title, subtitle, left }) {
   const [dropdownOpen,    setDropdownOpen]    = useState(false)
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [searchOpen,      setSearchOpen]      = useState(false)
+  const [unreadCount,     setUnreadCount]     = useState(0)
   const dropdownRef = useRef(null)
+
+  // The bell's dot reflects real unread notifications; pages that mark them read announce it.
+  useEffect(() => {
+    let active = true
+    function refresh() {
+      notificationService.unreadCount()
+        .then(r => { if (active) setUnreadCount(r?.count ?? 0) })
+        .catch(() => {})
+    }
+    refresh()
+    window.addEventListener(NOTIFICATIONS_CHANGED, refresh)
+    return () => { active = false; window.removeEventListener(NOTIFICATIONS_CHANGED, refresh) }
+  }, [])
 
   const roleColor = ROLE_COLORS[user?.role] ?? '#c9a84c'
 
@@ -410,6 +370,7 @@ export default function TopBar({ title, subtitle, left }) {
         <div className="flex items-center gap-3 min-w-0">
           {left && left}
           <button
+            aria-label="Open navigation menu"
             className="lg:hidden flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-150"
             style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-main)' }}
             onClick={() => ctx?.toggleSidebar?.()}
@@ -484,15 +445,18 @@ export default function TopBar({ title, subtitle, left }) {
             onClick={() => navigate('/notifications')}
             className="relative flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-150"
             style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-main)' }}
-            title="Notifications"
+            title={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
+            aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
             onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(201,168,76,0.3)'}
             onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-main)'}
           >
             <Bell size={16} style={{ color: 'var(--text-secondary)' }} />
-            <span
-              className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
-              style={{ background: '#c9a84c', border: '1.5px solid var(--bg-page)' }}
-            />
+            {unreadCount > 0 && (
+              <span
+                className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
+                style={{ background: '#c9a84c', border: '1.5px solid var(--bg-page)' }}
+              />
+            )}
           </button>
 
           {/* Account dropdown */}

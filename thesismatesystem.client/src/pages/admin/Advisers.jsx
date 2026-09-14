@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { groupService, authService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
 import { PageLoader } from '../../components/ui/Spinner'
+import { toast } from '../../utils/toast'
 import {
   GraduationCap, Users, Search, ChevronRight, CheckCircle2,
   Clock, AlertCircle, ArrowRight, BookOpen, TrendingUp, Inbox, CalendarDays,
@@ -180,7 +181,6 @@ function GroupCard({ group, navigate }) {
 function AdviserCard({ entry, selected, onClick }) {
   const { adviser, groups } = entry
   const totalMembers = groups.reduce((s, g) => s + (g.members?.length ?? 0), 0)
-  const activeGroups = groups.filter(g => g.status === 'Active').length
   const atRisk = groups.filter(g => (g.milestoneProgress?.completionPercentage ?? 0) === 0 && g.status === 'Active').length
   const initials = adviser.fullName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() ?? '??'
 
@@ -254,10 +254,10 @@ export default function Advisers() {
   useEffect(() => {
     Promise.all([groupService.list(), authService.allUsers()])
       .then(([grps, users]) => {
-        setGroups(grps)
-        setFaculty(users.filter(u => u.role === 'Faculty'))
+        setGroups(Array.isArray(grps) ? grps : [])
+        setFaculty((Array.isArray(users) ? users : []).filter(u => u.role === 'Faculty'))
       })
-      .catch(() => {})
+      .catch(err => toast.error(err.message || 'An error occurred while loading advisers.'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -281,8 +281,8 @@ export default function Advisers() {
   }, [groups, faculty])
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return adviserEntries
-    const q = search.toLowerCase()
+    const q = search.trim().toLowerCase()
+    if (!q) return adviserEntries
     return adviserEntries.filter(e =>
       e.adviser.fullName?.toLowerCase().includes(q) ||
       e.adviser.email?.toLowerCase().includes(q)

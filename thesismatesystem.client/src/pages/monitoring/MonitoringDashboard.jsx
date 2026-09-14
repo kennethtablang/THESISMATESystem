@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import TopBar from '../../components/layout/TopBar'
 import { monitoringService } from '../../services/api'
+import { toast } from '../../utils/toast'
 import {
   Activity, AlertTriangle, CheckCircle2, TrendingUp,
   ChevronDown, ChevronUp, FileText, Cpu, BookOpen,
@@ -408,7 +409,8 @@ function StudentMonitorView() {
   useEffect(() => {
     monitoringService.myGroup()
       .then(setHealth)
-      .catch(e => setError(e.message))
+      // 404 means the student has no active group yet — show the empty state below, not an error.
+      .catch(e => { if (e.status !== 404) setError(e.message) })
       .finally(() => setLoading(false))
   }, [])
 
@@ -551,14 +553,19 @@ export default function MonitoringDashboard() {
   const [sort,       setSort]       = useState('score-asc')
   const [expandedId, setExpandedId] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
+  const summaryLoaded = useRef(false)
+  useEffect(() => { summaryLoaded.current = summary != null }, [summary])
 
   const load = useCallback(async () => {
     if (isStudent) return
     try {
       const data = await monitoringService.summary()
       setSummary(data)
+      setError(null)
     } catch (e) {
-      setError(e.message)
+      // A failed refresh keeps the data already on screen instead of replacing it with an error.
+      if (summaryLoaded.current) toast.error(e.message || 'Unable to refresh monitoring data.')
+      else setError(e.message)
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -606,6 +613,12 @@ export default function MonitoringDashboard() {
       <TopBar title="Monitoring" />
       <div className="p-8 text-center">
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{error}</p>
+        <button
+          className="btn-secondary mt-4"
+          onClick={() => { setError(null); setLoading(true); load() }}
+        >
+          Try again
+        </button>
       </div>
     </div>
   )

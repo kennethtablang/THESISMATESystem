@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Cpu, Plus, MessageSquare, ChevronDown, ChevronUp, Send, Trash2,
   BarChart2, List, X, CheckCircle2, XCircle, Clock, Bot, ArrowUpDown,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
+import Modal from '../../components/ui/Modal'
 import GanttChart from '../../components/ui/GanttChart'
 import ImagePreviewPanel from '../../components/ui/ImagePreviewPanel'
 import { systemFeatureService, groupService } from '../../services/api'
@@ -42,6 +43,7 @@ function CommentPanel({ featureId, currentUserId, refreshKey }) {
   useEffect(() => {
     systemFeatureService.comments(featureId)
       .then(setComments)
+      .catch(err => toast.error(err.message || 'Unable to load comments.'))
       .finally(() => setLoading(false))
   }, [featureId, refreshKey])
 
@@ -52,8 +54,8 @@ function CommentPanel({ featureId, currentUserId, refreshKey }) {
       const c = await systemFeatureService.addComment(featureId, { content: text.trim() })
       setComments(prev => [...prev, c])
       setText('')
-    } catch {
-      toast.error('Failed to post comment.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to post comment.')
     } finally {
       setSending(false)
     }
@@ -64,8 +66,8 @@ function CommentPanel({ featureId, currentUserId, refreshKey }) {
     try {
       await systemFeatureService.deleteComment(featureId, commentId)
       setComments(prev => prev.filter(c => c.id !== commentId))
-    } catch {
-      toast.error('Failed to delete comment.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete comment.')
     } finally {
       setDeletingId(null)
     }
@@ -165,8 +167,8 @@ function GanttDateModal({ feature, onClose, onSave }) {
       onSave(await systemFeatureService.updateDates(feature.id, payload))
       onClose()
       toast.success('Dates saved.')
-    } catch {
-      toast.error('Failed to save dates.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to save dates.')
     } finally {
       setSaving(false)
     }
@@ -240,8 +242,8 @@ function FeatureCard({ feature: initial, onUpdate, onDelete, currentUserId, isPa
       onUpdate?.(updated)
       setCommentRefreshKey(k => k + 1)
       toast.success(status === 'Completed' ? 'Feature approved.' : status === 'NeedsRevision' ? 'Revision requested.' : 'Status updated.')
-    } catch {
-      toast.error('Failed to update status.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to update status.')
     } finally {
       setReviewLoading(null)
     }
@@ -254,8 +256,8 @@ function FeatureCard({ feature: initial, onUpdate, onDelete, currentUserId, isPa
       setFeature(updated)
       onUpdate?.(updated)
       toast.success(`Urgency set to ${urgency}.`)
-    } catch {
-      toast.error('Failed to update urgency.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to update urgency.')
     } finally {
       setUrgencyLoading(null)
     }
@@ -486,6 +488,13 @@ export default function AdviserSystemTracker() {
   const [view, setView] = useState('list')
   const [form, setForm] = useState({ name: '', description: '', featureType: 'Functional', sortOrder: 0 })
   const [currentUserId, setCurrentUserId] = useState(null)
+  const [adding, setAdding] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
+  const [ganttTarget, setGanttTarget] = useState(null)
+  // Id of the group whose features should be on screen; a slower response for a
+  // previously selected group must not overwrite the current one.
+  const activeGroupId = useRef(null)
 
   useEffect(() => {
     const user = JSON.parse(sessionStorage.getItem('tm_user') ?? 'null')
@@ -509,20 +518,28 @@ export default function AdviserSystemTracker() {
 
       setPanelGroupIds(panelIds)
       setGroups(allGroups)
-      if (allGroups.length > 0) {
-        setSelectedGroup(allGroups[0])
-        systemFeatureService.byGroup(allGroups[0].id).then(setFeatures)
-      }
-    }).finally(() => setLoading(false))
+      if (allGroups.length > 0) loadFeatures(allGroups[0])
+    })
+      .catch(err => toast.error(err.message || 'An error occurred while loading groups.'))
+      .finally(() => setLoading(false))
   }, [])
 
   async function loadFeatures(group) {
+    activeGroupId.current = group.id
     setSelectedGroup(group)
-    setFeatures(await systemFeatureService.byGroup(group.id))
+    setFeatures([])
+    try {
+      const data = await systemFeatureService.byGroup(group.id)
+      if (activeGroupId.current === group.id) setFeatures(Array.isArray(data) ? data : [])
+    } catch (err) {
+      if (activeGroupId.current === group.id) toast.error(err.message || 'An error occurred while loading features.')
+    }
   }
 
   async function handleAdd(e) {
     e.preventDefault()
+    if (adding) return
+    setAdding(true)
     try {
       const feature = await systemFeatureService.create({
         ...form,
@@ -533,8 +550,10 @@ export default function AdviserSystemTracker() {
       setForm({ name: '', description: '', featureType: 'Functional', sortOrder: 0 })
       setShowAdd(false)
       toast.success('Feature added.')
-    } catch {
-      toast.error('Failed to add feature.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to add feature.')
+    } finally {
+      setAdding(false)
     }
   }
 
@@ -542,14 +561,22 @@ export default function AdviserSystemTracker() {
     setFeatures(prev => prev.map(f => f.id === updated.id ? updated : f))
   }
 
-  async function handleDelete(featureId) {
-    if (!confirm('Delete this feature?')) return
+  function handleDelete(featureId) {
+    setDeleteTarget(features.find(f => f.id === featureId) ?? null)
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
     try {
-      await systemFeatureService.delete(featureId)
-      setFeatures(prev => prev.filter(f => f.id !== featureId))
+      await systemFeatureService.delete(deleteTarget.id)
+      setFeatures(prev => prev.filter(f => f.id !== deleteTarget.id))
+      setDeleteTarget(null)
       toast.success('Feature deleted.')
-    } catch {
-      toast.error('Failed to delete feature.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete feature.')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -559,7 +586,7 @@ export default function AdviserSystemTracker() {
   const pendingReview = features.filter(f => f.studentTestStatus !== 'NotTested' && f.status === 'NotStarted').length
 
   if (loading) {
-    return <div className="p-8 flex items-center justify-center"><div className="flex gap-1">{[0,1,2].map(i => <span key={i} className="w-2 h-2 rounded-full animate-bounce" style={{ background: '#c9a84c', animationDelay: `${i*0.15}s` }} />)}</div></div>
+    return <><TopBar title="System Tracker" /><div className="p-8 flex items-center justify-center"><div className="flex gap-1">{[0,1,2].map(i => <span key={i} className="w-2 h-2 rounded-full animate-bounce" style={{ background: '#c9a84c', animationDelay: `${i*0.15}s` }} />)}</div></div></>
   }
 
   return (
@@ -644,7 +671,7 @@ export default function AdviserSystemTracker() {
                       value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
                   </div>
                   <div className="flex gap-3">
-                    <button type="submit" className="btn-primary">Add Feature</button>
+                    <button type="submit" className="btn-primary" disabled={adding}>{adding ? 'Adding…' : 'Add Feature'}</button>
                     <button type="button" className="btn-secondary" onClick={() => setShowAdd(false)}>Cancel</button>
                   </div>
                 </form>
@@ -703,10 +730,41 @@ export default function AdviserSystemTracker() {
             <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
               Click any feature row to edit its planned/actual dates.
             </p>
-            <GanttChart features={features} canEdit onEditDates={() => {}} />
+            <GanttChart
+              features={features}
+              canEdit={!panelGroupIds.has(selectedGroup?.id)}
+              onEditDates={setGanttTarget}
+            />
           </div>
         )}
       </div>
+
+      {ganttTarget && (
+        <GanttDateModal
+          feature={ganttTarget}
+          onClose={() => setGanttTarget(null)}
+          onSave={handleUpdate}
+        />
+      )}
+
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => { if (!deleting) setDeleteTarget(null) }}
+        title="Delete Feature"
+        size="sm"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</button>
+            <button className="btn-danger" onClick={confirmDelete} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          Delete <strong style={{ color: 'var(--text-heading)' }}>{deleteTarget?.name}</strong>? This cannot be undone.
+        </p>
+      </Modal>
     </>
   )
 }

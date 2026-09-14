@@ -10,9 +10,9 @@ import DOMPurify from 'dompurify'
 import { renderAsync } from 'docx-preview'
 import {
   ArrowLeft, ChevronLeft, ChevronRight,
-  CheckCircle, AlertCircle, Clock, User, Users, Send, MessageSquare,
+  CheckCircle, AlertCircle, Clock, User, Send, MessageSquare,
   Download, FileText, Bold, Italic, Underline as UnderlineIcon,
-  Highlighter, ChevronDown, Layers, ArrowLeftRight, BookOpen, GraduationCap,
+  Highlighter, Layers, ArrowLeftRight, BookOpen,
 } from 'lucide-react'
 import { documentService, groupService } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
@@ -47,12 +47,6 @@ function isDocx(mime, name) {
 
 function isPdf(mime, name) {
   return mime === 'application/pdf' || name?.toLowerCase().endsWith('.pdf')
-}
-
-function formatSize(bytes) {
-  if (!bytes) return ''
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function formatDate(iso) {
@@ -187,12 +181,7 @@ function DocPreview({ doc }) {
 
     async function load() {
       try {
-        const token = sessionStorage.getItem('tm_token')
-        const res = await fetch(`/api/documents/${doc.id}/download`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-        if (!res.ok) throw new Error('Failed to load document.')
-        const blob = await res.blob()
+        const blob = await documentService.fetchBlob(doc.id)
         if (cancelled) return
 
         if (isDocx(doc.mimeType, doc.fileName)) {
@@ -317,8 +306,10 @@ export default function DocumentReview() {
   const [editorEmpty, setEditorEmpty] = useState(true)
   const commentsEndRef = useRef(null)
 
-  const canReview = ['Faculty', 'Admin', 'SuperAdmin'].includes(user?.role)
   const isAdmin = user?.role === 'Admin' || user?.role === 'SuperAdmin'
+  // Status changes are limited to Admins and the group's adviser on the API; other Faculty
+  // (panelists, classroom FICs) can open the document but got a 403 from these buttons.
+  const canReview = isAdmin || (user?.role === 'Faculty' && group?.adviser?.id === user?.id)
 
   const editor = useEditor({
     extensions: [
@@ -339,37 +330,49 @@ export default function DocumentReview() {
   })
 
   useEffect(() => {
+    // Prev/next navigation reuses this component, so state from the previous document must be
+    // cleared: its versions otherwise stayed behind and Compare diffed the wrong document.
+    let cancelled = false
+    setLoading(true)
+    setVersions([])
+    setComments([])
+    setCompareModal(false)
+    editor?.commands.clearContent()
+
     async function load() {
       try {
         const [docData, commentsData] = await Promise.all([
           documentService.get(parseInt(id)),
           documentService.comments(parseInt(id)),
         ])
+        if (cancelled) return
         setDoc(docData)
         setComments(commentsData)
 
         // Fetch group details for thesis title + members
         if (docData.capstoneGroupId) {
           groupService.get(docData.capstoneGroupId)
-            .then(setGroup)
-            .catch(() => {})
+            .then(g => { if (!cancelled) setGroup(g) })
+            .catch(err => { if (!cancelled) toast.error(err.message || 'An error occurred while loading the group.') })
         }
 
         // Load version history for Compare feature
         if (docData.totalVersions > 1) {
           documentService.versions(parseInt(id))
-            .then(vers => setVersions(vers ?? []))
-            .catch(() => {})
+            .then(vers => { if (!cancelled) setVersions(vers ?? []) })
+            .catch(err => { if (!cancelled) toast.error(err.message || 'An error occurred while loading the version history.') })
         }
-      } catch (e) {
-        toast.error('Failed to load document.')
+      } catch (err) {
+        if (cancelled) return
+        toast.error(err.message || 'Failed to load document.')
         navigate('/documents')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     load()
-  }, [id])
+    return () => { cancelled = true }
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps -- reload only when the document changes
 
   // Fetch the full document list once for prev/next navigation.
   // Only re-fetches when the role changes (not on every nav click).

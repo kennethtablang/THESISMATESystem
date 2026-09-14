@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Users, UserCheck, UserX, Search, Pencil, Eye, EyeOff } from 'lucide-react'
+import { Users, UserCheck, UserX, Search, Pencil, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { toast } from '../../utils/toast'
+import { passwordError } from '../../utils/passwordPolicy'
 import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
@@ -29,6 +30,8 @@ export default function UserManagement() {
 
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('All')
   const [page,     setPage]     = useState(1)
@@ -53,8 +56,12 @@ export default function UserManagement() {
   const [twoFaError, setTwoFaError] = useState('')
 
   useEffect(() => {
-    authService.allUsers().then(setUsers).finally(() => setLoading(false))
-  }, [])
+    // Without a catch, a failed load left an empty "No users found" table and no hint of the error.
+    authService.allUsers()
+      .then(us => { setUsers(Array.isArray(us) ? us : []); setLoadError('') })
+      .catch(err => setLoadError(err.message || 'An error occurred while loading users.'))
+      .finally(() => setLoading(false))
+  }, [reloadKey])
 
   function handleToggleActive(user) {
     setToggleError('')
@@ -140,6 +147,11 @@ export default function UserManagement() {
       setPwError('Passwords do not match.')
       return
     }
+    const pwProblem = passwordError(pwForm.newPassword)
+    if (pwProblem) {
+      setPwError(pwProblem)
+      return
+    }
     setPwSaving(true)
     setPwError('')
     setPwSuccess(false)
@@ -182,15 +194,17 @@ export default function UserManagement() {
   const roles = [...new Set(users.map(u => u.role))].filter(r => r && VALID_ROLES.has(r))
 
   const filtered = users.filter(u => {
-    const q = search.toLowerCase()
+    const q = search.trim().toLowerCase()
     const matchSearch = !q || u.fullName?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q)
     const matchRole = roleFilter === 'All' || u.role === roleFilter
     return matchSearch && matchRole
   })
 
   const { sorted: sortedUsers, sortKey, sortDir, toggle } = useSort(filtered, 'fullName')
-  const totalPages = Math.ceil(sortedUsers.length / pageSize)
-  const paginated  = sortedUsers.slice((page - 1) * pageSize, page * pageSize)
+  const totalPages = Math.max(1, Math.ceil(sortedUsers.length / pageSize))
+  // Clamp so a shrinking result set (e.g. after an edit) never leaves the table on an empty page.
+  const currentPage = Math.min(page, totalPages)
+  const paginated  = sortedUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   const stats = {
     total:    users.length,
@@ -281,7 +295,18 @@ export default function UserManagement() {
 
           {/* Table */}
           <div className="overflow-x-auto">
-            {filtered.length === 0 ? (
+            {loadError ? (
+              <div className="flex flex-col items-center justify-center py-14 text-center px-4">
+                <AlertCircle size={22} style={{ color: '#dc2626' }} strokeWidth={1.5} />
+                <p className="text-sm font-semibold mt-3" style={{ color: 'var(--text-secondary)' }}>{loadError}</p>
+                <button
+                  className="btn-secondary mt-4"
+                  onClick={() => { setLoading(true); setReloadKey(k => k + 1) }}
+                >
+                  Try again
+                </button>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-14 text-center">
                 <div
                   className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
@@ -404,7 +429,7 @@ export default function UserManagement() {
           </div>
 
           <Pagination
-            page={page}
+            page={currentPage}
             totalPages={totalPages}
             totalItems={sortedUsers.length}
             pageSize={pageSize}
