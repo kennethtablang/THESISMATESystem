@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -7,7 +7,16 @@
     <SpaRoot>..\thesismatesystem.client</SpaRoot>
     <SpaProxyLaunchCommand>npm run dev</SpaProxyLaunchCommand>
     <SpaProxyServerUrl>https://localhost:62535</SpaProxyServerUrl>
+    <UserSecretsId>8c6c816b-abb6-4934-9cac-4c72caecf331</UserSecretsId>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- GHSA-rvv3-g6hj-g44x (AutoMapper deep-recursion DoS) is fixed only in 15.1.1+/16.1.1+, which are
+         not MIT-licensed. It is not reachable here: every map is entity -> response DTO; no request
+         input is ever mapped, so an attacker cannot supply the deeply nested graph it needs.
+         Re-evaluate if a map from request data is ever added. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-rvv3-g6hj-g44x" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Pinned to the last MIT-licensed release. 15.0+ is RPL-1.5 or paid commercial. -->

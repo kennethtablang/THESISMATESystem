@@ -15,6 +15,8 @@ export default function Ratings() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [rating, setRating] = useState(null)
+  // Defense ids this session has submitted scores for, so the card reflects it immediately.
+  const [ratedIds, setRatedIds] = useState(() => new Set())
   // Each phase has its own rubric, and the API rejects a score for a criterion from another
   // phase. Loading every criterion made each submission fail partway through.
   const criteria = rating?.criteria ?? []
@@ -27,24 +29,35 @@ export default function Ratings() {
   }, [])
 
   async function openRating(defense) {
-    setRating({ defense, criteria: [], scores: {}, comments: {}, submitting: false, error: '', loadingRatings: true })
+    setRating({ defense, criteria: [], scores: {}, comments: {}, panelRatings: [], submitting: false, error: '', loadingRatings: true })
     try {
       const [phaseCriteria, existing] = await Promise.all([
         defenseService.criteria(defense.phase),
         defenseService.getRatings(defense.id),
       ])
+      const all = Array.isArray(existing) ? existing : []
       const scores = {}
       const comments = {}
       // Only pre-fill the current panelist's own previously submitted scores.
       // getRatings returns all panelists' ratings; filtering by user.id prevents
       // accidentally displaying (and re-submitting) another panelist's scores.
-      ;(existing ?? [])
+      all
         .filter(r => r.panelist?.id === user?.id)
         .forEach(r => {
           scores[r.criterion.id] = r.score.toString()
           comments[r.criterion.id] = r.comments ?? ''
         })
-      setRating(r => ({ ...r, criteria: phaseCriteria ?? [], scores, comments, loadingRatings: false }))
+      setRating(r => ({
+        ...r,
+        criteria: Array.isArray(phaseCriteria) ? phaseCriteria : [],
+        scores,
+        comments,
+        // Kept for the view-only pane: once rating is locked, showing only your own row
+        // hid the rest of the panel's scores, which is the whole point of reviewing a
+        // closed defense.
+        panelRatings: all,
+        loadingRatings: false,
+      }))
     } catch (err) {
       setRating(r => ({ ...r, loadingRatings: false, error: err.message || 'Unable to load the rubric for this defense.' }))
     }
@@ -77,8 +90,12 @@ export default function Ratings() {
           comments: rating.comments[criterion.id] || null,
         })
       }
-      const updated = await defenseService.mySchedules().catch(() => defenses)
-      setDefenses(updated ?? defenses)
+      // Mark it rated locally first: the refetch below can fail, and the card must not
+      // keep claiming the defense is still awaiting your scores after a successful save.
+      const ratedId = rating.defense.id
+      setRatedIds(prev => new Set(prev).add(ratedId))
+      const updated = await defenseService.mySchedules().catch(() => null)
+      if (Array.isArray(updated)) setDefenses(updated)
       setRating(null)
       toast.success('Ratings submitted.')
     } catch (err) {
@@ -89,8 +106,12 @@ export default function Ratings() {
 
   if (loading) return <><TopBar title="Rate Defenses" subtitle="Panel evaluation" /><PageLoader /></>
 
-  const ratable = defenses.filter(d => d.isRatingOpen)
-  const locked  = defenses.filter(d => !d.isRatingOpen)
+  // my-schedules returns every panel assignment, cancelled ones included. A cancelled
+  // defense can never be rated, so listing it under "Locked / Completed" only invited
+  // panelists to open a dead rubric.
+  const active  = defenses.filter(d => d.status !== 'Cancelled')
+  const ratable = active.filter(d => d.isRatingOpen)
+  const locked  = active.filter(d => !d.isRatingOpen)
 
   return (
     <div>
@@ -101,7 +122,7 @@ export default function Ratings() {
       <div className="p-4 sm:p-8">
         {loadError ? (
           <EmptyState icon={AlertCircle} title="Unable to load defenses" description={loadError} />
-        ) : defenses.length === 0 ? (
+        ) : active.length === 0 ? (
           <EmptyState
             icon={Star}
             title="No defenses assigned"
@@ -116,7 +137,7 @@ export default function Ratings() {
                 </h2>
                 <div className="space-y-4">
                   {ratable.map(d => (
-                    <DefenseRatingCard key={d.id} defense={d} onRate={() => openRating(d)} />
+                    <DefenseRatingCard key={d.id} defense={d} rated={ratedIds.has(d.id)} onRate={() => openRating(d)} />
                   ))}
                 </div>
               </section>
@@ -128,7 +149,7 @@ export default function Ratings() {
                 </h2>
                 <div className="space-y-4">
                   {locked.map(d => (
-                    <DefenseRatingCard key={d.id} defense={d} onRate={() => openRating(d)} />
+                    <DefenseRatingCard key={d.id} defense={d} rated={ratedIds.has(d.id)} onRate={() => openRating(d)} />
                   ))}
                 </div>
               </section>
@@ -140,13 +161,13 @@ export default function Ratings() {
       <Modal
         open={!!rating}
         onClose={() => { if (!rating?.submitting) setRating(null) }}
-        title="Defense Rating"
+        title={rating?.defense?.isRatingOpen ? 'Rate Defense' : 'Defense Ratings (view only)'}
         size="lg"
         footer={
           rating && (
             <>
               <button className="btn-secondary" onClick={() => setRating(null)} disabled={rating.submitting}>
-                Cancel
+                {rating.defense.isRatingOpen ? 'Cancel' : 'Close'}
               </button>
               {rating.defense.isRatingOpen && (
                 <button
@@ -201,6 +222,23 @@ export default function Ratings() {
             ) : criteria.length === 0 ? (
               <div className="py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
                 No rating criteria have been configured. Contact an administrator.
+              </div>
+            ) : !rating.defense.isRatingOpen ? (
+              <div className="space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                  Panel Scores ({criteria.length} criteria)
+                </p>
+                {criteria.map(criterion => (
+                  <LockedCriterion
+                    key={criterion.id}
+                    criterion={criterion}
+                    ratings={rating.panelRatings.filter(r => r.criterion?.id === criterion.id)}
+                    currentUserId={user?.id}
+                  />
+                ))}
+                {rating.defense.consolidatedRating && (
+                  <ConsolidatedPanel consolidated={rating.defense.consolidatedRating} />
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -266,32 +304,7 @@ export default function Ratings() {
 
                 {/* Consolidated score (if available) */}
                 {rating.defense.consolidatedRating && (
-                  <div className="p-4 rounded-xl" style={{ background: 'linear-gradient(135deg, #0a1628 0%, #1e3350 100%)' }}>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                      Consolidated Score
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <p className="text-3xl font-display font-bold" style={{ color: '#c9a84c', letterSpacing: '-1px' }}>
-                        {rating.defense.consolidatedRating.totalWeightedScore.toFixed(2)}
-                      </p>
-                      <span className="text-xs px-3 py-1 rounded-full font-medium"
-                        style={{ background: rating.defense.consolidatedRating.allRatingsSubmitted ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)', color: rating.defense.consolidatedRating.allRatingsSubmitted ? '#4ade80' : '#fbbf24' }}>
-                        {rating.defense.consolidatedRating.allRatingsSubmitted ? 'All submitted' : 'Partial'}
-                      </span>
-                    </div>
-                    {rating.defense.consolidatedRating.criterionBreakdown?.length > 0 && (
-                      <div className="mt-3 space-y-1.5">
-                        {rating.defense.consolidatedRating.criterionBreakdown.map((b, i) => (
-                          <div key={i} className="flex items-center justify-between text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                            <span>{b.criterionName}</span>
-                            <span style={{ color: 'rgba(255,255,255,0.85)' }}>
-                              avg {b.averageScore.toFixed(1)} → {b.weightedContribution.toFixed(2)} pts
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <ConsolidatedPanel consolidated={rating.defense.consolidatedRating} />
                 )}
               </div>
             )}
@@ -302,7 +315,7 @@ export default function Ratings() {
   )
 }
 
-function DefenseRatingCard({ defense, onRate }) {
+function DefenseRatingCard({ defense, rated, onRate }) {
   return (
     <div
       className="rounded-2xl p-4 sm:p-5 transition-all duration-150"
@@ -333,6 +346,11 @@ function DefenseRatingCard({ defense, onRate }) {
                 ? <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgba(22,163,74,0.1)', color: '#16a34a' }}><Unlock size={10} /> Open</span>
                 : <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgba(107,114,128,0.1)', color: '#6b7280' }}><Lock size={10} /> Locked</span>
               }
+              {rated && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+                  <CheckCircle2 size={10} /> You rated
+                </span>
+              )}
             </div>
             <div className="flex items-center flex-wrap gap-3 mt-1">
               <span className="text-xs flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
@@ -368,9 +386,100 @@ function DefenseRatingCard({ defense, onRate }) {
           onClick={onRate}
         >
           <Star size={12} />
-          {defense.isRatingOpen ? 'Rate' : 'View'}
+          {defense.isRatingOpen ? (rated ? 'Edit rating' : 'Rate') : 'View'}
         </button>
       </div>
+    </div>
+  )
+}
+
+// Read-only view of one criterion once rating has been locked. getRatings returns the
+// whole panel's scores, so a closed defense shows every panelist's row rather than only
+// the viewer's own — which is what a locked, view-only rubric is for.
+function LockedCriterion({ criterion, ratings, currentUserId }) {
+  const scored = ratings.filter(r => typeof r.score === 'number')
+  const avg = scored.length > 0
+    ? scored.reduce((sum, r) => sum + r.score, 0) / scored.length
+    : null
+
+  return (
+    <div className="p-4 rounded-xl" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-main)' }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm" style={{ color: 'var(--text-heading)' }}>{criterion.name}</p>
+          {criterion.description && (
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{criterion.description}</p>
+          )}
+        </div>
+        <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
+          {Number(criterion.weight).toFixed(0)}% weight
+        </span>
+      </div>
+
+      {scored.length === 0 ? (
+        <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>No scores submitted for this criterion.</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {scored.map(r => {
+            const isMine = r.panelist?.id === currentUserId
+            const name = r.panelist?.fullName?.trim() || 'Panel member'
+            return (
+              <div key={r.id} className="flex items-start justify-between gap-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate" style={{ color: 'var(--text-primary)', fontWeight: isMine ? 600 : 400 }}>
+                    {name}{isMine ? ' (you)' : ''}
+                  </p>
+                  {r.comments && (
+                    <p className="text-xs mt-0.5 whitespace-pre-wrap" style={{ color: 'var(--text-muted)' }}>{r.comments}</p>
+                  )}
+                </div>
+                <span className="shrink-0 tabular-nums font-semibold" style={{ color: 'var(--text-heading)' }}>
+                  {r.score} / {criterion.maxScore}
+                </span>
+              </div>
+            )
+          })}
+          {avg !== null && (
+            <div className="flex items-center justify-between pt-2 text-xs" style={{ borderTop: '1px solid var(--border-light)', color: 'var(--text-muted)' }}>
+              <span>Average ({scored.length} panelist{scored.length !== 1 ? 's' : ''})</span>
+              <span className="tabular-nums font-semibold" style={{ color: '#c9a84c' }}>
+                {avg.toFixed(2)} / {criterion.maxScore}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ConsolidatedPanel({ consolidated }) {
+  return (
+    <div className="p-4 rounded-xl" style={{ background: 'linear-gradient(135deg, #0a1628 0%, #1e3350 100%)' }}>
+      <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
+        Consolidated Score
+      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-3xl font-display font-bold" style={{ color: '#c9a84c', letterSpacing: '-1px' }}>
+          {consolidated.totalWeightedScore.toFixed(2)}
+        </p>
+        <span className="text-xs px-3 py-1 rounded-full font-medium shrink-0"
+          style={{ background: consolidated.allRatingsSubmitted ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)', color: consolidated.allRatingsSubmitted ? '#4ade80' : '#fbbf24' }}>
+          {consolidated.allRatingsSubmitted ? 'All submitted' : 'Partial'}
+        </span>
+      </div>
+      {consolidated.criterionBreakdown?.length > 0 && (
+        <div className="mt-3 space-y-1.5">
+          {consolidated.criterionBreakdown.map((b, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>
+              <span className="min-w-0 truncate">{b.criterionName}</span>
+              <span className="shrink-0" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                avg {b.averageScore.toFixed(1)} → {b.weightedContribution.toFixed(2)} pts
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

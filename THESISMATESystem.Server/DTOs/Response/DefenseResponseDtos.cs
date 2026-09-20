@@ -56,4 +56,29 @@ namespace THESISMATESystem.Server.DTOs.Response
         public decimal AverageScore { get; set; }
         public decimal WeightedContribution { get; set; }
     }
+
+    /// <summary>Per-phase scheduling coverage for one academic year: a phase is complete
+    /// only when every active group in that year has a non-cancelled defense for it.</summary>
+    public class DefenseCoverageDto
+    {
+        public string AcademicYear { get; set; } = string.Empty;
+        public int TotalGroups { get; set; }
+        public bool IsComplete { get; set; }
+        public List<PhaseCoverageDto> Phases { get; set; } = [];
+    }
+
+    public class PhaseCoverageDto
+    {
+        public DefensePhase Phase { get; set; }
+        public int Scheduled { get; set; }
+        public int Total { get; set; }
+        public List<GroupSummaryDto> UnscheduledGroups { get; set; } = [];
+    }
+
+    public class GroupSummaryDto
+    {
+        public int Id { get; set; }
+        public string GroupName { get; set; } = string.Empty;
+        public string? ProjectTitle { get; set; }
+    }
 }

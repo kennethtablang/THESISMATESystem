@@ -479,12 +479,33 @@ namespace THESISMATESystem.Server.Services
                 .Distinct()
                 .ToListAsync();
 
-            return students.Select(s => new UserSummaryDto
+            // A student belongs to at most one active group, so the group picker can grey out
+            // the ones already taken instead of offering an "Add" the server will reject.
+            var studentIds = students.Select(s => s.Id).ToList();
+            var memberships = await _db.GroupMembers
+                .Where(gm => studentIds.Contains(gm.UserId) && gm.CapstoneGroup.Status == GroupStatus.Active)
+                .Select(gm => new { gm.UserId, gm.CapstoneGroupId, gm.CapstoneGroup.GroupName })
+                .ToListAsync();
+
+            // Grouped rather than keyed directly: rows created before one-group-per-student was
+            // enforced can still put a student in two active groups, and ToDictionary would throw
+            // on the duplicate key — taking down the whole picker over stale data.
+            var activeGroupByStudent = memberships
+                .GroupBy(m => m.UserId)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            return students.Select(s =>
             {
-                Id = s.Id,
-                FullName = $"{s.FirstName} {s.LastName}".Trim(),
-                Email = s.Email ?? string.Empty,
-                StudentId = s.StudentId
+                activeGroupByStudent.TryGetValue(s.Id, out var membership);
+                return new UserSummaryDto
+                {
+                    Id = s.Id,
+                    FullName = $"{s.FirstName} {s.LastName}".Trim(),
+                    Email = s.Email ?? string.Empty,
+                    StudentId = s.StudentId,
+                    ActiveGroupId = membership?.CapstoneGroupId,
+                    ActiveGroupName = membership?.GroupName,
+                };
             });
         }
 

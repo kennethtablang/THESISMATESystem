@@ -137,7 +137,7 @@ export default function GroupDetail() {
   const [confirmRemove,   setConfirmRemove]   = useState(null)  // member object | null
   const [confirmArchive,  setConfirmArchive]  = useState(false)
 
-  // Edit modal (reuses Groups.jsx logic via a lightweight inline form)
+  // Edit modal (lightweight inline form)
   const [showEditModal, setShowEditModal] = useState(false)
   const [advisers,      setAdvisers]      = useState([])
   const [editForm,      setEditForm]      = useState({ groupName: '', projectTitle: '', adviserId: '' })
@@ -213,8 +213,15 @@ export default function GroupDetail() {
 
   const currentMemberIds = new Set(group?.members?.map(m => m.id) ?? [])
   const memberQuery = memberSearch.trim().toLowerCase()
+  // A student belongs to one active group at a time, so anyone already in another group is
+  // hidden rather than offered — the server rejects the add, and listing them made it look
+  // like a bug. `activeGroupId` is the group they are already in (null when free).
+  const takenStudents = allStudents.filter(
+    s => !currentMemberIds.has(s.id) && s.activeGroupId != null && s.activeGroupId !== group?.id
+  )
   const availableStudents = allStudents.filter(
     s => !currentMemberIds.has(s.id) &&
+      (s.activeGroupId == null || s.activeGroupId === group?.id) &&
       (memberQuery === '' ||
         s.fullName?.toLowerCase().includes(memberQuery) ||
         s.email?.toLowerCase().includes(memberQuery) ||
@@ -805,7 +812,11 @@ export default function GroupDetail() {
             <div className="px-5 py-6 text-center">
               <Users size={24} className="mx-auto mb-2" style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                {memberSearch ? 'No students match your search.' : 'All active students are already in this group.'}
+                {memberSearch
+                  ? 'No available students match your search.'
+                  : takenStudents.length > 0
+                    ? 'Every other active student already belongs to a group.'
+                    : 'All active students are already in this group.'}
               </p>
             </div>
           ) : (
@@ -849,7 +860,10 @@ export default function GroupDetail() {
         </div>
 
         <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-          Only active students not yet in this group are shown. A student can only be added to one active group at a time via the system workflow.
+          A student can only belong to one active group.{' '}
+          {takenStudents.length > 0
+            ? `${takenStudents.length} student${takenStudents.length !== 1 ? 's are' : ' is'} hidden because they already belong to another group — remove them there first.`
+            : 'Only active students who are not in a group yet are shown.'}
         </p>
       </Modal>
 

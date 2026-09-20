@@ -68,8 +68,13 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> Create(CreateGroupRequestDto dto)
         {
-            var group = await _groups.CreateGroupAsync(dto);
-            return CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
+            try
+            {
+                var group = await _groups.CreateGroupAsync(dto);
+                return CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
+            }
+            // A member who already belongs to an active group is a bad request, not a server fault.
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPut("{id:int}")]

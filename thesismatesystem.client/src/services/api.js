@@ -131,6 +131,7 @@ export const defenseService = {
   setRatingStatus: (id, isOpen) => api.patch(`/defenses/${id}/rating-status`, isOpen),
   submitRating: (data) => api.post('/defenses/ratings', data),
   getRatings: (id) => api.get(`/defenses/${id}/ratings`),
+  coverage: (academicYear) => api.get(`/defenses/coverage?academicYear=${encodeURIComponent(academicYear)}`),
   getConsolidated: (id) => api.get(`/defenses/${id}/consolidated`),
   finalize: (id) => api.post(`/defenses/${id}/finalize`),
   criteria: (phase) => api.get(`/defenses/criteria${phase ? `?phase=${phase}` : ''}`),

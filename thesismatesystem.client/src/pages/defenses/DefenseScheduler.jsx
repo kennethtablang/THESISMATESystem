@@ -59,6 +59,21 @@ const PHASES = [
 
 function phaseOf(key) { return PHASES.find(p => p.key === key) ?? PHASES[0] }
 
+// Academic year is free text on the server ("2025-2026", "SY 2025–2026", ""), so a raw
+// string compare dropped groups out of every year bucket — and a group that never appears
+// in the sidebar can never be dragged onto the calendar, i.e. can never be scheduled.
+function normalizeYear(value) {
+  return String(value ?? '')
+    .replace(/[–—]/g, '-')        // en/em dash → hyphen
+    .replace(/^\s*(s\.?y\.?|school\s*year)\s*/i, '')
+    .replace(/\s+/g, '')
+    .trim()
+}
+
+function sameYear(a, b) {
+  return normalizeYear(a) === normalizeYear(b)
+}
+
 function getCurrentSchoolYear() {
   const now   = new Date()
   const month = now.getMonth() + 1   // 1–12
@@ -172,6 +187,8 @@ export default function DefenseScheduler() {
   const [outcomeForm,   setOutcomeForm]   = useState({ defenseOutcome: '', revisionLevel: '', requiresReDefense: false })
   const [outcomeSaving, setOutcomeSaving] = useState(false)
 
+  const [serverCoverage, setServerCoverage] = useState(null)
+
   const canModify   = ['Admin', 'SuperAdmin'].includes(user?.role)
 
   // ── Load ────────────────────────────────────────────────────────────────────
@@ -196,6 +213,17 @@ export default function DefenseScheduler() {
     }
     load()
   }, [loadKey])
+
+  // Coverage is Admin-only on the server; Faculty viewing the scheduler fall back to the
+  // locally computed list rather than seeing an error.
+  useEffect(() => {
+    if (!canModify || !selectedYear) return
+    let cancelled = false
+    defenseService.coverage(selectedYear)
+      .then(c => { if (!cancelled) setServerCoverage(c) })
+      .catch(() => { if (!cancelled) setServerCoverage(null) })
+    return () => { cancelled = true }
+  }, [canModify, selectedYear, loadKey, defenses.length])
 
   // ── Wire external draggable ─────────────────────────────────────────────────
   useEffect(() => {
@@ -224,24 +252,45 @@ export default function DefenseScheduler() {
       getCurrentSchoolYear(),
       ...groups.map(g => g.academicYear),
       ...defenses.map(d => d.academicYear),
-    ].filter(Boolean))
+    ].map(normalizeYear).filter(Boolean))
     return [...years].sort().reverse()
   }, [groups, defenses])
 
   // Auto-snap to the most recent year that actually has data when the
   // computed school year has no groups/defenses (e.g. seeded data is "2025-2026"
   // but today's computed year is "2026-2027").
+  //
+  // The check has to be "does the selected year have data", not "is it in the list":
+  // getCurrentSchoolYear() is always added to availableYears, so a membership test was
+  // always true and the snap never ran — opening the page in a fresh school year showed
+  // an empty sidebar and 0/0 on every phase, with every group apparently unschedulable.
   useEffect(() => {
-    if (!loading && availableYears.length > 0 && !availableYears.includes(selectedYear)) {
+    if (loading || availableYears.length === 0) return
+    const selectedHasData =
+      groups.some(g => sameYear(g.academicYear, selectedYear)) ||
+      defenses.some(d => sameYear(d.academicYear, selectedYear))
+    if (!selectedHasData) {
       const bestYear = availableYears.find(y =>
-        groups.some(g => g.academicYear === y) || defenses.some(d => d.academicYear === y)
+        groups.some(g => sameYear(g.academicYear, y)) || defenses.some(d => sameYear(d.academicYear, y))
       ) ?? availableYears[0]
       setSelectedYear(bestYear)
     }
   }, [loading, availableYears]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const yearGroups   = useMemo(() => groups.filter(g => g.academicYear === selectedYear),   [groups, selectedYear])
-  const yearDefenses = useMemo(() => defenses.filter(d => d.academicYear === selectedYear), [defenses, selectedYear])
+  // Groups with no academic year recorded are shown under whichever year is selected:
+  // excluding them made them permanently unschedulable, with no way for an admin to tell.
+  const yearGroups   = useMemo(
+    () => groups.filter(g => !normalizeYear(g.academicYear) || sameYear(g.academicYear, selectedYear)),
+    [groups, selectedYear]
+  )
+  const yearDefenses = useMemo(
+    () => defenses.filter(d => sameYear(d.academicYear, selectedYear)),
+    [defenses, selectedYear]
+  )
+  const unassignedYearGroups = useMemo(
+    () => yearGroups.filter(g => !normalizeYear(g.academicYear)),
+    [yearGroups]
+  )
 
   // ── Derived state ───────────────────────────────────────────────────────────
   const progressByPhase = useMemo(() => {
@@ -256,6 +305,43 @@ export default function DefenseScheduler() {
     })
     return result
   }, [yearDefenses, yearGroups])
+
+  // Every group must end up with a defense in every phase. This lists exactly which groups
+  // are still missing one, per phase, so coverage gaps are visible instead of being buried
+  // in a "12/15" counter on a tab the admin may never open.
+  //
+  // Computed locally for instant feedback while dragging, then reconciled against
+  // /defenses/coverage — the server is the authority on which groups exist, and a group the
+  // client never loaded would otherwise be silently absent from the "unscheduled" list.
+  const localCoverage = useMemo(() => {
+    return PHASES.map(ph => {
+      const ids = new Set(
+        yearDefenses
+          .filter(d => String(d.phase) === ph.key && String(d.status) !== 'Cancelled')
+          .map(d => Number(d.capstoneGroupId))
+      )
+      return { phase: ph, scheduledIds: ids, missing: yearGroups.filter(g => !ids.has(Number(g.id))) }
+    })
+  }, [yearDefenses, yearGroups])
+
+  // Server coverage, keyed by phase. Merged into the local view so a group only the server
+  // knows about still shows up as unscheduled.
+  const coverageByPhase = useMemo(() => {
+    if (!serverCoverage?.phases) return localCoverage
+    return localCoverage.map(entry => {
+      const remote = serverCoverage.phases.find(p => String(p.phase) === entry.phase.key)
+      if (!remote) return entry
+      const byId = new Map(entry.missing.map(g => [Number(g.id), g]))
+      remote.unscheduledGroups?.forEach(g => {
+        // Skip anything already scheduled in local state: the server snapshot goes stale the
+        // moment a defense is dropped, and re-adding it would flag a group we just scheduled.
+        if (!byId.has(Number(g.id)) && !entry.scheduledIds.has(Number(g.id))) byId.set(Number(g.id), g)
+      })
+      return { ...entry, missing: [...byId.values()] }
+    })
+  }, [localCoverage, serverCoverage])
+
+  const incompletePhases = coverageByPhase.filter(c => c.missing.length > 0)
 
   const scheduledForPhase = useMemo(
     () => yearDefenses.filter(d => String(d.phase) === activePhase && String(d.status) !== 'Cancelled'),
@@ -486,6 +572,18 @@ export default function DefenseScheduler() {
         </div>
       )}
 
+      {/* ── Coverage banner: no phase is complete until every group has a defense ── */}
+      {!loadError && yearGroups.length > 0 && (
+        <CoverageBanner
+          incompletePhases={incompletePhases}
+          totalGroups={yearGroups.length}
+          unassignedYearGroups={unassignedYearGroups}
+          selectedYear={selectedYear}
+          activePhase={activePhase}
+          onJumpToPhase={setActivePhase}
+        />
+      )}
+
       {/* ── Phase tabs ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-5 pt-3 pb-3 shrink-0"
         style={{ borderBottom: '1px solid var(--border-light)' }}>
@@ -670,6 +768,11 @@ export default function DefenseScheduler() {
               slotDuration="00:30:00"
               snapDuration="00:15:00"
               allDaySlot={false}
+              // Month view renders a timed event as a "dot": transparent background, text in the
+              // page's own colour. The chip's text colour then lands on the dark page instead of
+              // the phase colour and drops to ~1.2:1. Forcing block display gives month view the
+              // same filled chip as week view, which is both readable and consistent.
+              eventDisplay="block"
               nowIndicator
               editable={canModify}
               droppable={canModify}
@@ -1122,23 +1225,55 @@ export default function DefenseScheduler() {
 }
 
 // ── Calendar event content ────────────────────────────────────────────────────
+// The phase palette runs from dark purple to mid gold, so a single hard-coded text colour
+// is unreadable on at least one of them — gold-on-white is ~2.3:1. Pick per background from
+// its relative luminance (WCAG) so every chip clears 4.5:1 whatever the phase colour becomes.
+function readableTextOn(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? ''))
+  if (!m) return '#ffffff'
+  const channel = (c) => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  const n = parseInt(m[1], 16)
+  const L = 0.2126 * channel((n >> 16) & 255)
+          + 0.7152 * channel((n >> 8) & 255)
+          + 0.0722 * channel(n & 255)
+  // Contrast against white is 1.05/(L+0.05); against near-black it is (L+0.05)/0.05.
+  return 1.05 / (L + 0.05) >= (L + 0.05) / 0.05 ? '#ffffff' : '#141c2e'
+}
+
 function renderEventContent(info) {
   const d  = info.event.extendedProps.defense
   const ph = phaseOf(d?.phase)
   const panCount = d?.panelists?.length ?? 0
+
+  // List view paints events on the normal page background, not on the phase colour, so the
+  // chip's text colour would be invisible there — fall back to the page's own text tokens.
+  const isList = String(info.view?.type ?? '').startsWith('list')
+  const fg     = isList ? 'var(--text-primary)' : readableTextOn(info.event.backgroundColor || ph.color)
+  // On a colour chip the secondary lines reuse the same colour and lean on weight and size
+  // for hierarchy: fading 10px text even to 90% drops the red Re-Defense chip below 4.5:1.
+  const muted  = isList ? 'var(--text-muted)' : fg
+  const title  = `${info.event.title} · ${ph.label}${d?.venue ? ` · ${d.venue}` : ''}`
+
+  // A 30-minute slot is only tall enough for the name and time; venue and panel count are
+  // dropped rather than clipped mid-word, and stay available in the tooltip and detail modal.
+  const compact = !isList && (d?.durationMinutes ?? 60) < 60
+
   return (
-    <div className="overflow-hidden px-1.5 py-1 h-full flex flex-col gap-0.5"
-      title={`${info.event.title} · ${ph.label}${d?.venue ? ` · ${d.venue}` : ''}`}>
+    <div className="overflow-hidden px-1.5 py-1 h-full flex flex-col gap-0.5" title={title} style={{ color: fg }}>
       <p className="font-bold text-xs leading-tight truncate">{info.event.title}</p>
-      <p className="text-xs leading-tight truncate opacity-85"
-        style={{ fontSize: 10 }}>
+      <p className="text-xs leading-tight truncate" style={{ fontSize: 10, color: muted }}>
         {ph.short} · {info.event.start?.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
       </p>
-      {d?.venue && (
-        <p className="text-xs leading-tight truncate opacity-70" style={{ fontSize: 10 }}>{d.venue}</p>
+      {!compact && d?.venue && (
+        <p className="text-xs leading-tight truncate" style={{ fontSize: 10, color: muted }}>
+          {d.venue}
+        </p>
       )}
-      {panCount > 0 && (
-        <p className="text-xs leading-tight opacity-70" style={{ fontSize: 10 }}>
+      {!compact && panCount > 0 && (
+        <p className="text-xs leading-tight truncate" style={{ fontSize: 10, color: muted }}>
           {panCount} panelist{panCount !== 1 ? 's' : ''}
         </p>
       )}
@@ -1153,6 +1288,12 @@ function styleEvent(info) {
     boxShadow:    '0 1px 4px rgba(0,0,0,0.18)',
     cursor:       'pointer',
   })
+  // FullCalendar's own `.fc-event-main { color: var(--fc-event-text-color) }` beats an
+  // inherited colour, so retune the variable instead of fighting it with a `color` rule.
+  // Custom properties are invisible to style.cssText/Object.assign — setProperty only.
+  if (!String(info.view?.type ?? '').startsWith('list')) {
+    info.el.style.setProperty('--fc-event-text-color', readableTextOn(info.event.backgroundColor))
+  }
 }
 
 // ── Detail row ────────────────────────────────────────────────────────────────
@@ -1169,6 +1310,82 @@ function DetailRow({ icon, label, value }) {
           ? <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{value}</p>
           : value}
       </div>
+    </div>
+  )
+}
+
+// ── Coverage banner ───────────────────────────────────────────────────────────
+// A phase is only "done" when every group in the school year has a non-cancelled
+// defense for it. Collapsed by default so the header stays usable; expanding names
+// the groups still missing a slot in each phase.
+function CoverageBanner({ incompletePhases, totalGroups, unassignedYearGroups, selectedYear, activePhase, onJumpToPhase }) {
+  const [expanded, setExpanded] = useState(false)
+  const complete = incompletePhases.length === 0
+
+  if (complete && unassignedYearGroups.length === 0) {
+    return (
+      <div className="mx-5 mt-3 px-4 py-2.5 rounded-xl flex items-center gap-2.5 shrink-0"
+        style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}>
+        <CheckCircle2 size={14} style={{ color: '#16a34a', flexShrink: 0 }} />
+        <span className="text-xs font-semibold" style={{ color: '#16a34a' }}>
+          All {totalGroups} group{totalGroups !== 1 ? 's' : ''} are scheduled for every phase in {selectedYear}.
+        </span>
+      </div>
+    )
+  }
+
+  const totalMissing = incompletePhases.reduce((sum, c) => sum + c.missing.length, 0)
+
+  return (
+    <div className="mx-5 mt-3 rounded-xl shrink-0 overflow-hidden"
+      style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.28)' }}>
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left"
+      >
+        <AlertCircle size={14} style={{ color: '#b45309', flexShrink: 0 }} />
+        <span className="text-xs font-semibold flex-1" style={{ color: '#b45309' }}>
+          {totalMissing > 0
+            ? `${totalMissing} defense${totalMissing !== 1 ? 's' : ''} still unscheduled across ${incompletePhases.length} phase${incompletePhases.length !== 1 ? 's' : ''} — every group must be scheduled in all ${PHASES.length} phases.`
+            : `${unassignedYearGroups.length} group${unassignedYearGroups.length !== 1 ? 's' : ''} have no academic year set.`}
+        </span>
+        <span className="text-xs font-semibold shrink-0" style={{ color: '#b45309' }}>
+          {expanded ? 'Hide' : 'Show'} details
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-3 space-y-2">
+          {incompletePhases.map(({ phase, missing }) => (
+            <div key={phase.key} className="text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-bold" style={{ color: phase.color }}>{phase.label}</span>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  {missing.length} of {totalGroups} unscheduled
+                </span>
+                {phase.key !== activePhase && (
+                  <button
+                    onClick={() => onJumpToPhase(phase.key)}
+                    className="px-2 py-0.5 rounded-md font-semibold"
+                    style={{ background: phase.bg, color: phase.color, border: `1px solid ${phase.border}` }}
+                  >
+                    Schedule these
+                  </button>
+                )}
+              </div>
+              <p className="mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                {missing.map(g => g.groupName).join(', ')}
+              </p>
+            </div>
+          ))}
+          {unassignedYearGroups.length > 0 && (
+            <p className="text-xs pt-1" style={{ color: 'var(--text-muted)', borderTop: '1px solid rgba(245,158,11,0.2)' }}>
+              No academic year recorded for: {unassignedYearGroups.map(g => g.groupName).join(', ')}. They are listed
+              under {selectedYear} so they can still be scheduled — set their year on the group to file them correctly.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

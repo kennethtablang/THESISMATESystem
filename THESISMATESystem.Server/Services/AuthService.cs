@@ -26,6 +26,7 @@ namespace THESISMATESystem.Server.Services
         private readonly IEmailService _email;
         private readonly ILogger<AuthService> _logger;
         private readonly ITimeLimitedDataProtector _twoFactorChallenge;
+        private readonly IHostEnvironment _env;
 
         public AuthService(
             UserManager<ApplicationUser> userManager,
@@ -35,8 +36,10 @@ namespace THESISMATESystem.Server.Services
             AppDbContext db,
             IEmailService email,
             ILogger<AuthService> logger,
-            IDataProtectionProvider dataProtection)
+            IDataProtectionProvider dataProtection,
+            IHostEnvironment env)
         {
+            _env = env;
             _twoFactorChallenge = dataProtection
                 .CreateProtector("ThesisMate.Auth.TwoFactorChallenge")
                 .ToTimeLimitedDataProtector();
@@ -159,6 +162,12 @@ namespace THESISMATESystem.Server.Services
             try
             {
                 await _email.SendEmailAsync(user.Email!, "Verify your ThesisMate account", BuildVerificationEmail(user.FirstName, verifyUrl));
+            }
+            catch (Exception ex) when (_env.IsDevelopment())
+            {
+                // Local dev without working SMTP: keep the account and log the link so registration can be tested
+                _logger.LogError(ex, "Failed to send verification email to {Email}", user.Email);
+                _logger.LogWarning("DEVELOPMENT ONLY - verification link for {Email}: {VerifyUrl}", user.Email, verifyUrl);
             }
             catch (Exception ex)
             {
@@ -595,7 +604,7 @@ namespace THESISMATESystem.Server.Services
         private string GenerateJwt(ApplicationUser user, string role)
         {
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
-                _config["Jwt:Key"] ?? throw new InvalidOperationException("JWT key not configured.")));
+                _config["Jwt:Key"] is { Length: > 0 } jwtKey ? jwtKey : throw new InvalidOperationException("JWT key not configured.")));
 
             var claims = new List<Claim>
             {

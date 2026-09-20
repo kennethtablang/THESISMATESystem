@@ -30,6 +30,11 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string FullName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string? StudentId { get; set; }
+
+        // Set only by the student-picker endpoints: the active group this student already
+        // belongs to, so the UI can show them as unavailable. Null everywhere else.
+        public int? ActiveGroupId { get; set; }
+        public string? ActiveGroupName { get; set; }
     }
 
     public class GroupDeadlineResponseDto

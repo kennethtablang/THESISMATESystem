@@ -18,13 +18,23 @@ const CLOSE_DURATION = 200
 let scrollLocks = 0
 
 function lockScroll() {
-  if (scrollLocks === 0) document.body.style.overflow = 'hidden'
+  if (scrollLocks === 0) {
+    // Hiding the body scrollbar reclaims its width, which shifts the page — and the
+    // centred dialog with it — sideways on open. Replacing the lost width with padding
+    // keeps the layout, and the modal, exactly where they were.
+    const gap = window.innerWidth - document.documentElement.clientWidth
+    if (gap > 0) document.body.style.paddingRight = `${gap}px`
+    document.body.style.overflow = 'hidden'
+  }
   scrollLocks += 1
 }
 
 function unlockScroll() {
   scrollLocks = Math.max(0, scrollLocks - 1)
-  if (scrollLocks === 0) document.body.style.overflow = ''
+  if (scrollLocks === 0) {
+    document.body.style.overflow = ''
+    document.body.style.paddingRight = ''
+  }
 }
 
 const FOCUSABLE = [
@@ -103,9 +113,9 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
   // creates a containing block that traps position:fixed, so the modal would be
   // clipped or painted underneath its own page content.
   return createPortal(
-    <div className={clsx('fixed inset-0 z-overlay flex items-center justify-center p-4', closing ? 'animate-fade-out' : 'animate-fade-in')}>
+    <div className={clsx('fixed inset-0 z-overlay flex items-center justify-center p-4 overflow-y-auto overscroll-contain', closing ? 'animate-fade-out' : 'animate-fade-in')}>
       <div
-        className="absolute inset-0"
+        className="fixed inset-0"
         style={{ background: 'rgba(10, 22, 40, 0.6)', backdropFilter: 'blur(4px)' }}
         onClick={onClose}
       />
@@ -117,21 +127,24 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
         tabIndex={-1}
         // Capped to the viewport with a scrolling body: the overlay centres the dialog, so anything
         // taller than the screen would otherwise be cut off above and below with no way to reach it.
-        className={clsx('relative w-full rounded-2xl flex flex-col max-h-[calc(100vh-2rem)]', sizeClasses[size], closing ? 'animate-slide-down' : 'animate-slide-up')}
+        // `my-auto` keeps it centred while the overlay scrolls; dvh (with a vh fallback below) so a
+        // mobile browser's collapsing URL bar cannot push the footer buttons off-screen.
+        className={clsx('relative w-full my-auto rounded-2xl flex flex-col max-h-[calc(100vh-2rem)]', sizeClasses[size], closing ? 'animate-slide-down' : 'animate-slide-up')}
         style={{
           background: 'var(--bg-card)',
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
           border: '1px solid var(--border-main)',
+          maxHeight: 'calc(100dvh - 2rem)',
         }}
       >
         <div className="flex items-center justify-between gap-3 px-6 py-4 border-b shrink-0" style={{ borderColor: 'var(--border-main)' }}>
-          <h2 id={titleId} className="font-display font-semibold text-lg" style={{ color: 'var(--text-heading)', letterSpacing: '-0.3px' }}>
+          <h2 id={titleId} className="font-display font-semibold text-lg min-w-0 truncate" style={{ color: 'var(--text-heading)', letterSpacing: '-0.3px' }}>
             {title}
           </h2>
           <button
             onClick={onClose}
             aria-label="Close dialog"
-            className="w-8 h-8 flex items-center justify-center rounded-lg transition-all"
+            className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg transition-all"
             style={{ color: 'var(--text-muted)' }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-subtle)'; e.currentTarget.style.color = 'var(--text-primary)' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)' }}

@@ -39,7 +39,7 @@ rating, to final outcome recording and reporting.
 | CRDT / collaboration | Yjs + y-prosemirror + y-protocols | 13.6 |
 | Real-time transport | SignalR client | 10.0 |
 | Calendar UI | FullCalendar (daygrid, timegrid, list, interaction) | 6.1 |
-| Client-side export | `docx`, `exceljs`, `xlsx`, `mammoth`, `docx-preview`, `diff` | — |
+| Client-side export | `docx`, `exceljs`, `mammoth`, `docx-preview`, `diff` | — |
 | Sanitisation | DOMPurify | 3.4 |
 | Backend | ASP.NET Core Web API | **.NET 10** |
 | ORM | Entity Framework Core (SQL Server) | 10.0.9 |

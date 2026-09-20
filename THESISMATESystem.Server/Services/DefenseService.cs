@@ -37,6 +37,22 @@ namespace THESISMATESystem.Server.Services
             var duration = dto.DurationMinutes > 0 ? dto.DurationMinutes : 60;
             PhilippineTime.ValidateScheduleHours(dto.ScheduledDateTime, duration);
 
+            var group = await _db.CapstoneGroups
+                .FirstOrDefaultAsync(g => g.Id == dto.CapstoneGroupId)
+                ?? throw new InvalidOperationException("The selected group no longer exists.");
+
+            // One active defense per group per phase. Without this a group could be scheduled
+            // twice for the same phase — which also removed it from the scheduler's
+            // "to schedule" list, so coverage looked complete while a slot was double-booked.
+            var alreadyScheduled = await _db.DefenseSchedules.AnyAsync(s =>
+                s.CapstoneGroupId == dto.CapstoneGroupId &&
+                s.Phase == dto.Phase &&
+                s.Status != DefenseStatus.Cancelled);
+
+            if (alreadyScheduled)
+                throw new InvalidOperationException(
+                    $"{group.GroupName} already has a {dto.Phase} scheduled. Cancel it before scheduling another.");
+
             var schedule = new DefenseSchedule
             {
                 CapstoneGroupId   = dto.CapstoneGroupId,
@@ -63,9 +79,7 @@ namespace THESISMATESystem.Server.Services
             // Notifications are best-effort — a failure must not prevent the 201 response
             try
             {
-                var group = await _db.CapstoneGroups
-                    .Include(g => g.Adviser)
-                    .FirstAsync(g => g.Id == dto.CapstoneGroupId);
+                await _db.Entry(group).Reference(g => g.Adviser).LoadAsync();
 
                 var panelistUsers = dto.PanelistIds.Count > 0
                     ? await _db.Users
@@ -122,6 +136,63 @@ namespace THESISMATESystem.Server.Services
             return await MapSchedules(schedules);
         }
 
+        public async Task<DefenseCoverageDto> GetCoverageAsync(string academicYear)
+        {
+            var year = NormalizeYear(academicYear);
+
+            // Academic year is free text, so compare on the normalized form. Groups with no
+            // year recorded are counted against the requested year rather than dropped —
+            // otherwise they are invisible everywhere and never get scheduled at all.
+            var groups = await _db.CapstoneGroups
+                .Where(g => g.Status == GroupStatus.Active)
+                .Select(g => new { g.Id, g.GroupName, g.ProjectTitle, g.AcademicYear })
+                .ToListAsync();
+
+            var yearGroups = groups
+                .Where(g => string.IsNullOrWhiteSpace(g.AcademicYear) || NormalizeYear(g.AcademicYear) == year)
+                .ToList();
+
+            var groupIds = yearGroups.Select(g => g.Id).ToHashSet();
+
+            var scheduled = await _db.DefenseSchedules
+                .Where(s => s.Status != DefenseStatus.Cancelled && groupIds.Contains(s.CapstoneGroupId))
+                .Select(s => new { s.CapstoneGroupId, s.Phase })
+                .ToListAsync();
+
+            var phases = Enum.GetValues<DefensePhase>().Select(phase =>
+            {
+                var done = scheduled.Where(s => s.Phase == phase).Select(s => s.CapstoneGroupId).ToHashSet();
+                return new PhaseCoverageDto
+                {
+                    Phase     = phase,
+                    Scheduled = yearGroups.Count(g => done.Contains(g.Id)),
+                    Total     = yearGroups.Count,
+                    UnscheduledGroups = yearGroups
+                        .Where(g => !done.Contains(g.Id))
+                        .Select(g => new GroupSummaryDto { Id = g.Id, GroupName = g.GroupName, ProjectTitle = g.ProjectTitle })
+                        .ToList(),
+                };
+            }).ToList();
+
+            return new DefenseCoverageDto
+            {
+                AcademicYear = year,
+                TotalGroups  = yearGroups.Count,
+                IsComplete   = yearGroups.Count > 0 && phases.All(p => p.UnscheduledGroups.Count == 0),
+                Phases       = phases,
+            };
+        }
+
+        // Mirrors normalizeYear() in the scheduler UI: "SY 2025–2026" and "2025-2026" are
+        // the same school year as far as coverage is concerned.
+        private static string NormalizeYear(string? value)
+        {
+            var text = (value ?? string.Empty).Replace('–', '-').Replace('—', '-');
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"^\s*(s\.?y\.?|school\s*year)\s*", string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return System.Text.RegularExpressions.Regex.Replace(text, @"\s+", string.Empty);
+        }
+
         public async Task<IEnumerable<DefenseScheduleResponseDto>> GetSchedulesByPanelistAsync(string panelistId)
         {
             var schedules = await LoadScheduleQuery()
@@ -131,9 +202,23 @@ namespace THESISMATESystem.Server.Services
             return await MapSchedules(schedules);
         }
 
-        public async Task<IEnumerable<DefenseScheduleResponseDto>> GetAllSchedulesAsync()
+        public async Task<IEnumerable<DefenseScheduleResponseDto>> GetAllSchedulesAsync(string? facultyId = null)
         {
-            var schedules = await LoadScheduleQuery()
+            var query = LoadScheduleQuery();
+
+            // Faculty see only defenses for groups they advise or sit on a panel for; the list
+            // otherwise exposed every group's schedule and consolidated scores to all Faculty.
+            // Mirrors the adviser/panel clauses of GroupAccessChecker.
+            if (facultyId is not null)
+            {
+                query = query.Where(s =>
+                    s.CapstoneGroup.AdviserId == facultyId
+                    || _db.PanelAssignments.Any(pa =>
+                        pa.PanelistId == facultyId &&
+                        pa.DefenseSchedule.CapstoneGroupId == s.CapstoneGroupId));
+            }
+
+            var schedules = await query
                 .OrderByDescending(s => s.ScheduledDateTime)
                 .ToListAsync();
             return await MapSchedules(schedules);

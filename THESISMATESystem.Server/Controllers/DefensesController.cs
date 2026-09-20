@@ -33,7 +33,12 @@ namespace THESISMATESystem.Server.Controllers
 
         [HttpGet]
         [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
-        public async Task<IActionResult> GetAll() => Ok(await _defenses.GetAllSchedulesAsync());
+        public async Task<IActionResult> GetAll()
+        {
+            var role = User.FindFirstValue(ClaimTypes.Role);
+            var facultyId = role == "Faculty" ? User.FindFirstValue(ClaimTypes.NameIdentifier) : null;
+            return Ok(await _defenses.GetAllSchedulesAsync(facultyId));
+        }
 
         [HttpGet("my-schedules")]
         [Authorize(Roles = "Faculty")]
@@ -41,6 +46,15 @@ namespace THESISMATESystem.Server.Controllers
         {
             var panelistId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             return Ok(await _defenses.GetSchedulesByPanelistAsync(panelistId));
+        }
+
+        [HttpGet("coverage")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
+        public async Task<IActionResult> GetCoverage([FromQuery] string academicYear)
+        {
+            if (string.IsNullOrWhiteSpace(academicYear))
+                return BadRequest(new { message = "academicYear is required." });
+            return Ok(await _defenses.GetCoverageAsync(academicYear));
         }
 
         [HttpGet("group/{groupId:int}")]

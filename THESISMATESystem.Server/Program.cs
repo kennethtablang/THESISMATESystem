@@ -49,8 +49,11 @@ namespace THESISMATESystem.Server
             .AddDefaultTokenProviders();
 
             // JWT Authentication
-            var jwtKey = builder.Configuration["Jwt:Key"]
-                ?? throw new InvalidOperationException("JWT Key is not configured.");
+            // Secrets live in user-secrets (dev) or environment variables (Jwt__Key), never appsettings.json
+            var jwtKey = builder.Configuration["Jwt:Key"];
+            if (string.IsNullOrWhiteSpace(jwtKey))
+                throw new InvalidOperationException(
+                    "JWT Key is not configured. Run: dotnet user-secrets set \"Jwt:Key\" \"<long random key>\"");
 
             builder.Services.AddAuthentication(options =>
             {
@@ -80,25 +83,39 @@ namespace THESISMATESystem.Server
                             ctx.Token = access;
                         return Task.CompletedTask;
                     },
-                    // A JWT stays valid for 8 hours, so without this a deactivated (or deleted) account
-                    // kept full API access until its token expired. Cached briefly per user so this is
-                    // not a database round-trip on every request; deactivation applies within 30s.
+                    // A JWT stays valid for 8 hours and carries the role it was issued with, so without
+                    // this a deactivated (or deleted) account kept full access, and a demoted user kept
+                    // their old role's permissions, until the token expired. The lookup is cached briefly
+                    // per user to avoid a database round-trip on every request; changes apply within 30s.
                     OnTokenValidated = async ctx =>
                     {
                         var userId = ctx.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
                         if (string.IsNullOrEmpty(userId)) { ctx.Fail("Token has no subject."); return; }
 
                         var services = ctx.HttpContext.RequestServices;
-                        var isActive = await services.GetRequiredService<IMemoryCache>().GetOrCreateAsync(
-                            $"user-active:{userId}",
+                        // Current role of an active account; null when it is inactive or no longer exists.
+                        var currentRole = await services.GetRequiredService<IMemoryCache>().GetOrCreateAsync(
+                            $"user-state:{userId}",
                             async entry =>
                             {
                                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
-                                return await services.GetRequiredService<AppDbContext>().Users
-                                    .AnyAsync(u => u.Id == userId && u.IsActive);
+                                var db = services.GetRequiredService<AppDbContext>();
+                                var account = await db.Users
+                                    .Where(u => u.Id == userId && u.IsActive)
+                                    .Select(u => new
+                                    {
+                                        Role = db.UserRoles
+                                            .Where(ur => ur.UserId == u.Id)
+                                            .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
+                                            .FirstOrDefault(),
+                                    })
+                                    .FirstOrDefaultAsync();
+                                return account is null ? null : account.Role ?? string.Empty;
                             });
 
-                        if (!isActive) ctx.Fail("Account is deactivated.");
+                        if (currentRole is null) { ctx.Fail("Account is deactivated."); return; }
+                        if (currentRole != (ctx.Principal!.FindFirstValue(ClaimTypes.Role) ?? string.Empty))
+                            ctx.Fail("Your role has changed. Please sign in again.");
                     }
                 };
             });

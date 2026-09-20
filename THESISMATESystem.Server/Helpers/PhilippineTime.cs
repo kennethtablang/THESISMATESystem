@@ -9,6 +9,14 @@ namespace THESISMATESystem.Server.Helpers
         public static DateTime Now => DateTime.UtcNow;
 
         /// <summary>
+        /// Reads a wall-clock datetime as Philippine time and returns the matching UTC instant.
+        /// Used for input that arrived without a timezone offset, where the only sensible
+        /// reading is "what the user saw on the clock in front of them".
+        /// </summary>
+        public static DateTime ToUtc(DateTime phtWallClock)
+            => DateTime.SpecifyKind(phtWallClock.Subtract(Offset), DateTimeKind.Utc);
+
+        /// <summary>
         /// Throws <see cref="InvalidOperationException"/> if the given UTC datetime falls
         /// outside the 6:00 AM – 7:00 PM (PHT) scheduling window (start or end).
         /// </summary>

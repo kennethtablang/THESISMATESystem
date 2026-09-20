@@ -38,6 +38,11 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<CapstoneGroupResponseDto> CreateGroupAsync(CreateGroupRequestDto dto)
         {
+            // Checked before the group is persisted: rejecting members afterwards would leave an
+            // empty group behind for a request that failed. -1 excludes nothing (no id yet).
+            var memberIds = dto.MemberIds.Distinct().ToList();
+            await EnsureNotInAnotherActiveGroupAsync(memberIds, excludingGroupId: -1);
+
             var group = new CapstoneGroup
             {
                 GroupName = dto.GroupName,
@@ -48,9 +53,9 @@ namespace THESISMATESystem.Server.Services
             _db.CapstoneGroups.Add(group);
             await _db.SaveChangesAsync();
 
-            if (dto.MemberIds.Any())
+            if (memberIds.Count > 0)
             {
-                var members = dto.MemberIds.Select(uid => new GroupMember
+                var members = memberIds.Select(uid => new GroupMember
                 {
                     CapstoneGroupId = group.Id,
                     UserId = uid
@@ -249,10 +254,47 @@ namespace THESISMATESystem.Server.Services
             if (alreadyMember)
                 throw new InvalidOperationException("This student is already a member of this group.");
 
+            await EnsureNotInAnotherActiveGroupAsync([userId], groupId);
+
             _db.GroupMembers.Add(new GroupMember { CapstoneGroupId = groupId, UserId = userId });
             await _db.SaveChangesAsync();
             return await GetGroupByIdAsync(groupId)
                 ?? throw new InvalidOperationException("Failed to reload group.");
+        }
+
+        /// <summary>
+        /// A student belongs to at most one active capstone group. Completed and archived groups
+        /// are ignored, so last year's members stay free to join a new group. Enforced here because
+        /// the UI can only hide candidates it knows about — two admins adding the same student to
+        /// different groups would otherwise both succeed.
+        /// </summary>
+        private async Task EnsureNotInAnotherActiveGroupAsync(IReadOnlyCollection<string> userIds, int excludingGroupId)
+        {
+            if (userIds.Count == 0) return;
+
+            var conflicts = await _db.GroupMembers
+                .Where(gm => userIds.Contains(gm.UserId)
+                          && gm.CapstoneGroupId != excludingGroupId
+                          && gm.CapstoneGroup.Status == GroupStatus.Active)
+                .Select(gm => new
+                {
+                    Name = gm.User.FirstName + " " + gm.User.LastName,
+                    gm.CapstoneGroup.GroupName,
+                })
+                .ToListAsync();
+
+            if (conflicts.Count == 0) return;
+
+            // Grouped by student, not by row: data predating this rule can put one student in two
+            // active groups, and counting rows made a single person read as "these students".
+            var byStudent = conflicts
+                .GroupBy(c => c.Name.Trim())
+                .Select(g => $"{g.Key} is in {string.Join(" and ", g.Select(c => c.GroupName).Distinct())}")
+                .ToList();
+
+            throw new InvalidOperationException(
+                $"{string.Join("; ", byStudent)}. A student can only belong to one active group — " +
+                "remove them there first.");
         }
 
         public async Task<CapstoneGroupResponseDto> RemoveMemberAsync(int groupId, string userId)
