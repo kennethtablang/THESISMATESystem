@@ -9,7 +9,8 @@ namespace THESISMATESystem.Server.Profiles
         public MappingProfile()
         {
             CreateMap<ApplicationUser, UserResponseDto>()
-                .ForMember(d => d.Role, o => o.Ignore());
+                .ForMember(d => d.Role, o => o.Ignore())
+                .ForMember(d => d.SectionName, o => o.MapFrom(s => s.Section != null ? s.Section.Name : null));
 
             CreateMap<ApplicationUser, UserSummaryDto>()
                 .ForMember(d => d.FullName, o => o.MapFrom(s =>
@@ -19,6 +20,15 @@ namespace THESISMATESystem.Server.Profiles
 
             CreateMap<CapstoneGroup, CapstoneGroupResponseDto>()
                 .ForMember(d => d.Members, o => o.MapFrom(s => s.Members.Select(m => m.User)))
+                .ForMember(d => d.PanelMembers, o => o.MapFrom(s => s.PanelMembers
+                    .OrderByDescending(p => p.IsChair)
+                    .Select(p => new PanelMemberDto
+                    {
+                        Id = p.PanelistId,
+                        FullName = (p.Panelist.FirstName + " " + p.Panelist.LastName).Trim(),
+                        Email = p.Panelist.Email ?? string.Empty,
+                        IsChair = p.IsChair,
+                    })))
                 .ForMember(d => d.MilestoneProgress, o => o.Ignore())
                 .ForMember(d => d.SystemLogoUrl, o => o.Ignore());
 

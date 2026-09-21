@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Users, UserCheck, UserX, Search, Pencil, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Users, UserCheck, UserX, Search, Pencil, Eye, EyeOff, AlertCircle, UserPlus } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import { passwordError } from '../../utils/passwordPolicy'
 import TopBar from '../../components/layout/TopBar'
@@ -9,6 +9,7 @@ import { PageLoader } from '../../components/ui/Spinner'
 import { authService } from '../../services/api'
 import { useSort, SortIcon } from '../../hooks/useSort.jsx'
 import { useAuth } from '../../contexts/AuthContext'
+import CreateAccountModal from './CreateAccountModal'
 
 const roleColors = {
   SuperAdmin: { bg: 'rgba(239,68,68,0.1)',   text: '#dc2626' },
@@ -52,6 +53,7 @@ export default function UserManagement() {
   const [pwSuccess, setPwSuccess] = useState(false)
   const [pwVisible, setPwVisible] = useState({ newPassword: false, confirm: false })
 
+  const [showCreate, setShowCreate] = useState(false)
   const [twoFaDisabling, setTwoFaDisabling] = useState(false)
   const [twoFaError, setTwoFaError] = useState('')
 
@@ -223,8 +225,15 @@ export default function UserManagement() {
 
   return (
     <>
-      <TopBar title="User Management" subtitle="Manage all system users" />
+      <TopBar title="User Management" subtitle="Only the Super Admin creates accounts" />
       <div className="p-4 sm:p-8">
+        {isSuperAdmin && (
+          <div className="flex justify-end mb-4">
+            <button className="btn-primary text-sm" onClick={() => setShowCreate(true)}>
+              <UserPlus size={14} /> Create Account
+            </button>
+          </div>
+        )}
 
         {/* Stat cards */}
         <div className="grid grid-cols-3 gap-4 mb-6">
@@ -692,6 +701,8 @@ export default function UserManagement() {
           )}
         </div>
       </Modal>
+      <CreateAccountModal open={showCreate} onClose={() => setShowCreate(false)}
+        onCreated={(u) => setUsers(prev => [u, ...prev])} />
     </>
   )
 }

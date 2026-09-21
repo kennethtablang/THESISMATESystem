@@ -14,11 +14,13 @@ namespace THESISMATESystem.Server.Controllers
     {
         private readonly IDefenseService _defenses;
         private readonly IGroupAccessChecker _groupAccess;
+        private readonly IDefenseAutoScheduler _autoScheduler;
 
-        public DefensesController(IDefenseService defenses, IGroupAccessChecker groupAccess)
+        public DefensesController(IDefenseService defenses, IGroupAccessChecker groupAccess, IDefenseAutoScheduler autoScheduler)
         {
             _defenses = defenses;
             _groupAccess = groupAccess;
+            _autoScheduler = autoScheduler;
         }
 
         private async Task<bool> CanAccessGroupAsync(int groupId)
@@ -74,7 +76,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create(CreateDefenseScheduleRequestDto dto)
         {
             try { var result = await _defenses.CreateScheduleAsync(dto); return CreatedAtAction(nameof(GetById), new { id = result.Id }, result); }
@@ -82,7 +84,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPut("{id:int}")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(int id, UpdateDefenseScheduleRequestDto dto)
         {
             try { return Ok(await _defenses.UpdateScheduleAsync(id, dto)); }
@@ -91,7 +93,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/cancel")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Cancel(int id)
         {
             var success = await _defenses.CancelScheduleAsync(id);
@@ -99,11 +101,44 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/rating-status")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> SetRatingStatus(int id, [FromBody] bool isOpen)
         {
-            var success = await _defenses.SetRatingOpenAsync(id, isOpen);
-            return success ? Ok() : NotFound();
+            try
+            {
+                var success = await _defenses.SetRatingOpenAsync(id, isOpen);
+                return success ? Ok() : NotFound();
+            }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        // PATCH /api/defenses/{id}/complete — marks the defense done, which opens rating.
+        // Defenses are also completed automatically once their scheduled end time passes.
+        [HttpPatch("{id:int}/complete")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> Complete(int id)
+        {
+            try { return Ok(await _defenses.CompleteDefenseAsync(id)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        // POST /api/defenses/auto-schedule/preview — proposes a conflict-free schedule; saves nothing
+        [HttpPost("auto-schedule/preview")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> AutoSchedulePreview(AutoScheduleRequestDto dto)
+        {
+            try { return Ok(await _autoScheduler.ProposeAsync(dto)); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        // POST /api/defenses/auto-schedule/confirm — saves the proposal the Admin reviewed
+        [HttpPost("auto-schedule/confirm")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> AutoScheduleConfirm(ConfirmAutoScheduleRequestDto dto)
+        {
+            try { return Ok(await _autoScheduler.ConfirmAsync(dto)); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         // Ratings
@@ -138,7 +173,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("{id:int}/finalize")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Finalize(int id)
         {
             var adminId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -152,20 +187,24 @@ namespace THESISMATESystem.Server.Controllers
             => Ok(await _defenses.GetCriteriaAsync(phase));
 
         [HttpPost("criteria")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateCriterion(CreateCriterionRequestDto dto)
-            => Ok(await _defenses.CreateCriterionAsync(dto));
+        {
+            try { return Ok(await _defenses.CreateCriterionAsync(dto)); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
 
         [HttpPut("criteria/{id:int}")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateCriterion(int id, UpdateCriterionRequestDto dto)
         {
             try { return Ok(await _defenses.UpdateCriterionAsync(id, dto)); }
             catch (KeyNotFoundException) { return NotFound(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpDelete("criteria/{id:int}")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteCriterion(int id)
         {
             var success = await _defenses.DeleteCriterionAsync(id);

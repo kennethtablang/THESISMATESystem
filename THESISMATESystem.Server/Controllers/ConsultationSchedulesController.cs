@@ -46,7 +46,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> Create([FromBody] CreateConsultationScheduleRequestDto dto)
         {
             var facultyICId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -55,7 +55,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPut("{id:int}")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateConsultationScheduleRequestDto dto)
         {
             var facultyICId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -65,7 +65,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/status")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateScheduleStatusRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -102,7 +102,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("requests/{requestId:int}/respond")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> Respond(int requestId, [FromBody] RespondToConsultationRequestDto dto)
         {
             var facultyICId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

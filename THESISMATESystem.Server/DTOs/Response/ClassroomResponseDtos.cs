@@ -10,6 +10,10 @@ namespace THESISMATESystem.Server.DTOs.Response
         public DateTime CreatedAt { get; set; }
         public UserSummaryDto FacultyIC { get; set; } = null!;
         public int EnrollmentCount { get; set; }
+        public int? SectionId { get; set; }
+        public string? SectionName { get; set; }
+        // Student-facing listing only: whether the caller is already enrolled.
+        public bool? IsEnrolled { get; set; }
     }
 
     public class ClassroomEnrollmentResponseDto

@@ -161,7 +161,8 @@ export default function GroupDetail() {
   const [deadlineError,      setDeadlineError]      = useState('')
   const [deletingDeadlineId, setDeletingDeadlineId] = useState(null)
 
-  const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
+  // Group changes are the Admin's; the SuperAdmin only views.
+  const isAdmin = user?.role === 'Admin'
   // The API lets only Admins and the group's own adviser manage deadlines; panelists and
   // classroom FICs are Faculty too but got a 403 from these buttons.
   const canManageDeadlines = isAdmin || (user?.role === 'Faculty' && group?.adviser?.id === user?.id)
@@ -759,8 +760,36 @@ export default function GroupDetail() {
             </div>
           </div>
 
-          {/* Quick links — 1 col */}
+          {/* Panel + quick links — 1 col */}
           <div>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>
+              Panel <span className="ml-1 text-xs font-normal" style={{ color: 'var(--text-muted)' }}>({group.panelMembers?.length ?? 0})</span>
+            </h3>
+            <div className="rounded-2xl overflow-hidden mb-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+              {(group.panelMembers?.length ?? 0) === 0 ? (
+                <p className="px-4 py-5 text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+                  No panel assigned{isAdmin ? ' — set one with the edit button in the group list.' : '.'}
+                </p>
+              ) : group.panelMembers.map((p, idx) => (
+                <div key={p.id} className="flex items-center gap-2.5 px-4 py-2.5"
+                  style={{ borderBottom: idx < group.panelMembers.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
+                    style={{ background: 'rgba(124,58,237,0.1)', color: '#7c3aed' }}>
+                    {p.fullName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{p.fullName}</p>
+                    <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{p.email}</p>
+                  </div>
+                  {p.isChair && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: 'rgba(201,168,76,0.12)', color: '#b8913a' }}>
+                      Chair
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
             <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>Quick Links</h3>
             <div className="space-y-2">
               <QuickLink icon={Upload}      label="Documents"       desc="Upload & manage manuscript documents" color="#6366f1" onClick={() => navigate('/documents')} />

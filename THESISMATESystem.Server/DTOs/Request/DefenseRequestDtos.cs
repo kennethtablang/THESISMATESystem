@@ -26,8 +26,9 @@ namespace THESISMATESystem.Server.DTOs.Request
     {
         [Required] public int DefenseScheduleId { get; set; }
         [Required] public int DefenseCriterionId { get; set; }
-        [Required, Range(0, 100)] public decimal Score { get; set; }
-        public string? Comments { get; set; }
+        [Required, Range(0, 100, ErrorMessage = "Score must be between 0 and 100.")]
+        public decimal Score { get; set; }
+        [MaxLength(2000)] public string? Comments { get; set; }
     }
 
     public class CreateCriterionRequestDto

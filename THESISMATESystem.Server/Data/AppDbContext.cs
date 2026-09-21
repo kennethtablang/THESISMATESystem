@@ -35,10 +35,72 @@ namespace THESISMATESystem.Server.Data
         public DbSet<ManuscriptFinalizationVote> ManuscriptFinalizationVotes => Set<ManuscriptFinalizationVote>();
         public DbSet<ManuscriptSnapshot> ManuscriptSnapshots => Set<ManuscriptSnapshot>();
         public DbSet<ManuscriptSectionComment> ManuscriptSectionComments => Set<ManuscriptSectionComment>();
+        public DbSet<Section> Sections => Set<Section>();
+        public DbSet<SectionRosterEntry> SectionRosterEntries => Set<SectionRosterEntry>();
+        public DbSet<GroupPanelMember> GroupPanelMembers => Set<GroupPanelMember>();
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
+
+            // Student ID is the school-issued identifier: one account per ID. Filtered because
+            // staff accounts have none.
+            builder.Entity<ApplicationUser>()
+                .Property(u => u.StudentId)
+                .HasMaxLength(50);
+
+            builder.Entity<ApplicationUser>()
+                .HasIndex(u => u.StudentId)
+                .IsUnique()
+                .HasFilter("[StudentId] IS NOT NULL");
+
+            builder.Entity<ApplicationUser>()
+                .HasOne(u => u.Section)
+                .WithMany(s => s.Students)
+                .HasForeignKey(u => u.SectionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<Section>(e =>
+            {
+                e.Property(s => s.Name).HasMaxLength(100);
+                e.Property(s => s.AcademicYear).HasMaxLength(20);
+                e.HasIndex(s => new { s.Name, s.AcademicYear }).IsUnique();
+            });
+
+            builder.Entity<SectionRosterEntry>(e =>
+            {
+                e.Property(r => r.StudentNumber).HasMaxLength(50);
+                e.Property(r => r.FullName).HasMaxLength(200);
+                e.HasIndex(r => r.StudentNumber).IsUnique();
+            });
+
+            builder.Entity<SectionRosterEntry>()
+                .HasOne(r => r.Section)
+                .WithMany(s => s.Roster)
+                .HasForeignKey(r => r.SectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<Classroom>()
+                .HasOne(c => c.Section)
+                .WithMany(s => s.Classrooms)
+                .HasForeignKey(c => c.SectionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<GroupPanelMember>()
+                .HasIndex(p => new { p.CapstoneGroupId, p.PanelistId })
+                .IsUnique();
+
+            builder.Entity<GroupPanelMember>()
+                .HasOne(p => p.CapstoneGroup)
+                .WithMany(g => g.PanelMembers)
+                .HasForeignKey(p => p.CapstoneGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<GroupPanelMember>()
+                .HasOne(p => p.Panelist)
+                .WithMany()
+                .HasForeignKey(p => p.PanelistId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             builder.Entity<CapstoneGroup>()
                 .HasOne(g => g.Adviser)

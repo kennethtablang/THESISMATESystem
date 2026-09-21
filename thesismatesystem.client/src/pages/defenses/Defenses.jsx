@@ -10,7 +10,7 @@ import { PageLoader } from '../../components/ui/Spinner'
 import {
   Calendar, Clock, MapPin, Users, Plus, Star, Lock, Unlock,
   ToggleRight, Pencil, Scale, Trash2,
-  AlertCircle,
+  AlertCircle, CheckCircle2,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 
@@ -117,7 +117,9 @@ export default function Defenses() {
   // Criteria summary (editing lives in Rubric Manager, which is phase-aware)
   const [criteriaList, setCriteriaList] = useState([])
 
-  const isAdmin   = ['Admin', 'SuperAdmin'].includes(user?.role)
+  // Scheduling and rating control are the Admin's; the SuperAdmin sees every defense read-only.
+  const isAdmin   = user?.role === 'Admin'
+  const seesAll   = ['Admin', 'SuperAdmin'].includes(user?.role)
   const isFaculty = user?.role === 'Faculty'
 
   // ── Load ──────────────────────────────────────────────────────────────────
@@ -125,7 +127,7 @@ export default function Defenses() {
     async function load() {
       try {
         let defs = []
-        if (isAdmin) {
+        if (seesAll) {
           defs = await defenseService.list()
         } else if (isFaculty) {
           const [panelDefs, grps] = await Promise.all([
@@ -166,7 +168,7 @@ export default function Defenses() {
       }
     }
     load()
-  }, [isAdmin, isFaculty, user?.role])
+  }, [isAdmin, seesAll, isFaculty, user?.role])
 
   // ── Filtered view ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -277,7 +279,24 @@ export default function Defenses() {
     }
   }
 
-  // ── Rating toggle ─────────────────────────────────────────────────────────
+  // ── Complete (opens rating) ───────────────────────────────────────────────
+  // Defenses also complete on their own once the scheduled end time passes.
+  async function completeDefense(defense, e) {
+    e?.stopPropagation()
+    setTogglingId(defense.id)
+    try {
+      const updated = await defenseService.complete(defense.id)
+      setDefenses(prev => prev.map(d => d.id === defense.id ? { ...d, ...updated } : d))
+      if (selected?.id === defense.id) setSelected(s => ({ ...s, ...updated }))
+      toast.success('Defense marked completed. The rating form is now open to the panel.')
+    } catch (err) {
+      toast.error(err?.message || 'Failed to complete the defense.')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  // ── Rating toggle (completed defenses only) ───────────────────────────────
   async function toggleRating(defense, e) {
     e.stopPropagation()
     setTogglingId(defense.id)
@@ -439,6 +458,7 @@ export default function Defenses() {
                       toggling={togglingId === d.id}
                       onView={() => setSelected(d)}
                       onToggleRating={e => toggleRating(d, e)}
+                      onComplete={e => completeDefense(d, e)}
                       onRate={() => navigate('/ratings')}
                       onEdit={e => openEdit(d, e)}
                       onCancel={e => { e.stopPropagation(); setCancelTarget(d) }}
@@ -464,6 +484,7 @@ export default function Defenses() {
                       toggling={togglingId === d.id}
                       onView={() => setSelected(d)}
                       onToggleRating={e => toggleRating(d, e)}
+                      onComplete={e => completeDefense(d, e)}
                       onRate={() => navigate('/ratings')}
                       onEdit={e => openEdit(d, e)}
                       onCancel={null}
@@ -533,10 +554,23 @@ export default function Defenses() {
                   ? <Unlock size={14} style={{ color: '#16a34a' }} />
                   : <Lock   size={14} style={{ color: '#dc2626' }} />}
                 <span className="text-sm font-medium" style={{ color: selected.isRatingOpen ? '#16a34a' : '#dc2626' }}>
-                  {selected.isRatingOpen ? 'Rating open — panelists can submit grades' : 'Rating locked — grades are immutable'}
+                  {selected.isRatingOpen
+                    ? 'Rating open — panelists can submit grades'
+                    : selected.status === 'Completed'
+                      ? 'Rating locked — grades are immutable'
+                      : 'Rating opens automatically once the defense is completed'}
                 </span>
               </div>
               {isAdmin && (selected.status === 'Scheduled' || selected.status === 'Rescheduled') && (
+                <button
+                  onClick={e => completeDefense(selected, e)}
+                  disabled={togglingId === selected.id}
+                  className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                  style={{ background: 'rgba(22,163,74,0.08)', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+                  <CheckCircle2 size={11} /> Mark completed
+                </button>
+              )}
+              {isAdmin && selected.status === 'Completed' && (
                 <button
                   onClick={e => toggleRating(selected, e)}
                   disabled={togglingId === selected.id}
@@ -612,7 +646,11 @@ export default function Defenses() {
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group *</label>
             <select className="form-input" value={form.groupId}
-              onChange={e => setForm(f => ({ ...f, groupId: e.target.value }))}>
+              onChange={e => {
+                // Default to the panel set when the group was created.
+                const g = groups.find(x => String(x.id) === e.target.value)
+                setForm(f => ({ ...f, groupId: e.target.value, panelistIds: (g?.panelMembers ?? []).map(p => p.id) }))
+              }}>
               <option value="">Select a capstone group</option>
               {groups.map(g => (
                 <option key={g.id} value={g.id}>{g.groupName}</option>
@@ -649,7 +687,7 @@ export default function Defenses() {
           {panelUsers.length > 0 && (
             <div>
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
-                Panelists
+                Panelists <span className="text-xs font-normal" style={{ color: 'var(--text-muted)' }}>(defaults to the group's panel)</span>
                 {form.panelistIds.length > 0 && (
                   <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded-md"
                     style={{ background: PHASES[form.phase]?.bg, color: PHASES[form.phase]?.color }}>
@@ -784,8 +822,9 @@ export default function Defenses() {
 }
 
 // ── DefenseCard ───────────────────────────────────────────────────────────────
-function DefenseCard({ defense, isFaculty, isAdmin, toggling, onView, onToggleRating, onRate, onEdit, onCancel }) {
+function DefenseCard({ defense, isFaculty, isAdmin, toggling, onView, onToggleRating, onComplete, onRate, onEdit, onCancel }) {
   const isActive    = defense.status === 'Scheduled' || defense.status === 'Rescheduled'
+  const isCompleted = defense.status === 'Completed'
   const isCancelled = defense.status === 'Cancelled'
   const p = PHASES[defense.phase]
 
@@ -826,7 +865,7 @@ function DefenseCard({ defense, isFaculty, isAdmin, toggling, onView, onToggleRa
               <p className="font-semibold" style={{ color: 'var(--text-heading)' }}>{defense.groupName}</p>
               {p && <PhaseTag phase={defense.phase} />}
               <Badge variant={statusVariant(defense.status)} size="sm">{defense.status}</Badge>
-              {isActive && (
+              {(isActive || isCompleted) && (
                 defense.isRatingOpen
                   ? <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
                       style={{ background: 'rgba(22,163,74,0.1)', color: '#16a34a' }}>
@@ -874,25 +913,36 @@ function DefenseCard({ defense, isFaculty, isAdmin, toggling, onView, onToggleRa
               </button>
               <button
                 className="text-xs px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5"
-                style={{
-                  background: defense.isRatingOpen ? 'rgba(239,68,68,0.08)' : 'rgba(22,163,74,0.08)',
-                  color:      defense.isRatingOpen ? '#dc2626' : '#16a34a',
-                  border: `1px solid ${defense.isRatingOpen ? '#fecaca' : '#bbf7d0'}`,
-                  opacity: toggling ? 0.5 : 1,
-                }}
-                onClick={onToggleRating}
-                disabled={toggling}>
-                {defense.isRatingOpen ? <><Lock size={12} /> Lock</> : <><Unlock size={12} /> Open Rating</>}
+                style={{ background: 'rgba(22,163,74,0.08)', color: '#16a34a', border: '1px solid #bbf7d0', opacity: toggling ? 0.5 : 1 }}
+                onClick={onComplete}
+                disabled={toggling}
+                title="Marks the defense done and opens the rating form">
+                <CheckCircle2 size={12} /> Mark Completed
               </button>
             </>
           )}
+          {isAdmin && isCompleted && (
+            <button
+              className="text-xs px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5"
+              style={{
+                background: defense.isRatingOpen ? 'rgba(239,68,68,0.08)' : 'rgba(22,163,74,0.08)',
+                color:      defense.isRatingOpen ? '#dc2626' : '#16a34a',
+                border: `1px solid ${defense.isRatingOpen ? '#fecaca' : '#bbf7d0'}`,
+                opacity: toggling ? 0.5 : 1,
+              }}
+              onClick={onToggleRating}
+              disabled={toggling}>
+              {defense.isRatingOpen ? <><Lock size={12} /> Lock Rating</> : <><Unlock size={12} /> Reopen Rating</>}
+            </button>
+          )}
           {isFaculty && isActive && (
-            defense.isRatingOpen
-              ? <button className="btn-primary text-xs px-3 py-1.5"
-                  onClick={e => { e.stopPropagation(); onRate() }}>
-                  <Star size={13} /> Rate
-                </button>
-              : <span className="text-xs italic" style={{ color: 'var(--text-muted)' }}>Rating locked</span>
+            <span className="text-xs italic" style={{ color: 'var(--text-muted)' }}>Rating opens after the defense</span>
+          )}
+          {isFaculty && isCompleted && defense.isRatingOpen && (
+            <button className="btn-primary text-xs px-3 py-1.5"
+              onClick={e => { e.stopPropagation(); onRate() }}>
+              <Star size={13} /> Rate
+            </button>
           )}
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { classroomService, authService } from '../../services/api'
+import { classroomService, authService, sectionService } from '../../services/api'
+import { useAuth } from '../../contexts/AuthContext'
 import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import { PageLoader } from '../../components/ui/Spinner'
@@ -64,6 +65,9 @@ function EnrollmentRow({ e }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ClassroomAdmin() {
+  // Only the Admin creates classrooms and invites students; the SuperAdmin sees them read-only.
+  const { user } = useAuth()
+  const canManage = user?.role === 'Admin'
   const [classrooms,   setClassrooms]   = useState([])
   const [selected,     setSelected]     = useState(null)
   const [enrollments,  setEnrollments]  = useState([])
@@ -73,7 +77,10 @@ export default function ClassroomAdmin() {
 
   // Create classroom
   const [showCreate,   setShowCreate]   = useState(false)
-  const [createForm,   setCreateForm]   = useState({ className: '', academicYear: '' })
+  const EMPTY_FORM = { className: '', academicYear: '', sectionId: '', facultyId: '' }
+  const [createForm,   setCreateForm]   = useState(EMPTY_FORM)
+  const [sections,     setSections]     = useState([])
+  const [faculty,      setFaculty]      = useState([])
   const [creating,     setCreating]     = useState(false)
   const [createError,  setCreateError]  = useState('')
 
@@ -101,6 +108,16 @@ export default function ClassroomAdmin() {
         const list = Array.isArray(data) ? data : []
         setClassrooms(list)
         if (list.length > 0) selectClassroom(list[0])
+        if (canManage) {
+          const [secs, users] = await Promise.all([
+            sectionService.list().catch(() => []),
+            authService.allUsers().catch(() => []),
+          ])
+          setSections((Array.isArray(secs) ? secs : []).filter(sec => sec.isActive))
+          const all = Array.isArray(users) ? users : []
+          setFaculty(all.filter(u => u.role === 'Faculty' && u.isActive))
+          setAllStudents(all.filter(u => u.role === 'Student' && u.isActive))
+        }
       } catch (err) {
         setLoadError(err.message || 'Failed to load classrooms.')
       } finally {
@@ -128,15 +145,15 @@ export default function ClassroomAdmin() {
 
   async function handleCreate(e) {
     e.preventDefault()
-    if (!createForm.className.trim() || !createForm.academicYear.trim()) {
-      setCreateError('Both fields are required.'); return
+    if (!createForm.className.trim() || !createForm.academicYear.trim() || !createForm.sectionId || !createForm.facultyId) {
+      setCreateError('All fields are required.'); return
     }
     setCreating(true); setCreateError('')
     try {
-      const cls = await classroomService.create(createForm)
+      const cls = await classroomService.create({ ...createForm, sectionId: Number(createForm.sectionId) })
       setClassrooms(prev => [cls, ...prev])
       setShowCreate(false)
-      setCreateForm({ className: '', academicYear: '' })
+      setCreateForm(EMPTY_FORM)
       selectClassroom(cls)
       toast.success('Classroom created.')
     } catch (err) {
@@ -161,16 +178,25 @@ export default function ClassroomAdmin() {
     }
   }
 
+  function openCreate() {
+    setCreateError('')
+    // Default the academic year from the first section so the common case is one click less.
+    setCreateForm({ ...EMPTY_FORM, academicYear: sections[0]?.academicYear ?? '' })
+    setShowCreate(true)
+  }
+
   const enrolledIds = useMemo(() => new Set(enrollments.map(e => e.student?.id)), [enrollments])
 
   const uninvited = useMemo(() => {
     const q = inviteSearch.trim().toLowerCase()
+    // A class is offered to one section, so only that section's students can be invited.
     return allStudents.filter(s =>
       !enrolledIds.has(s.id) &&
+      (!selected?.sectionId || s.sectionId === selected.sectionId) &&
       (q === '' || s.fullName?.toLowerCase().includes(q) || s.email?.toLowerCase().includes(q) ||
         s.studentId?.toLowerCase().includes(q))
     )
-  }, [allStudents, enrolledIds, inviteSearch])
+  }, [allStudents, enrolledIds, inviteSearch, selected])
 
   async function handleInvite(student) {
     setInviting(student.id)
@@ -222,12 +248,14 @@ export default function ClassroomAdmin() {
         <aside className="flex-shrink-0 flex flex-col"
           style={{ width: 280, borderRight: '1px solid var(--border-light)', background: 'var(--bg-page)' }}>
 
-          <div className="p-3 border-b" style={{ borderColor: 'var(--border-light)' }}>
-            <button className="btn-primary w-full text-sm flex items-center justify-center gap-2"
-              onClick={() => { setShowCreate(true); setCreateError('') }}>
-              <Plus size={14} /> New Classroom
-            </button>
-          </div>
+          {canManage && (
+            <div className="p-3 border-b" style={{ borderColor: 'var(--border-light)' }}>
+              <button className="btn-primary w-full text-sm flex items-center justify-center gap-2"
+                onClick={openCreate}>
+                <Plus size={14} /> New Classroom
+              </button>
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto p-2">
             {classrooms.length === 0 ? (
@@ -258,7 +286,9 @@ export default function ClassroomAdmin() {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{cls.academicYear} · {cls.enrollmentCount} enrolled</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {cls.sectionName ?? 'No section'} · {cls.academicYear} · {cls.enrollmentCount} enrolled
+                  </p>
                 </button>
               )
             })}
@@ -282,18 +312,18 @@ export default function ClassroomAdmin() {
                   <div>
                     <h2 className="text-xl font-bold" style={{ color: 'var(--text-heading)' }}>{selected.className}</h2>
                     <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      {selected.academicYear} · FIC: {selected.facultyIC?.fullName}
+                      {selected.sectionName ?? 'No section'} · {selected.academicYear} · Teacher: {selected.facultyIC?.fullName}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <CopyBtn text={selected.joinCode} />
-                    <button
+                    {canManage && <button
                       className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
                       style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)', border: '1px solid var(--border-main)' }}
                       onClick={openInvite}
                     >
                       <UserPlus size={12} /> Invite Students
-                    </button>
+                    </button>}
                   </div>
                 </div>
 
@@ -341,7 +371,7 @@ export default function ClassroomAdmin() {
                     <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                       {enrollments.length === 0 ? 'No students enrolled yet. Use the Invite button or share the join code.' : 'No students match your search.'}
                     </p>
-                    {enrollments.length === 0 && (
+                    {enrollments.length === 0 && canManage && (
                       <button className="btn-primary mt-3 text-sm" onClick={openInvite}>
                         <UserPlus size={13} /> Invite Students
                       </button>
@@ -358,7 +388,8 @@ export default function ClassroomAdmin() {
               </div>
 
               <p className="text-xs mt-4" style={{ color: 'var(--text-muted)' }}>
-                Share the join code <strong>{selected.joinCode}</strong> with students, or send direct invitations above.
+                Students of <strong>{selected.sectionName ?? 'this section'}</strong> can enroll from their "My Class" page or with the join code <strong>{selected.joinCode}</strong>.
+                Students from other sections cannot join.
                 Only <strong>Active</strong> students appear in the Add Student list when managing groups.
               </p>
             </div>
@@ -396,8 +427,27 @@ export default function ClassroomAdmin() {
               value={createForm.academicYear}
               onChange={e => setCreateForm(f => ({ ...f, academicYear: e.target.value }))} />
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Block / Section *</label>
+            <select className="form-input" value={createForm.sectionId}
+              onChange={e => {
+                const sec = sections.find(x => String(x.id) === e.target.value)
+                setCreateForm(f => ({ ...f, sectionId: e.target.value, academicYear: f.academicYear || sec?.academicYear || '' }))
+              }}>
+              <option value="">{sections.length === 0 ? 'No active sections — create one first' : 'Select a section'}</option>
+              {sections.map(sec => <option key={sec.id} value={sec.id}>{sec.name} · {sec.academicYear}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Subject Teacher *</label>
+            <select className="form-input" value={createForm.facultyId}
+              onChange={e => setCreateForm(f => ({ ...f, facultyId: e.target.value }))}>
+              <option value="">Select a faculty member</option>
+              {faculty.map(f => <option key={f.id} value={f.id}>{f.fullName}</option>)}
+            </select>
+          </div>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            A unique join code will be auto-generated. Students can join via code or by accepting an invitation.
+            Only students of the selected section will see this class and be able to join it. A join code is generated automatically.
           </p>
         </div>
       </Modal>

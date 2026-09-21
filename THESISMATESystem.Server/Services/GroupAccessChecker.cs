@@ -39,6 +39,9 @@ namespace THESISMATESystem.Server.Services
                 return g =>
                     // Adviser assignment
                     g.AdviserId == userId
+                    // Standing panel set when the group was created
+                    || _db.GroupPanelMembers.Any(p =>
+                        p.CapstoneGroupId == g.Id && p.PanelistId == userId)
                     // Panel assignment via defense schedule
                     || _db.PanelAssignments.Any(pa =>
                         pa.PanelistId == userId &&

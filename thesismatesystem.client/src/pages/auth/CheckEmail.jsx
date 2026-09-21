@@ -42,8 +42,19 @@ export default function CheckEmail() {
           </p>
 
           <p className="text-sm mb-8" style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-            Click the <strong style={{ color: 'var(--text-primary)' }}>Verify Email Address</strong> button in the email to activate your account. The link expires in 24 hours.
+            Click the <strong style={{ color: 'var(--text-primary)' }}>Verify Email Address</strong> button in the email. The link expires in 24 hours.
           </p>
+
+          <div
+            className="rounded-xl p-4 mb-4 text-left"
+            style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.25)' }}
+          >
+            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Then wait for approval</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)', lineHeight: '1.5' }}>
+              An administrator checks your Student ID against your section's class list before you can sign in.
+              You will get an email when it is approved. Registrations not approved within 3 days are removed.
+            </p>
+          </div>
 
           <div
             className="rounded-xl p-4 mb-6 text-left"

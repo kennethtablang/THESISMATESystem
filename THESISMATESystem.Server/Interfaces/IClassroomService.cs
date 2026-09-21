@@ -5,18 +5,21 @@ namespace THESISMATESystem.Server.Interfaces
 {
     public interface IClassroomService
     {
-        Task<ClassroomResponseDto> CreateClassroomAsync(string facultyICId, CreateClassroomRequestDto dto);
+        Task<ClassroomResponseDto> CreateClassroomAsync(CreateClassroomRequestDto dto);
         Task<ClassroomResponseDto?> GetMyClassroomAsync(string facultyICId);
         Task<IEnumerable<ClassroomResponseDto>> GetMyClassroomsAsync(string facultyICId);
         Task<ClassroomResponseDto?> JoinClassroomAsync(string studentId, JoinClassroomRequestDto dto);
         Task<ClassroomResponseDto?> GetStudentClassroomAsync(string studentId);
+        // Classes offered to the student's own section.
+        Task<IEnumerable<ClassroomResponseDto>> GetAvailableClassroomsAsync(string studentId);
+        Task<ClassroomResponseDto> EnrollAsync(string studentId, int classroomId);
         Task<IEnumerable<ClassroomEnrollmentResponseDto>> GetEnrollmentsAsync(int classroomId, string callerId, string callerRole);
         Task<AnnouncementResponseDto> PostAnnouncementAsync(int classroomId, string postedById, string callerRole, PostAnnouncementRequestDto dto);
         Task<IEnumerable<AnnouncementResponseDto>> GetAnnouncementsAsync(int classroomId, string callerId, string callerRole, int? groupId = null);
         Task<IEnumerable<AnnouncementResponseDto>> GetStudentAnnouncementsAsync(string studentId);
         Task AssignStudentsToGroupAsync(string callerId, string callerRole, AssignStudentsToGroupRequestDto dto);
         Task RegenerateJoinCodeAsync(int classroomId, string facultyICId);
-        Task<CapstoneGroupResponseDto> CreateGroupInClassroomAsync(int classroomId, string callerId, string callerRole, CreateGroupInClassroomRequestDto dto);
+        Task<CapstoneGroupResponseDto> CreateGroupInClassroomAsync(int classroomId, CreateGroupInClassroomRequestDto dto);
         Task<IEnumerable<ClassroomResponseDto>> GetAllClassroomsAsync();
         Task InviteStudentsAsync(int classroomId, InviteStudentsRequestDto dto);
         Task AcceptInvitationAsync(int enrollmentId, string studentId);

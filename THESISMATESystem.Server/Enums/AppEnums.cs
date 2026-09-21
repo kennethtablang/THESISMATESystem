@@ -31,6 +31,11 @@ namespace THESISMATESystem.Server.Enums
 
     public enum EnrollmentStatus { Active, Invited }
 
+    // A self-registered student stays PendingApproval, unable to sign in, until an Admin checks
+    // them against their section's class list. Accounts created by the SuperAdmin start Approved.
+    // Rejected and expired registrations are deleted rather than kept in a third state.
+    public enum RegistrationStatus { Approved, PendingApproval }
+
     public enum NotificationType
     {
         ChapterSubmitted,
@@ -53,6 +58,8 @@ namespace THESISMATESystem.Server.Enums
         DeadlinePosted,
         SystemFeatureCommented,
         SystemFeatureStatusUpdated,
+        PanelAssigned,
+        RatingOpened,
     }
 
     public enum DefensePhase

@@ -21,7 +21,16 @@ namespace THESISMATESystem.Server.DTOs.Response
         public bool RequiresReDefense { get; set; }
         public UserSummaryDto Adviser { get; set; } = null!;
         public List<UserSummaryDto> Members { get; set; } = [];
+        public List<PanelMemberDto> PanelMembers { get; set; } = [];
         public MilestoneProgressDto? MilestoneProgress { get; set; }
+    }
+
+    public class PanelMemberDto
+    {
+        public string Id { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public bool IsChair { get; set; }
     }
 
     public class UserSummaryDto
@@ -30,6 +39,7 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string FullName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string? StudentId { get; set; }
+        public int? SectionId { get; set; }
 
         // Set only by the student-picker endpoints: the active group this student already
         // belongs to, so the UI can show them as unavailable. Null everywhere else.

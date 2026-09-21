@@ -104,7 +104,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("group/{groupId:int}/comments/{sectionKey}")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> AddComment(int groupId, string sectionKey, [FromBody] AddManuscriptCommentRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -146,7 +146,7 @@ namespace THESISMATESystem.Server.Controllers
         // ── Revision management ───────────────────────────────
 
         [HttpPost("group/{groupId:int}/open-revision")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> OpenRevision(int groupId)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

@@ -19,6 +19,7 @@ namespace THESISMATESystem.Server.Services
         private readonly INotificationService _notifications;
         private readonly IEmailService _email;
         private readonly ILogger<GroupService> _logger;
+        private readonly IGroupAccessChecker _groupAccess;
 
         public GroupService(
             AppDbContext db,
@@ -26,8 +27,10 @@ namespace THESISMATESystem.Server.Services
             IWebHostEnvironment env,
             INotificationService notifications,
             IEmailService email,
-            ILogger<GroupService> logger)
+            ILogger<GroupService> logger,
+            IGroupAccessChecker groupAccess)
         {
+            _groupAccess = groupAccess;
             _db = db;
             _mapper = mapper;
             _env = env;
@@ -38,46 +41,113 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<CapstoneGroupResponseDto> CreateGroupAsync(CreateGroupRequestDto dto)
         {
-            // Checked before the group is persisted: rejecting members afterwards would leave an
-            // empty group behind for a request that failed. -1 excludes nothing (no id yet).
+            // Everything is validated before anything is written, and the group, its members and
+            // its panel are saved in one SaveChanges so a rejected request leaves nothing behind.
             var memberIds = dto.MemberIds.Distinct().ToList();
             await EnsureNotInAnotherActiveGroupAsync(memberIds, excludingGroupId: -1);
+            await EnsureMembersShareSectionAsync(memberIds);
+            await EnsureIsFacultyAsync([dto.AdviserId], "The adviser must be a Faculty member.");
+            var panel = await BuildPanelAsync(dto.PanelistIds, dto.PanelChairId, dto.AdviserId);
 
             var group = new CapstoneGroup
             {
-                GroupName = dto.GroupName,
+                GroupName = dto.GroupName.Trim(),
                 AdviserId = dto.AdviserId,
-                AcademicYear = dto.AcademicYear
+                AcademicYear = dto.AcademicYear.Trim(),
             };
+            foreach (var uid in memberIds) group.Members.Add(new GroupMember { UserId = uid });
+            foreach (var p in panel) group.PanelMembers.Add(p);
 
             _db.CapstoneGroups.Add(group);
             await _db.SaveChangesAsync();
 
-            if (memberIds.Count > 0)
-            {
-                var members = memberIds.Select(uid => new GroupMember
-                {
-                    CapstoneGroupId = group.Id,
-                    UserId = uid
-                });
-                _db.GroupMembers.AddRange(members);
-                await _db.SaveChangesAsync();
-            }
+            await NotifyPanelAsync(group, panel.Select(p => p.PanelistId));
 
             return await GetGroupByIdAsync(group.Id)
                 ?? throw new InvalidOperationException("Failed to load created group.");
         }
 
-        public async Task<CapstoneGroupResponseDto?> GetGroupByIdAsync(int id)
+        /// <summary>
+        /// Validates a panel and returns it as unsaved rows. Panelists must be Faculty, distinct,
+        /// and must not include the group's own adviser. The chair defaults to the first panelist.
+        /// </summary>
+        private async Task<List<GroupPanelMember>> BuildPanelAsync(IEnumerable<string> panelistIds, string? chairId, string adviserId)
         {
-            var group = await _db.CapstoneGroups
+            var ids = panelistIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+            if (ids.Count == 0)
+                throw new InvalidOperationException("Select at least one panel member.");
+            if (ids.Contains(adviserId))
+                throw new InvalidOperationException("The group's adviser cannot also sit on its panel.");
+
+            await EnsureIsFacultyAsync(ids, "Panel members must be Faculty.");
+
+            var chair = string.IsNullOrWhiteSpace(chairId) ? ids[0] : chairId;
+            if (!ids.Contains(chair))
+                throw new InvalidOperationException("The panel chair must be one of the selected panel members.");
+
+            return ids.Select(id => new GroupPanelMember { PanelistId = id, IsChair = id == chair }).ToList();
+        }
+
+        private async Task EnsureIsFacultyAsync(IReadOnlyCollection<string> userIds, string message)
+        {
+            var facultyCount = await _db.Users
+                .Where(u => userIds.Contains(u.Id) && u.IsActive)
+                .Where(u => _db.UserRoles.Any(ur => ur.UserId == u.Id
+                    && _db.Roles.Any(r => r.Id == ur.RoleId && r.Name == "Faculty")))
+                .CountAsync();
+            if (facultyCount != userIds.Distinct().Count())
+                throw new InvalidOperationException(message);
+        }
+
+        // A group is formed within one block/section, so its members must all belong to the same one.
+        private async Task EnsureMembersShareSectionAsync(IReadOnlyCollection<string> memberIds)
+        {
+            if (memberIds.Count == 0) return;
+
+            var sections = await _db.Users
+                .Where(u => memberIds.Contains(u.Id))
+                .Select(u => new { u.FirstName, u.LastName, u.SectionId })
+                .ToListAsync();
+
+            var unassigned = sections.Where(m => m.SectionId == null).Select(m => $"{m.FirstName} {m.LastName}".Trim()).ToList();
+            if (unassigned.Count > 0)
+                throw new InvalidOperationException(
+                    $"{string.Join(", ", unassigned)} {(unassigned.Count == 1 ? "has" : "have")} no block/section yet. Assign one on the Sections page first.");
+
+            if (sections.Select(m => m.SectionId).Distinct().Count() > 1)
+                throw new InvalidOperationException("All members of a group must belong to the same block/section.");
+        }
+
+        private async Task NotifyPanelAsync(CapstoneGroup group, IEnumerable<string> panelistIds)
+        {
+            // Best-effort: the group is already saved.
+            try
+            {
+                foreach (var id in panelistIds)
+                    await _notifications.SendAsync(id,
+                        $"You have been assigned to the panel of {group.GroupName}. You can now monitor its progress.",
+                        NotificationType.PanelAssigned, groupId: group.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to notify panel of group {GroupId}", group.Id);
+            }
+        }
+
+        private IQueryable<CapstoneGroup> GroupQuery() =>
+            _db.CapstoneGroups
                 .Include(g => g.Adviser)
                 .Include(g => g.Members).ThenInclude(m => m.User)
+                .Include(g => g.PanelMembers).ThenInclude(p => p.Panelist)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)
-                // Three collection includes in one query multiply out: a group with 4 members,
+                // The collection includes multiply out in one query: a group with 4 members,
                 // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
-                .AsSplitQuery()
+                .AsSplitQuery();
+
+        public async Task<CapstoneGroupResponseDto?> GetGroupByIdAsync(int id)
+        {
+            var group = await GroupQuery()
                 .FirstOrDefaultAsync(g => g.Id == id);
 
             if (group is null) return null;
@@ -90,14 +160,7 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<IEnumerable<CapstoneGroupResponseDto>> GetAllGroupsAsync(GroupStatus? status = null)
         {
-            var query = _db.CapstoneGroups
-                .Include(g => g.Adviser)
-                .Include(g => g.Members).ThenInclude(m => m.User)
-                .Include(g => g.ChapterSubmissions)
-                .Include(g => g.DefenseSchedules)
-                // Three collection includes in one query multiply out: a group with 4 members,
-                // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
-                .AsSplitQuery()
+            var query = GroupQuery()
                 .AsQueryable();
 
             if (status.HasValue)
@@ -115,14 +178,7 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<IEnumerable<CapstoneGroupResponseDto>> GetGroupsByAdviserAsync(string adviserId)
         {
-            var groups = await _db.CapstoneGroups
-                .Include(g => g.Adviser)
-                .Include(g => g.Members).ThenInclude(m => m.User)
-                .Include(g => g.ChapterSubmissions)
-                .Include(g => g.DefenseSchedules)
-                // Three collection includes in one query multiply out: a group with 4 members,
-                // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
-                .AsSplitQuery()
+            var groups = await GroupQuery()
                 .Where(g => g.AdviserId == adviserId)
                 .OrderByDescending(g => g.CreatedAt)
                 .ToListAsync();
@@ -141,6 +197,7 @@ namespace THESISMATESystem.Server.Services
             var membership = await _db.GroupMembers
                 .Include(gm => gm.CapstoneGroup).ThenInclude(g => g.Adviser)
                 .Include(gm => gm.CapstoneGroup).ThenInclude(g => g.Members).ThenInclude(m => m.User)
+                .Include(gm => gm.CapstoneGroup).ThenInclude(g => g.PanelMembers).ThenInclude(p => p.Panelist)
                 .Include(gm => gm.CapstoneGroup).ThenInclude(g => g.ChapterSubmissions)
                 .Include(gm => gm.CapstoneGroup).ThenInclude(g => g.DefenseSchedules)
                 .AsSplitQuery()
@@ -160,8 +217,26 @@ namespace THESISMATESystem.Server.Services
         {
             var group = await _db.CapstoneGroups
                 .Include(g => g.Members)
+                .Include(g => g.PanelMembers)
                 .FirstOrDefaultAsync(g => g.Id == id)
                 ?? throw new KeyNotFoundException($"Group {id} not found.");
+
+            if (dto.AdviserId is not null && dto.AdviserId != group.AdviserId)
+                await EnsureIsFacultyAsync([dto.AdviserId], "The adviser must be a Faculty member.");
+
+            var adviserId = dto.AdviserId ?? group.AdviserId;
+            List<GroupPanelMember>? newPanel = null;
+            if (dto.PanelistIds is not null)
+                newPanel = await BuildPanelAsync(dto.PanelistIds, dto.PanelChairId, adviserId);
+            else if (dto.AdviserId is not null && group.PanelMembers.Any(p => p.PanelistId == dto.AdviserId))
+                throw new InvalidOperationException("The new adviser is on this group's panel. Remove them from the panel first.");
+
+            if (dto.MemberIds is not null)
+            {
+                var ids = dto.MemberIds.Distinct().ToList();
+                await EnsureNotInAnotherActiveGroupAsync(ids, id);
+                await EnsureMembersShareSectionAsync(ids);
+            }
 
             if (dto.GroupName is not null) group.GroupName = dto.GroupName;
             if (dto.AdviserId is not null) group.AdviserId = dto.AdviserId;
@@ -179,7 +254,17 @@ namespace THESISMATESystem.Server.Services
                 _db.GroupMembers.AddRange(newMembers);
             }
 
+            var addedPanelists = new List<string>();
+            if (newPanel is not null)
+            {
+                var previous = group.PanelMembers.Select(p => p.PanelistId).ToHashSet();
+                addedPanelists = newPanel.Select(p => p.PanelistId).Where(pid => !previous.Contains(pid)).ToList();
+                _db.GroupPanelMembers.RemoveRange(group.PanelMembers);
+                foreach (var p in newPanel) { p.CapstoneGroupId = group.Id; _db.GroupPanelMembers.Add(p); }
+            }
+
             await _db.SaveChangesAsync();
+            if (addedPanelists.Count > 0) await NotifyPanelAsync(group, addedPanelists);
             return await GetGroupByIdAsync(id)
                 ?? throw new InvalidOperationException("Failed to reload group.");
         }
@@ -255,6 +340,13 @@ namespace THESISMATESystem.Server.Services
                 throw new InvalidOperationException("This student is already a member of this group.");
 
             await EnsureNotInAnotherActiveGroupAsync([userId], groupId);
+
+            var memberIds = await _db.GroupMembers
+                .Where(gm => gm.CapstoneGroupId == groupId)
+                .Select(gm => gm.UserId)
+                .ToListAsync();
+            memberIds.Add(userId);
+            await EnsureMembersShareSectionAsync(memberIds);
 
             _db.GroupMembers.Add(new GroupMember { CapstoneGroupId = groupId, UserId = userId });
             await _db.SaveChangesAsync();
@@ -344,21 +436,10 @@ namespace THESISMATESystem.Server.Services
 
         // ── Access guard ─────────────────────────────────────────────────────────
 
-        public async Task<bool> CanAccessGroupAsync(string userId, string role, int groupId)
-        {
-            if (role is "Admin" or "SuperAdmin") return true;
-
-            var group = await _db.CapstoneGroups
-                .Include(g => g.Members)
-                .FirstOrDefaultAsync(g => g.Id == groupId);
-
-            if (group is null) return false;
-
-            if (role == "Faculty")
-                return group.AdviserId == userId;
-
-            return group.Members.Any(m => m.UserId == userId);
-        }
+        // Delegates to the canonical rule so adviser, panel and Faculty-in-Charge access
+        // agree with every other group-scoped endpoint.
+        public Task<bool> CanAccessGroupAsync(string userId, string role, int groupId)
+            => _groupAccess.CanAccessGroupAsync(userId, role, groupId);
 
         // ── Group Deadlines ──────────────────────────────────────────────────────
 
@@ -560,21 +641,15 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<IEnumerable<CapstoneGroupResponseDto>> GetGroupsByPanelistAsync(string panelistId)
         {
-            var groupIds = await _db.PanelAssignments
-                .Include(pa => pa.DefenseSchedule)
-                .Where(pa => pa.PanelistId == panelistId)
-                .Select(pa => pa.DefenseSchedule.CapstoneGroupId)
-                .Distinct()
+            var groupIds = await _db.GroupPanelMembers
+                .Where(p => p.PanelistId == panelistId)
+                .Select(p => p.CapstoneGroupId)
+                .Union(_db.PanelAssignments
+                    .Where(pa => pa.PanelistId == panelistId)
+                    .Select(pa => pa.DefenseSchedule.CapstoneGroupId))
                 .ToListAsync();
 
-            var groups = await _db.CapstoneGroups
-                .Include(g => g.Adviser)
-                .Include(g => g.Members).ThenInclude(m => m.User)
-                .Include(g => g.ChapterSubmissions)
-                .Include(g => g.DefenseSchedules)
-                // Three collection includes in one query multiply out: a group with 4 members,
-                // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
-                .AsSplitQuery()
+            var groups = await GroupQuery()
                 .Where(g => groupIds.Contains(g.Id))
                 .OrderByDescending(g => g.CreatedAt)
                 .ToListAsync();
@@ -590,14 +665,7 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<CapstoneGroupResponseDto> SetDefenseOutcomeAsync(int groupId, SetGroupDefenseOutcomeRequestDto dto)
         {
-            var group = await _db.CapstoneGroups
-                .Include(g => g.Adviser)
-                .Include(g => g.Members).ThenInclude(m => m.User)
-                .Include(g => g.ChapterSubmissions)
-                .Include(g => g.DefenseSchedules)
-                // Three collection includes in one query multiply out: a group with 4 members,
-                // 20 chapters and 3 defenses returns 240 rows instead of 27. Split them.
-                .AsSplitQuery()
+            var group = await GroupQuery()
                 .FirstOrDefaultAsync(g => g.Id == groupId)
                 ?? throw new KeyNotFoundException("Group not found.");
 

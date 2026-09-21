@@ -44,6 +44,8 @@ namespace THESISMATESystem.Server
                 options.Password.RequireNonAlphanumeric = false;
                 options.Lockout.MaxFailedAccessAttempts = 5;
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+                // One account per email address.
+                options.User.RequireUniqueEmail = true;
             })
             .AddEntityFrameworkStores<AppDbContext>()
             .AddDefaultTokenProviders();
@@ -142,6 +144,10 @@ namespace THESISMATESystem.Server
             builder.Services.AddScoped<IManuscriptService, ManuscriptService>();
             builder.Services.AddScoped<IMonitoringService, MonitoringService>();
             builder.Services.AddScoped<IGroupAccessChecker, GroupAccessChecker>();
+            builder.Services.AddScoped<ISectionService, SectionService>();
+            builder.Services.AddScoped<IRegistrationService, RegistrationService>();
+            builder.Services.AddScoped<IDefenseAutoScheduler, DefenseAutoScheduler>();
+            builder.Services.AddHostedService<MaintenanceHostedService>();
 
             builder.Services.AddSignalR(options =>
             {

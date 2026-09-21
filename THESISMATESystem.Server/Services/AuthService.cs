@@ -11,6 +11,8 @@ using System.Text;
 using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
+using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 using THESISMATESystem.Server.Models;
 
@@ -86,6 +88,13 @@ namespace THESISMATESystem.Server.Services
                 throw new UnauthorizedAccessException("Invalid credentials.");
             }
 
+            // Checked after the password so the approval state is only revealed to the owner.
+            if (user.RegistrationStatus == RegistrationStatus.PendingApproval)
+            {
+                await WriteAuditAsync(user.Id, "Login", "User", dto.Email, success: false);
+                throw new UnauthorizedAccessException("Your registration is awaiting approval by the administrator. You will receive an email once it has been reviewed.");
+            }
+
             // 2FA check
             if (await _userManager.GetTwoFactorEnabledAsync(user))
             {
@@ -126,8 +135,10 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<RegisterResponseDto> RegisterAsync(RegisterRequestDto dto)
         {
-            if (dto.Role != "Student")
-                throw new InvalidOperationException("Self-registration is only available for students. Other roles must be created by an administrator.");
+            // Self-registration only ever creates a Student, and only as a pending request.
+            // Staff accounts are created by the SuperAdmin through CreateUserAsync.
+            var section = await _db.Sections.FirstOrDefaultAsync(s => s.Id == dto.SectionId && s.IsActive)
+                ?? throw new InvalidOperationException("Please select a valid block/section.");
 
             var studentId = dto.StudentId.Trim();
             var duplicateId = await _userManager.Users
@@ -137,14 +148,17 @@ namespace THESISMATESystem.Server.Services
 
             var user = new ApplicationUser
             {
-                FirstName = dto.FirstName,
+                FirstName = dto.FirstName.Trim(),
                 MiddleName = string.IsNullOrWhiteSpace(dto.MiddleName) ? null : dto.MiddleName.Trim(),
-                LastName = dto.LastName,
+                LastName = dto.LastName.Trim(),
                 StudentId = studentId,
-                Email = dto.Email,
-                UserName = dto.Email,
+                SectionId = section.Id,
+                Email = dto.Email.Trim(),
+                UserName = dto.Email.Trim(),
                 IsActive = true,
-                EmailConfirmed = false
+                EmailConfirmed = false,
+                RegistrationStatus = RegistrationStatus.PendingApproval,
+                RegistrationExpiresAt = PhilippineTime.Now.AddDays(PendingRegistrationDays),
             };
 
             var result = await _userManager.CreateAsync(user, dto.Password);
@@ -152,6 +166,7 @@ namespace THESISMATESystem.Server.Services
                 throw new InvalidOperationException(string.Join("; ", result.Errors.Select(e => e.Description)));
 
             await _userManager.AddToRoleAsync(user, "Student");
+            await WriteAuditAsync(user.Id, "Register", "User", user.Email, success: true);
 
             var confirmToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             // Base64Url-encode so the token survives email links intact (no +/= chars that break URLs)
@@ -179,7 +194,7 @@ namespace THESISMATESystem.Server.Services
 
             return new RegisterResponseDto
             {
-                Message = "Registration successful. Please check your email to verify your account.",
+                Message = $"Registration submitted. Verify your email, then wait for the administrator to approve your account. Unapproved registrations are removed after {PendingRegistrationDays} days.",
                 Email = user.Email!
             };
         }
@@ -217,7 +232,7 @@ namespace THESISMATESystem.Server.Services
                 </div>
                 <div style="padding:40px;">
                   <h2 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 12px;letter-spacing:-0.4px;">Verify your email address</h2>
-                  <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 24px;">Hi {firstName}, welcome to ThesisMate! Click the button below to verify your email and activate your student account.</p>
+                  <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 24px;">Hi {firstName}, welcome to ThesisMate! Click the button below to verify your email. After that, an administrator will review your registration against your section's class list.</p>
                   <div style="text-align:center;margin:32px 0;">
                     <a href="{verifyUrl}" style="display:inline-block;background:linear-gradient(135deg,#c9a84c,#d4b565);color:#0a1628;font-weight:700;font-size:15px;text-decoration:none;padding:14px 36px;border-radius:12px;">Verify Email Address</a>
                   </div>
@@ -403,6 +418,11 @@ namespace THESISMATESystem.Server.Services
                 await WriteAuditAsync(user.Id, "Login2FA", "User", user.Email, success: false);
                 throw new UnauthorizedAccessException("Please verify your email address before logging in.");
             }
+            if (user.RegistrationStatus == RegistrationStatus.PendingApproval)
+            {
+                await WriteAuditAsync(user.Id, "Login2FA", "User", user.Email, success: false);
+                throw new UnauthorizedAccessException("Your registration is awaiting approval by the administrator.");
+            }
 
             // Wrong codes count toward the same lockout as wrong passwords, so the 6-digit code
             // cannot be brute-forced within its validity window.
@@ -441,7 +461,7 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<UserResponseDto?> GetProfileAsync(string userId)
         {
-            var user = await _userManager.FindByIdAsync(userId);
+            var user = await _db.Users.Include(u => u.Section).FirstOrDefaultAsync(u => u.Id == userId);
             if (user is null) return null;
 
             var roles = await _userManager.GetRolesAsync(user);
@@ -449,6 +469,9 @@ namespace THESISMATESystem.Server.Services
             dto.Role = roles.FirstOrDefault() ?? string.Empty;
             return dto;
         }
+
+        private int PendingRegistrationDays =>
+            int.TryParse(_config["Registration:PendingExpiryDays"], out var days) && days > 0 ? days : 3;
 
         private static readonly HashSet<string> ValidRoles =
             ["SuperAdmin", "Admin", "Faculty", "Student"];
@@ -514,7 +537,13 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<IEnumerable<UserResponseDto>> GetAllUsersAsync()
         {
-            var users = await _userManager.Users.OrderBy(u => u.LastName).ToListAsync();
+            // Pending registrations are not accounts yet; they are listed on the Admin's
+            // registrations page instead.
+            var users = await _db.Users
+                .Include(u => u.Section)
+                .Where(u => u.RegistrationStatus == RegistrationStatus.Approved)
+                .OrderBy(u => u.LastName)
+                .ToListAsync();
 
             // One query for every user's role instead of GetRolesAsync per user, which issued a
             // separate round-trip for each account on every load of the user list.
@@ -532,6 +561,61 @@ namespace THESISMATESystem.Server.Services
                 dto.Role = roleByUser.GetValueOrDefault(u.Id) ?? string.Empty;
                 return dto;
             }).ToList();
+        }
+
+        public async Task<UserResponseDto> CreateUserAsync(CreateUserRequestDto dto, string createdById)
+        {
+            if (!ValidRoles.Contains(dto.Role))
+                throw new ArgumentException($"'{dto.Role}' is not a valid role.");
+
+            string? studentId = null;
+            int? sectionId = null;
+            if (dto.Role == "Student")
+            {
+                studentId = dto.StudentId?.Trim();
+                if (string.IsNullOrEmpty(studentId))
+                    throw new ArgumentException("Student ID is required for student accounts.");
+                if (dto.SectionId is null)
+                    throw new ArgumentException("Block/section is required for student accounts.");
+                if (!await _db.Sections.AnyAsync(s => s.Id == dto.SectionId && s.IsActive))
+                    throw new ArgumentException("The selected block/section does not exist or is inactive.");
+                if (await _db.Users.AnyAsync(u => u.StudentId == studentId))
+                    throw new InvalidOperationException($"Student ID {studentId} is already registered.");
+                sectionId = dto.SectionId;
+            }
+
+            var email = dto.Email.Trim();
+            if (await _userManager.FindByEmailAsync(email) is not null)
+                throw new InvalidOperationException("Email is already in use by another account.");
+
+            var user = new ApplicationUser
+            {
+                FirstName = dto.FirstName.Trim(),
+                MiddleName = string.IsNullOrWhiteSpace(dto.MiddleName) ? null : dto.MiddleName.Trim(),
+                LastName = dto.LastName.Trim(),
+                Email = email,
+                UserName = email,
+                StudentId = studentId,
+                SectionId = sectionId,
+                IsActive = true,
+                // Created and vouched for by the SuperAdmin, so no email or approval step.
+                EmailConfirmed = true,
+                RegistrationStatus = RegistrationStatus.Approved,
+                ReviewedById = createdById,
+                ReviewedAt = PhilippineTime.Now,
+            };
+
+            var result = await _userManager.CreateAsync(user, dto.Password);
+            if (!result.Succeeded)
+                throw new InvalidOperationException(string.Join("; ", result.Errors.Select(e => e.Description)));
+
+            await _userManager.AddToRoleAsync(user, dto.Role);
+            await WriteAuditAsync(createdById, "CreateAccount", "User", user.Id, success: true);
+
+            await _db.Entry(user).Reference(u => u.Section).LoadAsync();
+            var userDto = _mapper.Map<UserResponseDto>(user);
+            userDto.Role = dto.Role;
+            return userDto;
         }
 
         public async Task AdminForceSetPasswordAsync(string userId, string newPassword)

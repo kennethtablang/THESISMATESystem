@@ -15,6 +15,7 @@ namespace THESISMATESystem.Server.Interfaces
         Task<UserResponseDto> UpdateUserAsync(string userId, UpdateUserRequestDto dto, string callerRole);
         Task<bool> DeactivateUserAsync(string userId, string performedByUserId);
         Task<IEnumerable<UserResponseDto>> GetAllUsersAsync();
+        Task<UserResponseDto> CreateUserAsync(CreateUserRequestDto dto, string createdById);
         Task AdminForceSetPasswordAsync(string userId, string newPassword);
         Task<UserResponseDto> AdminSetEmailAsync(string userId, string newEmail);
         Task AdminDisableTwoFactorAsync(string userId);

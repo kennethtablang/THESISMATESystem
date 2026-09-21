@@ -13,9 +13,10 @@ import listPlugin from '@fullcalendar/list'
 import {
   GripVertical, AlertCircle, CheckCircle2, CalendarDays, MapPin,
   Users, Clock, Trash2, ChevronRight, Info, Pencil, RefreshCw, GraduationCap,
-  Download,
+  Download, Sparkles,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
+import AutoScheduleModal from './AutoScheduleModal'
 
 // ── Phase config ──────────────────────────────────────────────────────────────
 const PHASES = [
@@ -189,7 +190,9 @@ export default function DefenseScheduler() {
 
   const [serverCoverage, setServerCoverage] = useState(null)
 
-  const canModify   = ['Admin', 'SuperAdmin'].includes(user?.role)
+  // Only the Admin schedules defenses.
+  const canModify   = user?.role === 'Admin'
+  const [showAuto,  setShowAuto]  = useState(false)
 
   // ── Load ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -557,6 +560,16 @@ export default function DefenseScheduler() {
     <div className="flex flex-col" style={{ height: 'calc(100vh - 68px)', overflow: 'hidden' }}>
       <TopBar title="Defense Scheduler" />
 
+      {canModify && (
+        <AutoScheduleModal
+          open={showAuto}
+          onClose={() => setShowAuto(false)}
+          phase={activePhase}
+          candidateGroups={unscheduledGroups}
+          onSaved={() => setLoadKey(k => k + 1)}
+        />
+      )}
+
       {/* ── Load error banner ────────────────────────────────────────────── */}
       {loadError && (
         <div className="mx-5 mt-3 px-4 py-3 rounded-xl flex items-center gap-3 shrink-0"
@@ -661,6 +674,14 @@ export default function DefenseScheduler() {
             >
               <Download size={12} />
               Export XLSX
+            </button>
+          )}
+          {canModify && (
+            <button
+              onClick={() => setShowAuto(true)}
+              className="btn-primary text-xs"
+              title="Generate a conflict-free schedule for the unscheduled groups">
+              <Sparkles size={12} /> Auto-generate
             </button>
           )}
           {canModify && unscheduledGroups.length > 0 && (

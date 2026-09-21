@@ -44,7 +44,11 @@ namespace THESISMATESystem.Server.Services
                     .AnyAsync(g => g.Id == groupId && g.AdviserId == userId))
                     return true;
 
-                // Panel assignment via defense schedule
+                // Standing group panel, or panel assignment via defense schedule
+                if (await _db.GroupPanelMembers
+                    .AnyAsync(p => p.PanelistId == userId && p.CapstoneGroupId == groupId))
+                    return true;
+
                 if (await _db.PanelAssignments
                     .AnyAsync(pa => pa.PanelistId == userId &&
                         pa.DefenseSchedule.CapstoneGroupId == groupId))
@@ -575,6 +579,12 @@ namespace THESISMATESystem.Server.Services
                 .Distinct()
                 .ToListAsync();
             foreach (var id in panelIds) ids.Add(id);
+
+            var standingPanelIds = await _db.GroupPanelMembers
+                .Where(p => p.CapstoneGroupId == group.Id)
+                .Select(p => p.PanelistId)
+                .ToListAsync();
+            foreach (var id in standingPanelIds) ids.Add(id);
 
             var memberIds = await _db.GroupMembers
                 .Where(gm => gm.CapstoneGroupId == group.Id)

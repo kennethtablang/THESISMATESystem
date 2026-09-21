@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using THESISMATESystem.Server.Enums;
 using THESISMATESystem.Server.Helpers;
 
 namespace THESISMATESystem.Server.Models
@@ -12,6 +13,17 @@ namespace THESISMATESystem.Server.Models
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
         public DateTime? LastActiveAt { get; set; }
+
+        // Block/section the student belongs to. Null for staff accounts.
+        public int? SectionId { get; set; }
+        public Section? Section { get; set; }
+
+        // Self-registration approval. Pending accounts cannot sign in and are removed once
+        // RegistrationExpiresAt passes without an Admin decision.
+        public RegistrationStatus RegistrationStatus { get; set; } = RegistrationStatus.Approved;
+        public DateTime? RegistrationExpiresAt { get; set; }
+        public string? ReviewedById { get; set; }
+        public DateTime? ReviewedAt { get; set; }
 
         public ICollection<GroupMember> GroupMemberships { get; set; } = [];
         public ICollection<CapstoneGroup> AdvisedGroups { get; set; } = [];

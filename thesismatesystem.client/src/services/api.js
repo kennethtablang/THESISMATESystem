@@ -112,6 +112,7 @@ export const authService = {
   twoFactorDisable: (password) => api.post('/auth/2fa/disable', { password }),
   twoFactorLogin: (userId, code) => api.post('/auth/2fa/login', { userId, code }),
   allUsers: () => api.get('/auth/users'),
+  createUser: (data) => api.post('/auth/users', data),
   updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
   deactivate: (id) => api.patch(`/auth/users/${id}/deactivate`),
   adminResetPassword: (id, newPassword) => api.post(`/auth/users/${id}/reset-password`, { newPassword }),
@@ -129,6 +130,9 @@ export const defenseService = {
   update: (id, data) => api.put(`/defenses/${id}`, data),
   cancel: (id) => api.patch(`/defenses/${id}/cancel`),
   setRatingStatus: (id, isOpen) => api.patch(`/defenses/${id}/rating-status`, isOpen),
+  complete: (id) => api.patch(`/defenses/${id}/complete`),
+  autoSchedulePreview: (data) => api.post('/defenses/auto-schedule/preview', data),
+  autoScheduleConfirm: (items) => api.post('/defenses/auto-schedule/confirm', { items }),
   submitRating: (data) => api.post('/defenses/ratings', data),
   getRatings: (id) => api.get(`/defenses/${id}/ratings`),
   coverage: (academicYear) => api.get(`/defenses/coverage?academicYear=${encodeURIComponent(academicYear)}`),
@@ -330,6 +334,27 @@ export const classroomService = {
   myInvitations: () => api.get('/classrooms/invitations/my'),
   acceptInvitation: (id) => api.post(`/classrooms/invitations/${id}/accept`),
   activeStudents: () => api.get('/classrooms/active-students'),
+  available: () => api.get('/classrooms/available'),
+  enroll: (id) => api.post(`/classrooms/${id}/enroll`),
+}
+
+export const sectionService = {
+  options: () => api.get('/sections/options'),
+  list: () => api.get('/sections'),
+  create: (data) => api.post('/sections', data),
+  update: (id, data) => api.put(`/sections/${id}`, data),
+  roster: (id) => api.get(`/sections/${id}/roster`),
+  addRoster: (id, entries) => api.post(`/sections/${id}/roster`, { entries }),
+  removeRoster: (id, entryId) => api.delete(`/sections/${id}/roster/${entryId}`),
+  students: (id) => api.get(`/sections/${id}/students`),
+  unassignedStudents: () => api.get('/sections/unassigned-students'),
+  assignStudents: (id, userIds) => api.put(`/sections/${id}/students`, { userIds }),
+}
+
+export const registrationService = {
+  pending: () => api.get('/registrations/pending'),
+  approve: (userId) => api.post(`/registrations/${userId}/approve`),
+  reject: (userId, reason) => api.post(`/registrations/${userId}/reject`, { reason }),
 }
 
 export const monitoringService = {

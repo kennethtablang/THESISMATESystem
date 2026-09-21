@@ -2,40 +2,39 @@ import {
   LayoutDashboard, Users, FileText, Calendar,
   Bell, BarChart3, UserCircle, Star, Upload, Cpu,
   ShieldCheck, BookOpen, Megaphone, PenLine, Activity,
-  GraduationCap, Building2, CalendarRange, ClipboardList,
+  GraduationCap, Building2, CalendarRange, ClipboardList, UserCheck, Layers,
 } from 'lucide-react'
 
 // Single source for per-role navigation. The sidebar renders it and the top bar's search
 // offers the same pages, so the two cannot disagree about where a role may go.
 // { divider: true, label: 'Section' } entries render as labeled section breaks
 export const navByRole = {
+  // The SuperAdmin manages accounts. Everything academic is the Admin's job, so the
+  // SuperAdmin only keeps read-only oversight pages; the actions on them are hidden.
   SuperAdmin: [
     { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
-    { divider: true, label: 'Management' },
+    { divider: true, label: 'Accounts' },
     { label: 'User Management',  icon: ShieldCheck,     to: '/users' },
+    { divider: true, label: 'Oversight (read-only)' },
+    { label: 'Classrooms',       icon: Building2,       to: '/classrooms' },
+    { label: 'Groups',           icon: Users,           to: '/groups' },
+    { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
+    { label: 'Defense Schedules', icon: Calendar,       to: '/defenses' },
+    { label: 'Reports',          icon: BarChart3,       to: '/reports' },
+  ],
+  Admin: [
+    { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
+    { divider: true, label: 'Students' },
+    { label: 'Registrations',    icon: UserCheck,       to: '/registrations' },
+    { label: 'Sections',         icon: Layers,          to: '/sections' },
+    { divider: true, label: 'Management' },
     { label: 'Classrooms',       icon: Building2,       to: '/classrooms' },
     { label: 'Advisers',         icon: GraduationCap,   to: '/advisers' },
     { label: 'Manage Groups',    icon: Users,           to: '/groups' },
     { label: 'All Documents',    icon: FileText,        to: '/documents' },
     { divider: true, label: 'Academic' },
-    { label: 'System Tracker',   icon: Cpu,             to: '/system-features' },
-    { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
-    { divider: true, label: 'Defenses' },
-    { label: 'Defense Schedules',  icon: Calendar,       to: '/defenses' },
-    { label: 'Defense Scheduler',  icon: CalendarRange,  to: '/defense-scheduler' },
-    { label: 'Rubric Manager',     icon: ClipboardList,  to: '/rubric-manager' },
-    { divider: true, label: 'Reports' },
-    { label: 'Reports',            icon: BarChart3,      to: '/reports' },
-  ],
-  Admin: [
-    { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
-    { divider: true, label: 'Management' },
-    { label: 'User Management',  icon: ShieldCheck,     to: '/users' },
-    { label: 'Classrooms',       icon: Building2,       to: '/classrooms' },
-    { label: 'Advisers',         icon: GraduationCap,   to: '/advisers' },
-    { label: 'Manage Groups',    icon: Users,           to: '/groups' },
-    { divider: true, label: 'Academic' },
     { label: 'Chapters',         icon: FileText,        to: '/chapters' },
+    { label: 'System Tracker',   icon: Cpu,             to: '/system-features' },
     { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
     { divider: true, label: 'Defenses' },
     { label: 'Defense Schedules',  icon: Calendar,       to: '/defenses' },

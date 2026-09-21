@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Outlet, useNavigate, useMatch } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { groupService, authService } from '../../services/api'
+import { groupService, authService, classroomService, sectionService } from '../../services/api'
+import { PanelPicker, StudentPicker } from './TeamPickers'
 import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import { PageLoader } from '../../components/ui/Spinner'
@@ -20,8 +21,11 @@ export default function GroupsLayout() {
   const [logoUploading, setLogoUploading] = useState(false)
 
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ groupName: '', adviserId: '', academicYear: '' })
+  const EMPTY_FORM = { groupName: '', adviserId: '', academicYear: '', sectionId: '', memberIds: [], panelistIds: [], panelChairId: '' }
+  const [form, setForm] = useState(EMPTY_FORM)
   const [advisers, setAdvisers] = useState([])
+  const [sections, setSections] = useState([])
+  const [students, setStudents] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -32,36 +36,67 @@ export default function GroupsLayout() {
 
   const [showEditModal, setShowEditModal] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
-  const [editForm, setEditForm] = useState({ groupName: '', projectTitle: '', adviserId: '' })
+  const [editForm, setEditForm] = useState({ groupName: '', projectTitle: '', adviserId: '', panelistIds: [], panelChairId: '' })
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
 
-  const isAdmin = ['Admin', 'SuperAdmin'].includes(user?.role)
+  // Creating and editing groups is the Admin's job; the SuperAdmin views them read-only.
+  const isAdmin = user?.role === 'Admin'
+  const isOversight = ['Admin', 'SuperAdmin'].includes(user?.role)
   const isStudent = user?.role === 'Student'
+  const isFaculty = user?.role === 'Faculty'
+  // Faculty see the groups they advise and the groups whose panel they sit on.
+  const [facultyView, setFacultyView] = useState('all')
 
   useEffect(() => {
-    const fetch = isStudent
-      ? groupService.myGroup().then(g => [g]).catch(() => [])
-      : groupService.list().catch(() => [])
+    let fetch
+    if (isStudent) {
+      fetch = groupService.myGroup().then(g => [g]).catch(() => [])
+    } else if (isFaculty) {
+      fetch = Promise.all([
+        groupService.list().catch(() => []),
+        groupService.panelGroups().catch(() => []),
+      ]).then(([advised, panel]) => {
+        const byId = new Map()
+        for (const g of advised) byId.set(g.id, { ...g, viewerRoles: ['Adviser'] })
+        for (const g of panel) {
+          const existing = byId.get(g.id)
+          byId.set(g.id, existing ? { ...existing, viewerRoles: [...existing.viewerRoles, 'Panel'] } : { ...g, viewerRoles: ['Panel'] })
+        }
+        return [...byId.values()]
+      })
+    } else {
+      fetch = groupService.list().catch(() => [])
+    }
     fetch.then(setGroups).finally(() => setLoading(false))
-  }, [isStudent])
+  }, [isStudent, isFaculty])
+
+  function loadPickers() {
+    if (advisers.length === 0)
+      authService.allUsers().then(us => setAdvisers(us.filter(u => u.role === 'Faculty' && u.isActive))).catch(() => {})
+  }
 
   function openEditModal(group) {
     setEditTarget(group)
-    setEditForm({ groupName: group.groupName ?? '', projectTitle: group.projectTitle ?? '', adviserId: group.adviser?.id ?? '' })
+    const panel = group.panelMembers ?? []
+    setEditForm({
+      groupName: group.groupName ?? '', projectTitle: group.projectTitle ?? '', adviserId: group.adviser?.id ?? '',
+      panelistIds: panel.map(p => p.id), panelChairId: panel.find(p => p.isChair)?.id ?? panel[0]?.id ?? '',
+    })
     setEditError('')
     setShowEditModal(true)
-    if (advisers.length === 0)
-      authService.allUsers().then(us => setAdvisers(us.filter(u => u.role === 'Faculty'))).catch(() => {})
+    loadPickers()
   }
 
   async function handleEditSave() {
     if (!editForm.groupName.trim()) { setEditError('Group name is required.'); return }
     if (!editForm.adviserId)        { setEditError('Please select an adviser.'); return }
+    if (editForm.panelistIds.length === 0) { setEditError('Select at least one panel member.'); return }
     setEditSaving(true); setEditError('')
     try {
       const updated = await groupService.update(editTarget.id, {
         groupName: editForm.groupName.trim(), projectTitle: editForm.projectTitle.trim() || null, adviserId: editForm.adviserId,
+        panelistIds: editForm.panelistIds, panelChairId: editForm.panelChairId || null,
       })
       setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))
       setShowEditModal(false)
@@ -99,27 +134,43 @@ export default function GroupsLayout() {
   }
 
   function openCreateModal() {
-    setError(''); setForm({ groupName: '', adviserId: '', academicYear: '' }); setShowModal(true)
-    if (advisers.length === 0)
-      authService.allUsers().then(us => setAdvisers(us.filter(u => u.role === 'Faculty'))).catch(() => {})
+    setError(''); setForm(EMPTY_FORM); setShowModal(true)
+    loadPickers()
+    if (sections.length === 0)
+      sectionService.list().then(list => setSections((list ?? []).filter(x => x.isActive))).catch(() => {})
+    classroomService.activeStudents().then(list => setStudents(Array.isArray(list) ? list : [])).catch(() => {})
   }
 
+  // Members come from one section only; picking a section narrows the student list.
+  const sectionStudents = useMemo(
+    () => students.filter(st => form.sectionId && String(st.sectionId) === String(form.sectionId)),
+    [students, form.sectionId])
+
   async function handleCreate(e) {
-    e.preventDefault(); setSaving(true); setError('')
+    e.preventDefault()
+    if (!form.groupName.trim() || !form.adviserId || !form.academicYear.trim()) { setError('Group name, adviser and academic year are required.'); return }
+    if (form.panelistIds.length === 0) { setError('Select at least one panel member.'); return }
+    setSaving(true); setError('')
     try {
-      const g = await groupService.create({ groupName: form.groupName, adviserId: form.adviserId, academicYear: form.academicYear, memberIds: [] })
-      setGroups(prev => [g, ...prev]); setShowModal(false); toast.success('Group created.')
+      const g = await groupService.create({
+        groupName: form.groupName.trim(), adviserId: form.adviserId, academicYear: form.academicYear.trim(),
+        memberIds: form.memberIds, panelistIds: form.panelistIds, panelChairId: form.panelChairId || null,
+      })
+      setGroups(prev => [g, ...prev]); setShowModal(false); toast.success('Group created with its panel.')
     } catch (err) { setError(err.message); toast.error(err.message || 'Failed to create group.') }
     finally { setSaving(false) }
   }
 
   const query = search.trim().toLowerCase()
   const filtered = groups.filter(g =>
-    (g.groupName ?? '').toLowerCase().includes(query) ||
-    (g.projectTitle ?? '').toLowerCase().includes(query)
+    (!isFaculty || facultyView === 'all' ||
+      (facultyView === 'advising' && g.viewerRoles?.includes('Adviser')) ||
+      (facultyView === 'panel' && g.viewerRoles?.includes('Panel'))) &&
+    ((g.groupName ?? '').toLowerCase().includes(query) ||
+    (g.projectTitle ?? '').toLowerCase().includes(query))
   )
 
-  const title = isAdmin ? 'Manage Groups' : user?.role === 'Faculty' ? 'My Groups' : 'My Group'
+  const title = isAdmin ? 'Manage Groups' : isOversight ? 'Groups' : isFaculty ? 'My Groups' : 'My Group'
 
   if (loading) return <><TopBar title={title} /><PageLoader /></>
 
@@ -164,6 +215,27 @@ export default function GroupsLayout() {
                 <Plus size={13} /> New Group
               </button>
             )}
+            {isFaculty && (
+              <div className="flex gap-1">
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'advising', label: 'Advising' },
+                  { key: 'panel', label: 'Panel' },
+                ].map(v => {
+                  const count = v.key === 'all' ? groups.length
+                    : groups.filter(g => g.viewerRoles?.includes(v.key === 'advising' ? 'Adviser' : 'Panel')).length
+                  return (
+                    <button key={v.key} onClick={() => setFacultyView(v.key)}
+                      className="flex-1 text-xs font-semibold px-2 py-1.5 rounded-lg"
+                      style={facultyView === v.key
+                        ? { background: '#c9a84c', color: '#0a1628' }
+                        : { background: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
+                      {v.label} ({count})
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* Group list items */}
@@ -184,6 +256,7 @@ export default function GroupsLayout() {
                 onEdit={isAdmin ? () => openEditModal(g) : null}
                 onEditVersion={isStudent ? () => openVersionModal(g) : null}
                 onUploadLogo={(isAdmin || isStudent) ? file => handleLogoUpload(g.id, file) : null}
+                badges={g.viewerRoles}
                 logoUploading={logoUploading}
               />
             ))}
@@ -240,11 +313,22 @@ export default function GroupsLayout() {
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Adviser *</label>
             <select className="form-input" value={editForm.adviserId}
-              onChange={e => setEditForm(f => ({ ...f, adviserId: e.target.value }))}>
+              onChange={e => setEditForm(f => {
+                // The adviser cannot also be on the panel; drop them from it if they were.
+                const panelistIds = f.panelistIds.filter(id => id !== e.target.value)
+                const panelChairId = panelistIds.includes(f.panelChairId) ? f.panelChairId : panelistIds[0] ?? ''
+                return { ...f, adviserId: e.target.value, panelistIds, panelChairId }
+              })}>
               <option value="">Select an adviser</option>
               {advisers.map(a => <option key={a.id} value={a.id}>{a.fullName}</option>)}
             </select>
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>A faculty member can advise multiple groups.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Panel members *</label>
+            <PanelPicker faculty={advisers} adviserId={editForm.adviserId}
+              value={editForm.panelistIds} chairId={editForm.panelChairId}
+              onChange={(ids, chair) => setEditForm(f => ({ ...f, panelistIds: ids, panelChairId: chair }))} />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Research Title</label>
@@ -310,29 +394,63 @@ export default function GroupsLayout() {
           </div>
         )}
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group Name *</label>
-            <input type="text" className="form-input" placeholder="e.g. Group Alpha"
-              value={form.groupName} onChange={e => setForm(f => ({ ...f, groupName: e.target.value }))} required />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group Name *</label>
+              <input type="text" className="form-input" placeholder="e.g. Group Alpha"
+                value={form.groupName} onChange={e => setForm(f => ({ ...f, groupName: e.target.value }))} required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Academic Year *</label>
+              <input type="text" className="form-input" placeholder="e.g. 2025-2026"
+                value={form.academicYear} onChange={e => setForm(f => ({ ...f, academicYear: e.target.value }))} required />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Adviser *</label>
-            {advisers.length > 0 ? (
-              <select className="form-input" value={form.adviserId}
-                onChange={e => setForm(f => ({ ...f, adviserId: e.target.value }))} required>
-                <option value="">Select an adviser</option>
-                {advisers.map(a => <option key={a.id} value={a.id}>{a.fullName}</option>)}
-              </select>
-            ) : (
-              <input type="text" className="form-input" placeholder="Adviser ID"
-                value={form.adviserId} onChange={e => setForm(f => ({ ...f, adviserId: e.target.value }))} required />
-            )}
+            <select className="form-input" value={form.adviserId}
+              onChange={e => setForm(f => ({
+                ...f, adviserId: e.target.value,
+                // The adviser cannot also be a panelist.
+                panelistIds: f.panelistIds.filter(id => id !== e.target.value),
+                panelChairId: f.panelChairId === e.target.value ? '' : f.panelChairId,
+              }))} required>
+              <option value="">Select an adviser</option>
+              {advisers.map(a => <option key={a.id} value={a.id}>{a.fullName}</option>)}
+            </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Academic Year *</label>
-            <input type="text" className="form-input" placeholder="e.g. 2024-2025"
-              value={form.academicYear} onChange={e => setForm(f => ({ ...f, academicYear: e.target.value }))} required />
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Panel members *</label>
+            <PanelPicker faculty={advisers} adviserId={form.adviserId}
+              value={form.panelistIds} chairId={form.panelChairId}
+              onChange={(ids, chair) => setForm(f => ({ ...f, panelistIds: ids, panelChairId: chair }))} />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              The panel can monitor this group right away, and its defenses use this panel by default.
+            </p>
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Block / Section</label>
+            <select className="form-input" value={form.sectionId}
+              onChange={e => {
+                const sec = sections.find(x => String(x.id) === e.target.value)
+                setForm(f => ({ ...f, sectionId: e.target.value, memberIds: [], academicYear: f.academicYear || sec?.academicYear || '' }))
+              }}>
+              <option value="">Select a section to add members</option>
+              {sections.map(sec => <option key={sec.id} value={sec.id}>{sec.name} · {sec.academicYear}</option>)}
+            </select>
+          </div>
+          {form.sectionId && (
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                Members <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({form.memberIds.length} selected)</span>
+              </label>
+              <StudentPicker students={sectionStudents} value={form.memberIds}
+                onChange={ids => setForm(f => ({ ...f, memberIds: ids }))} />
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                Only students enrolled in a class of this section are listed. Members can also be added later.
+              </p>
+            </div>
+          )}
         </div>
       </Modal>
     </div>
@@ -340,7 +458,7 @@ export default function GroupsLayout() {
 }
 
 // ── Left panel list item ──────────────────────────────────────────────────────
-function GroupListItem({ group, selected, onClick, onEdit, onEditVersion, onUploadLogo, logoUploading }) {
+function GroupListItem({ group, selected, onClick, onEdit, onEditVersion, onUploadLogo, logoUploading, badges }) {
   const fileRef = useRef(null)
   const [logoError, setLogoError] = useState(false)
   const progress = group.milestoneProgress?.completionPercentage ?? 0
@@ -435,6 +553,12 @@ function GroupListItem({ group, selected, onClick, onEdit, onEditVersion, onUplo
           {group.academicYear && (
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{group.academicYear}</span>
           )}
+          {badges?.map(b => (
+            <span key={b} className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+              style={{ background: b === 'Panel' ? 'rgba(124,58,237,0.1)' : 'rgba(59,130,246,0.1)', color: b === 'Panel' ? '#7c3aed' : '#2563eb' }}>
+              {b === 'Panel' ? 'Panelist' : 'Adviser'}
+            </span>
+          ))}
           {onEditVersion && (
             <button
               onClick={e => { e.stopPropagation(); onEditVersion() }}

@@ -9,6 +9,19 @@ import Badge, { statusVariant } from '../../components/ui/Badge'
 import { defenseService } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
 
+// Ratings are percentages: no score may exceed 100, and a criterion can set a lower cap.
+const maxFor = (criterion) => Math.min(Number(criterion.maxScore) || 100, 100)
+
+// Returns an error message for a score, or '' when it is valid. Empty is handled separately.
+function scoreError(value, criterion) {
+  if (value === '' || value == null) return ''
+  if (!/^\d+(\.\d+)?$/.test(String(value).trim())) return 'Enter a number (no negative values).'
+  const n = Number(value)
+  const max = maxFor(criterion)
+  if (n > max) return `${n} is above the maximum of ${max}.`
+  return ''
+}
+
 export default function Ratings() {
   const { user } = useAuth()
   const [defenses, setDefenses] = useState([])
@@ -72,12 +85,9 @@ export default function Ratings() {
     }
     // Scores are saved one criterion at a time, so reject bad values up front rather than
     // leaving some criteria saved and the rest failing.
-    const outOfRange = criteria.find(c => {
-      const n = Number(rating.scores[c.id])
-      return Number.isNaN(n) || n < 0 || n > c.maxScore
-    })
+    const outOfRange = criteria.find(c => scoreError(rating.scores[c.id], c))
     if (outOfRange) {
-      setRating(r => ({ ...r, error: `Score for "${outOfRange.name}" must be between 0 and ${outOfRange.maxScore}.` }))
+      setRating(r => ({ ...r, error: `Score for "${outOfRange.name}" must be between 0 and ${maxFor(outOfRange)}.` }))
       return
     }
     setRating(r => ({ ...r, submitting: true, error: '' }))
@@ -173,7 +183,8 @@ export default function Ratings() {
                 <button
                   className="btn-primary"
                   onClick={submitRatings}
-                  disabled={rating.submitting || rating.loadingRatings}
+                  disabled={rating.submitting || rating.loadingRatings
+                    || criteria.some(c => scoreError(rating.scores[c.id], c))}
                 >
                   {rating.submitting ? 'Submitting…' : 'Submit Ratings'}
                 </button>
@@ -247,9 +258,10 @@ export default function Ratings() {
                 </p>
                 {criteria.map(criterion => {
                   const score = rating.scores[criterion.id] ?? ''
-                  const num = parseFloat(score)
-                  const isValid = score !== '' && !isNaN(num) && num >= 0 && num <= criterion.maxScore
-                  const isOver = score !== '' && !isNaN(num) && num > criterion.maxScore
+                  const max = maxFor(criterion)
+                  const error = scoreError(score, criterion)
+                  const isValid = score !== '' && !error
+                  const isOver = !!error
                   return (
                     <div key={criterion.id} className="p-4 rounded-xl" style={{ background: 'var(--bg-subtle)', border: `1px solid ${isOver ? '#fecaca' : 'var(--border-main)'}` }}>
                       <div className="flex items-start justify-between gap-3 mb-3">
@@ -270,17 +282,20 @@ export default function Ratings() {
                           <input
                             type="number"
                             min="0"
-                            max={criterion.maxScore}
+                            max={max}
                             step="0.5"
+                            inputMode="decimal"
                             className="form-input"
-                            placeholder={`0 – ${criterion.maxScore}`}
+                            placeholder={`0 – ${max}`}
+                            aria-invalid={isOver}
                             value={score}
+                            onKeyDown={e => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault() }}
                             onChange={e => setRating(r => ({ ...r, scores: { ...r.scores, [criterion.id]: e.target.value } }))}
                             disabled={!rating.defense.isRatingOpen || rating.submitting}
                           />
                         </div>
                         <span className="text-sm shrink-0" style={{ color: 'var(--text-muted)' }}>
-                          / {criterion.maxScore}
+                          / {max}
                         </span>
                         {score !== '' && (
                           isValid
@@ -288,6 +303,9 @@ export default function Ratings() {
                             : <AlertCircle size={16} style={{ color: '#dc2626', flexShrink: 0 }} />
                         )}
                       </div>
+                      {error && (
+                        <p className="text-xs mt-1.5" style={{ color: '#dc2626' }} role="alert">{error}</p>
+                      )}
                       {rating.defense.isRatingOpen && (
                         <textarea
                           className="form-input mt-2 text-sm"

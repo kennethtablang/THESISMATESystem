@@ -43,6 +43,8 @@ const DocumentReview       = lazy(() => import('./pages/adviser/DocumentReview')
 const UserManagement = lazy(() => import('./pages/admin/UserManagement'))
 const Advisers       = lazy(() => import('./pages/admin/Advisers'))
 const ClassroomAdmin = lazy(() => import('./pages/admin/ClassroomAdmin'))
+const Registrations  = lazy(() => import('./pages/admin/Registrations'))
+const Sections       = lazy(() => import('./pages/admin/Sections'))
 
 // Monitoring
 const MonitoringDashboard = lazy(() => import('./pages/monitoring/MonitoringDashboard'))
@@ -147,12 +149,22 @@ export default function App() {
             </RoleGuard>
           } />
           <Route path="users" element={
-            <RoleGuard roles={['Admin', 'SuperAdmin']}>
+            <RoleGuard roles={['SuperAdmin']}>
               <UserManagement />
             </RoleGuard>
           } />
+          <Route path="registrations" element={
+            <RoleGuard roles={['Admin']}>
+              <Registrations />
+            </RoleGuard>
+          } />
+          <Route path="sections" element={
+            <RoleGuard roles={['Admin']}>
+              <Sections />
+            </RoleGuard>
+          } />
           <Route path="advisers" element={
-            <RoleGuard roles={['Admin', 'SuperAdmin']}>
+            <RoleGuard roles={['Admin']}>
               <Advisers />
             </RoleGuard>
           } />
@@ -173,12 +185,12 @@ export default function App() {
           <Route path="chapters" element={<Chapters />} />
           <Route path="defenses" element={<Defenses />} />
           <Route path="defense-scheduler" element={
-            <RoleGuard roles={['Admin', 'SuperAdmin', 'Faculty']}>
+            <RoleGuard roles={['Admin', 'Faculty']}>
               <DefenseScheduler />
             </RoleGuard>
           } />
           <Route path="rubric-manager" element={
-            <RoleGuard roles={['Admin', 'SuperAdmin']}>
+            <RoleGuard roles={['Admin']}>
               <RubricManager />
             </RoleGuard>
           } />

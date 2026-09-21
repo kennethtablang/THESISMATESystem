@@ -19,6 +19,8 @@ namespace THESISMATESystem.Server.Data
             await SeedUsersAsync(userManager);
             await SeedClassroomAsync(db, userManager);
             await SeedGroupsAsync(db, userManager);
+            await SeedSectionAsync(db, userManager);
+            await SeedGroupPanelsAsync(db, userManager);
             await SeedDefaultRubricCriteriaAsync(db);
         }
 
@@ -129,6 +131,56 @@ namespace THESISMATESystem.Server.Data
                     ClassroomId = classroom.Id,
                     StudentId   = student.Id,
                 });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        // ── Section ───────────────────────────────────────────────────────────
+        // Runs once, on a database that has no sections yet: puts the seeded students and the
+        // seeded classroom in one block so the section rules have something to work with.
+
+        private static async Task SeedSectionAsync(AppDbContext db, UserManager<ApplicationUser> userManager)
+        {
+            if (await db.Sections.AnyAsync()) return;
+
+            var section = new Section { Name = "BSIT 4A", AcademicYear = "2025-2026" };
+            db.Sections.Add(section);
+            await db.SaveChangesAsync();
+
+            for (int i = 1; i <= 12; i++)
+            {
+                var student = await userManager.FindByEmailAsync($"student{i}@psu.edu.ph");
+                if (student is null || student.SectionId is not null) continue;
+                student.SectionId = section.Id;
+            }
+
+            var classroom = await db.Classrooms.FirstOrDefaultAsync(c => c.JoinCode == "PSU001" && c.SectionId == null);
+            if (classroom is not null) classroom.SectionId = section.Id;
+
+            await db.SaveChangesAsync();
+        }
+
+        // ── Group panels ──────────────────────────────────────────────────────
+        // Groups created before panels were set at creation get faculty5 (chair) and faculty1,
+        // skipping whoever is the group's own adviser.
+
+        private static async Task SeedGroupPanelsAsync(AppDbContext db, UserManager<ApplicationUser> userManager)
+        {
+            if (await db.GroupPanelMembers.AnyAsync()) return;
+
+            var chair = await userManager.FindByEmailAsync("faculty5@psu.edu.ph");
+            var member = await userManager.FindByEmailAsync("faculty1@psu.edu.ph");
+            if (chair is null || member is null) return;
+
+            var groups = await db.CapstoneGroups
+                .Where(g => g.GroupName == "AquaTrack" || g.GroupName == "EduSync" || g.GroupName == "GreenPath")
+                .ToListAsync();
+            foreach (var g in groups)
+            {
+                if (g.AdviserId != chair.Id)
+                    db.GroupPanelMembers.Add(new GroupPanelMember { CapstoneGroupId = g.Id, PanelistId = chair.Id, IsChair = true });
+                if (g.AdviserId != member.Id)
+                    db.GroupPanelMembers.Add(new GroupPanelMember { CapstoneGroupId = g.Id, PanelistId = member.Id, IsChair = g.AdviserId == chair.Id });
             }
             await db.SaveChangesAsync();
         }

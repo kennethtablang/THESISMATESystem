@@ -50,7 +50,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> Create([FromBody] CreateSystemFeatureRequestDto dto)
         {
             if (!await CanAccessGroupAsync(dto.CapstoneGroupId)) return Forbid();
@@ -60,7 +60,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPut("{id:int}")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin,Student")]
+        [Authorize(Roles = "Faculty,Admin,Student")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateSystemFeatureRequestDto dto)
         {
             var (userId, role) = Caller();
@@ -82,7 +82,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> Delete(int id)
         {
             var feature = await _features.GetFeatureByIdAsync(id);
@@ -103,7 +103,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/dates")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> UpdateDates(int id, [FromBody] UpdateSystemFeatureRequestDto dto)
         {
             var (userId, role) = Caller();

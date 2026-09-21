@@ -65,7 +65,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("submissions/{id:int}/status")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> UpdateStatus(int id, UpdateChapterStatusRequestDto dto)
         {
             var (userId, role) = Caller();
@@ -75,7 +75,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("submissions/{id:int}/revision-notes")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> AddRevisionNote(int id, AddRevisionNoteRequestDto dto)
         {
             var (userId, role) = Caller();

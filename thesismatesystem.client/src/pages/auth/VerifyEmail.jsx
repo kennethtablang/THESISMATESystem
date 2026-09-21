@@ -80,7 +80,7 @@ export default function VerifyEmail() {
                 Email verified!
               </h1>
               <p className="text-sm mb-8" style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                {message} You can now sign in to your ThesisMate student account.
+                {message}
               </p>
               <Link
                 to="/login"

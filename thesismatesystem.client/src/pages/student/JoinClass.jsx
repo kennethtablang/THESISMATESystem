@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Megaphone, CheckCircle, ArrowRight, Mail, Clock } from 'lucide-react'
+import { Megaphone, CheckCircle, ArrowRight, Mail, Clock, School, Layers } from 'lucide-react'
 import TopBar from '../../components/layout/TopBar'
 import { classroomService } from '../../services/api'
 
@@ -12,19 +12,39 @@ export default function JoinClass() {
   const [checking, setChecking] = useState(true)
   const [error, setError] = useState('')
   const [acceptingId, setAcceptingId] = useState(null)
+  // Classes offered to the student's own block/section — the only ones they can join.
+  const [available, setAvailable] = useState([])
+  const [enrollingId, setEnrollingId] = useState(null)
 
   useEffect(() => {
     Promise.all([
       classroomService.myClass().catch(() => null),
       classroomService.myInvitations().catch(() => []),
-    ]).then(([cls, invs]) => {
+      classroomService.available().catch(() => []),
+    ]).then(([cls, invs, avail]) => {
       if (cls) {
         setClassroom(cls)
         classroomService.myAnnouncements().then(setAnnouncements).catch(() => {})
       }
       setInvitations(Array.isArray(invs) ? invs : [])
+      setAvailable(Array.isArray(avail) ? avail : [])
     }).finally(() => setChecking(false))
   }, [])
+
+  async function handleEnroll(cls) {
+    setError('')
+    setEnrollingId(cls.id)
+    try {
+      const joined = await classroomService.enroll(cls.id)
+      setClassroom(joined)
+      const anns = await classroomService.myAnnouncements().catch(() => [])
+      setAnnouncements(anns || [])
+    } catch (err) {
+      setError(err.message || 'Failed to join this class.')
+    } finally {
+      setEnrollingId(null)
+    }
+  }
 
   async function handleAccept(inv) {
     setError('')
@@ -103,7 +123,7 @@ export default function JoinClass() {
                           {inv.className}
                         </p>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          {inv.academicYear} · FIC: {inv.facultyIC?.fullName}
+                          {inv.academicYear} · Teacher: {inv.facultyIC?.fullName}
                         </p>
                       </div>
                       <button
@@ -124,18 +144,57 @@ export default function JoinClass() {
               </div>
             )}
 
-            <div className="mb-6">
-              <h2 className="page-title">Join a Class</h2>
-              <p className="page-subtitle">Enter the code your Faculty-In-Charge shared with you</p>
+            <div className="mb-4">
+              <h2 className="page-title">Your Section's Classes</h2>
+              <p className="page-subtitle">
+                Only the classes offered to your block/section are listed{available[0]?.sectionName ? ` (${available[0].sectionName})` : ''}.
+              </p>
+            </div>
+
+            {error && (
+              <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                {error}
+              </div>
+            )}
+
+            {available.length === 0 ? (
+              <div className="card mb-6 flex items-start gap-3">
+                <Layers size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  No classes are open for your section yet. If you were not assigned a block/section, contact the administrator.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 mb-6">
+                {available.map(cls => (
+                  <div key={cls.id} className="rounded-2xl p-4 flex items-center gap-4"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                      style={{ background: 'rgba(59,130,246,0.1)' }}>
+                      <School size={18} style={{ color: '#3b82f6' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-heading)' }}>{cls.className}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {cls.sectionName} · {cls.academicYear} · Teacher: {cls.facultyIC?.fullName}
+                      </p>
+                    </div>
+                    <button onClick={() => handleEnroll(cls)} disabled={enrollingId === cls.id}
+                      className="btn-primary text-xs px-4 py-2 shrink-0">
+                      {enrollingId === cls.id ? 'Joining…' : <>Join <ArrowRight size={13} /></>}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>Have a join code?</h3>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Codes only work for classes of your own section.</p>
             </div>
 
             <div className="card max-w-md">
               <form onSubmit={handleJoin} className="space-y-4">
-                {error && (
-                  <div className="px-4 py-3 rounded-xl text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
-                    {error}
-                  </div>
-                )}
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
                     Class Join Code
@@ -166,7 +225,9 @@ export default function JoinClass() {
                 </div>
                 <div>
                   <p className="font-semibold text-white">{classroom.className}</p>
-                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>{classroom.academicYear}</p>
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                    {classroom.sectionName ? `${classroom.sectionName} · ` : ''}{classroom.academicYear}
+                  </p>
                 </div>
               </div>
               <div className="flex gap-6 text-sm">

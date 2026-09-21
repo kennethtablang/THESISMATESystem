@@ -14,7 +14,7 @@ import {
   groupService, chapterService, consultationService,
   defenseService, consultationScheduleService, authService,
   monitoringService, classroomService, notificationService,
-  documentService,
+  documentService, registrationService,
 } from '../../services/api'
 import { toast } from '../../utils/toast'
 
@@ -1211,6 +1211,7 @@ function AdminDashboard({ user }) {
   const [users,      setUsers]      = useState([])
   const [classrooms, setClassrooms] = useState([])
   const [monitoring, setMonitoring] = useState(null)
+  const [pending,    setPending]    = useState([])
   const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
@@ -1220,12 +1221,14 @@ function AdminDashboard({ user }) {
       authService.allUsers().catch(() => []),
       monitoringService.summary().catch(() => null),
       classroomService.allClassrooms().catch(() => []),
-    ]).then(([gs, de, us, mon, cl]) => {
+      registrationService.pending().catch(() => []),
+    ]).then(([gs, de, us, mon, cl, pe]) => {
       setGroups(gs)
       setDefenses(de)
       setUsers(Array.isArray(us) ? us : [])
       setMonitoring(mon)
       setClassrooms(Array.isArray(cl) ? cl : [])
+      setPending(Array.isArray(pe) ? pe : [])
     }).finally(() => setLoading(false))
   }, [])
 
@@ -1277,10 +1280,10 @@ function AdminDashboard({ user }) {
           sub={`${completedDefs.length} completed · ${cancelledDefs.length} cancelled`}
           color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
           onClick={() => navigate('/defense-scheduler')} />
-        <StatCard icon={ShieldCheck} label="Active Users" value={activeUsers.length}
-          sub={`of ${users.length} total accounts`}
+        <StatCard icon={ShieldCheck} label="Pending Registrations" value={pending.length}
+          sub={`${pending.filter(r => r.emailVerified && r.onClassList).length} ready to approve · ${activeUsers.length} active users`}
           color={{ bg: 'rgba(245,158,11,0.12)', icon: '#f59e0b' }}
-          onClick={() => navigate('/users')} />
+          onClick={() => navigate('/registrations')} />
       </div>
 
       {/* Overview row */}
@@ -1609,7 +1612,7 @@ function SuperAdminDashboard({ user }) {
         <StatCard icon={Calendar} label="Upcoming Defenses" value={scheduledDefs.length}
           sub={`${completedDefs.length} completed · ${cancelledDefs.length} cancelled`}
           color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
-          onClick={() => navigate('/defense-scheduler')} />
+          onClick={() => navigate('/defenses')} />
       </div>
 
       {/* Overview row */}
@@ -1617,7 +1620,7 @@ function SuperAdminDashboard({ user }) {
         {/* Defense pipeline by phase */}
         <Card>
           <CardHeader title="Defense Pipeline" action={
-            <button className="btn-ghost text-xs" onClick={() => navigate('/defense-scheduler')}>Scheduler</button>
+            <button className="btn-ghost text-xs" onClick={() => navigate('/defenses')}>Scheduler</button>
           } />
           <div className="px-5 py-4">
             {defenses.length === 0
@@ -1700,7 +1703,7 @@ function SuperAdminDashboard({ user }) {
           icon={Calendar} color="#7c3aed"
           title={`${soonDefenses.length} defense${soonDefenses.length !== 1 ? 's' : ''} scheduled in the next 7 days`}
           body={`Next: ${soonDefenses[0]?.groupName} (${phaseLabel(soonDefenses[0]?.phase)}) on ${new Date(soonDefenses[0]?.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
-          action="View all" onAction={() => navigate('/defense-scheduler')}
+          action="View all" onAction={() => navigate('/defenses')}
         />
       )}
       {inactiveUsers.length > 0 && (

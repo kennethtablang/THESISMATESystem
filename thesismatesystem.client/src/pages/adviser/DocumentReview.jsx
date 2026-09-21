@@ -309,7 +309,8 @@ export default function DocumentReview() {
   const isAdmin = user?.role === 'Admin' || user?.role === 'SuperAdmin'
   // Status changes are limited to Admins and the group's adviser on the API; other Faculty
   // (panelists, classroom FICs) can open the document but got a 403 from these buttons.
-  const canReview = isAdmin || (user?.role === 'Faculty' && group?.adviser?.id === user?.id)
+  // Reviewing is an Admin/adviser action; the SuperAdmin can read but not review.
+  const canReview = user?.role === 'Admin' || (user?.role === 'Faculty' && group?.adviser?.id === user?.id)
 
   const editor = useEditor({
     extensions: [

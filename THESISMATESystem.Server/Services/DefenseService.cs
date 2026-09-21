@@ -53,6 +53,20 @@ namespace THESISMATESystem.Server.Services
                 throw new InvalidOperationException(
                     $"{group.GroupName} already has a {dto.Phase} scheduled. Cancel it before scheduling another.");
 
+            // The panel is normally fixed when the group is created; a schedule without an explicit
+            // panel inherits it, so the Admin does not have to pick the same people again.
+            if (dto.PanelistIds.Count == 0)
+            {
+                dto.PanelistIds = await _db.GroupPanelMembers
+                    .Where(p => p.CapstoneGroupId == dto.CapstoneGroupId)
+                    .OrderByDescending(p => p.IsChair)
+                    .Select(p => p.PanelistId)
+                    .ToListAsync();
+            }
+            dto.PanelistIds = dto.PanelistIds.Distinct().ToList();
+            if (dto.PanelistIds.Contains(group.AdviserId))
+                throw new InvalidOperationException("The group's adviser cannot sit on its defense panel.");
+
             var schedule = new DefenseSchedule
             {
                 CapstoneGroupId   = dto.CapstoneGroupId,
@@ -213,6 +227,8 @@ namespace THESISMATESystem.Server.Services
             {
                 query = query.Where(s =>
                     s.CapstoneGroup.AdviserId == facultyId
+                    || _db.GroupPanelMembers.Any(p =>
+                        p.PanelistId == facultyId && p.CapstoneGroupId == s.CapstoneGroupId)
                     || _db.PanelAssignments.Any(pa =>
                         pa.PanelistId == facultyId &&
                         pa.DefenseSchedule.CapstoneGroupId == s.CapstoneGroupId));
@@ -358,16 +374,93 @@ namespace THESISMATESystem.Server.Services
             var schedule = await _db.DefenseSchedules.FindAsync(id);
             if (schedule is null) return false;
 
+            // Rating opens on its own when the defense is completed; it can never be opened for a
+            // defense that has not happened yet.
+            if (isOpen && schedule.Status != DefenseStatus.Completed)
+                throw new InvalidOperationException("Rating can only be opened after the defense has been completed.");
+            if (isOpen && await _db.DefenseRatings.AnyAsync(r => r.DefenseScheduleId == id && r.IsFinalized))
+                throw new InvalidOperationException("Ratings for this defense are already finalized.");
+
             schedule.IsRatingOpen = isOpen;
             schedule.UpdatedAt = PhilippineTime.Now;
             await _db.SaveChangesAsync();
             return true;
         }
 
+        public async Task<DefenseScheduleResponseDto> CompleteDefenseAsync(int id)
+        {
+            var schedule = await _db.DefenseSchedules
+                .Include(s => s.CapstoneGroup)
+                .Include(s => s.PanelAssignments)
+                .FirstOrDefaultAsync(s => s.Id == id)
+                ?? throw new KeyNotFoundException($"Schedule {id} not found.");
+
+            if (schedule.Status == DefenseStatus.Completed)
+                throw new InvalidOperationException("This defense is already completed.");
+            if (schedule.Status == DefenseStatus.Cancelled)
+                throw new InvalidOperationException("A cancelled defense cannot be completed.");
+
+            await MarkCompletedAndOpenRatingAsync([schedule]);
+            return await GetScheduleByIdAsync(id)
+                ?? throw new InvalidOperationException("Failed to reload schedule.");
+        }
+
+        public async Task<int> CompleteEndedDefensesAsync(CancellationToken ct = default)
+        {
+            // ScheduledDateTime is stored as UTC. The end time is computed in memory because the
+            // duration varies per row, and the candidate set (not yet completed) is small.
+            var now = DateTime.UtcNow;
+            var candidates = await _db.DefenseSchedules
+                .Include(s => s.CapstoneGroup)
+                .Include(s => s.PanelAssignments)
+                .Where(s => (s.Status == DefenseStatus.Scheduled || s.Status == DefenseStatus.Rescheduled)
+                         && s.ScheduledDateTime <= now)
+                .ToListAsync(ct);
+
+            var ended = candidates.Where(s => s.ScheduledDateTime.AddMinutes(s.DurationMinutes) <= now).ToList();
+            if (ended.Count == 0) return 0;
+
+            await MarkCompletedAndOpenRatingAsync(ended);
+            return ended.Count;
+        }
+
+        /// <summary>
+        /// Completing a defense is what opens its rating form. Panelists are told the form is
+        /// available; notifications are best-effort once the state change is saved.
+        /// </summary>
+        private async Task MarkCompletedAndOpenRatingAsync(IReadOnlyCollection<DefenseSchedule> schedules)
+        {
+            foreach (var s in schedules)
+            {
+                s.Status = DefenseStatus.Completed;
+                s.IsRatingOpen = true;
+                s.UpdatedAt = PhilippineTime.Now;
+            }
+            await _db.SaveChangesAsync();
+
+            foreach (var s in schedules)
+            {
+                try
+                {
+                    var msg = $"The {DefenseEmailTemplates.PhaseLabel(s.Phase)} of {s.CapstoneGroup.GroupName} is completed. The rating form is now open.";
+                    foreach (var pa in s.PanelAssignments)
+                        await _notifications.SendAsync(pa.PanelistId, msg, NotificationType.RatingOpened,
+                            groupId: s.CapstoneGroupId, defenseId: s.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to notify panel that rating opened for defense {Id}", s.Id);
+                }
+            }
+        }
+
         public async Task<DefenseRatingResponseDto> SubmitRatingAsync(string panelistId, SubmitRatingRequestDto dto)
         {
             var schedule = await _db.DefenseSchedules.FindAsync(dto.DefenseScheduleId)
                 ?? throw new InvalidOperationException("Defense schedule not found.");
+
+            if (schedule.Status != DefenseStatus.Completed)
+                throw new InvalidOperationException("The rating form opens once the defense has been completed.");
 
             if (!schedule.IsRatingOpen)
                 throw new InvalidOperationException("Rating is currently closed for this presentation. Grades are immutable.");
@@ -387,8 +480,10 @@ namespace THESISMATESystem.Server.Services
             if (criterion.Phase != schedule.Phase)
                 throw new InvalidOperationException($"Criterion '{criterion.Name}' does not belong to the {schedule.Phase} rubric.");
 
-            if (dto.Score < 0 || dto.Score > criterion.MaxScore)
-                throw new InvalidOperationException($"Score must be between 0 and {criterion.MaxScore} for '{criterion.Name}'.");
+            // The DTO already caps scores at 0–100; the criterion can set a lower maximum.
+            var max = Math.Min(criterion.MaxScore, 100);
+            if (dto.Score < 0 || dto.Score > max)
+                throw new InvalidOperationException($"Score for '{criterion.Name}' must be between 0 and {max}. {dto.Score} is not allowed.");
 
             var existing = await _db.DefenseRatings.FirstOrDefaultAsync(r =>
                 r.DefenseScheduleId == dto.DefenseScheduleId &&
@@ -467,7 +562,11 @@ namespace THESISMATESystem.Server.Services
             }
 
             var schedule = await _db.DefenseSchedules.FindAsync(scheduleId);
-            if (schedule is not null) schedule.Status = DefenseStatus.Completed;
+            if (schedule is not null)
+            {
+                schedule.Status = DefenseStatus.Completed;
+                schedule.IsRatingOpen = false;
+            }
 
             await _db.SaveChangesAsync();
             return true;
@@ -483,6 +582,8 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<DefenseCriterionResponseDto> CreateCriterionAsync(CreateCriterionRequestDto dto)
         {
+            await EnsureWeightsFitAsync(dto.Phase, dto.Weight, excludingId: null);
+
             var criterion = new DefenseCriterion
             {
                 Name        = dto.Name,
@@ -503,6 +604,9 @@ namespace THESISMATESystem.Server.Services
             var criterion = await _db.DefenseCriteria.FindAsync(id)
                 ?? throw new KeyNotFoundException($"Criterion {id} not found.");
 
+            if (dto.Weight.HasValue || dto.Phase.HasValue)
+                await EnsureWeightsFitAsync(dto.Phase ?? criterion.Phase, dto.Weight ?? criterion.Weight, excludingId: id);
+
             if (dto.Name is not null)        criterion.Name        = dto.Name;
             if (dto.Description is not null) criterion.Description = dto.Description;
             if (dto.Weight.HasValue)         criterion.Weight      = dto.Weight.Value;
@@ -520,6 +624,17 @@ namespace THESISMATESystem.Server.Services
             criterion.IsActive = false;
             await _db.SaveChangesAsync();
             return true;
+        }
+
+        // A rubric's weights are percentages of the total grade, so together they cannot pass 100%.
+        private async Task EnsureWeightsFitAsync(DefensePhase phase, decimal weight, int? excludingId)
+        {
+            var others = await _db.DefenseCriteria
+                .Where(c => c.IsActive && c.Phase == phase && (excludingId == null || c.Id != excludingId))
+                .SumAsync(c => (decimal?)c.Weight) ?? 0;
+            if (others + weight > 100)
+                throw new InvalidOperationException(
+                    $"Criterion weights for this phase would total {others + weight}%. The total cannot exceed 100% ({100 - others}% remaining).");
         }
 
         private async Task<IEnumerable<string>> GetGroupMemberEmailsAsync(int groupId)

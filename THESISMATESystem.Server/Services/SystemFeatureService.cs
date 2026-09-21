@@ -202,9 +202,10 @@ namespace THESISMATESystem.Server.Services
                 var isMember = await _db.GroupMembers
                     .AnyAsync(gm => gm.CapstoneGroupId == feature.CapstoneGroupId && gm.UserId == authorId);
                 var isAdviser = feature.CapstoneGroup.AdviserId == authorId;
-                var isPanelist = await _db.PanelAssignments
-                    .Include(pa => pa.DefenseSchedule)
-                    .AnyAsync(pa => pa.PanelistId == authorId && pa.DefenseSchedule.CapstoneGroupId == feature.CapstoneGroupId);
+                var isPanelist = await _db.GroupPanelMembers
+                        .AnyAsync(p => p.PanelistId == authorId && p.CapstoneGroupId == feature.CapstoneGroupId)
+                    || await _db.PanelAssignments
+                        .AnyAsync(pa => pa.PanelistId == authorId && pa.DefenseSchedule.CapstoneGroupId == feature.CapstoneGroupId);
                 if (!isMember && !isAdviser && !isPanelist)
                     throw new UnauthorizedAccessException("You do not have access to comment on this feature.");
             }

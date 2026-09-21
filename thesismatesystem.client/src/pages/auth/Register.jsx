@@ -1,17 +1,19 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { sectionService } from '../../services/api'
 import { passwordError } from '../../utils/passwordPolicy'
 import {
   Eye, EyeOff, ArrowRight, ArrowLeft,
-  User, Mail, IdCard, Lock, CheckCircle2, AlertCircle,
+  User, Mail, IdCard, Lock, CheckCircle2, AlertCircle, Layers,
 } from 'lucide-react'
 import logo from '../../assets/ThesisMate-logo.png'
 
 const STEPS = [
-  { num: 1, label: 'Create account',    sub: 'Fill in your account details'  },
-  { num: 2, label: 'Verify email',       sub: 'Check your inbox for a link'   },
-  { num: 3, label: 'Start your journey', sub: 'Join your group and adviser'   },
+  { num: 1, label: 'Submit registration', sub: 'Your details and block/section'        },
+  { num: 2, label: 'Verify email',        sub: 'Check your inbox for a link'           },
+  { num: 3, label: 'Admin approval',      sub: 'Checked against your class list'       },
+  { num: 4, label: 'Start your journey',  sub: 'Sign in once you are approved'         },
 ]
 
 const PARTICLES = [
@@ -73,8 +75,17 @@ export default function Register() {
   const navigate = useNavigate()
   const [form, setForm] = useState({
     firstName: '', middleName: '', lastName: '',
-    email: '', password: '', confirmPassword: '', studentId: '',
+    email: '', password: '', confirmPassword: '', studentId: '', sectionId: '',
   })
+  const [sections, setSections] = useState([])
+  const [sectionsLoading, setSectionsLoading] = useState(true)
+
+  useEffect(() => {
+    sectionService.options()
+      .then((list) => setSections(Array.isArray(list) ? list : []))
+      .catch(() => setSections([]))
+      .finally(() => setSectionsLoading(false))
+  }, [])
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -97,6 +108,7 @@ export default function Register() {
     setError('')
     setDuplicateId(false)
     if (!form.studentId.trim()) { triggerError('Student ID is required.'); return }
+    if (!form.sectionId) { triggerError('Please select your block/section.'); return }
     if (form.password !== form.confirmPassword) { triggerError('Passwords do not match.'); return }
     const pwProblem = passwordError(form.password)
     if (pwProblem) { triggerError(pwProblem); return }
@@ -109,7 +121,7 @@ export default function Register() {
         studentId:  form.studentId.trim(),
         email:      form.email.trim(),
         password:   form.password,
-        role:       'Student',
+        sectionId:  Number(form.sectionId),
       })
       navigate(`/check-email?email=${encodeURIComponent(form.email.trim())}`)
     } catch (err) {
@@ -305,7 +317,8 @@ export default function Register() {
                 Create your account
               </h1>
               <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                Fill in the details below to register as a student.
+                Register as a student. Your account becomes active after an administrator
+                checks it against your section's class list.
               </p>
             </div>
 
@@ -405,6 +418,32 @@ export default function Register() {
                         required />
                     </div>
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                      Block / Section
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none">
+                        <Layers size={14} style={iconColor('sectionId')} />
+                      </div>
+                      <select className="form-input pl-9"
+                        value={form.sectionId} onChange={(e) => set('sectionId', e.target.value)}
+                        onFocus={() => setFocused('sectionId')} onBlur={() => setFocused('')}
+                        disabled={sectionsLoading || sections.length === 0}
+                        required>
+                        <option value="">
+                          {sectionsLoading ? 'Loading sections…' : sections.length === 0 ? 'No sections open for registration' : 'Select your block/section'}
+                        </option>
+                        {sections.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name} · {s.academicYear}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Pick the block you are officially enrolled in. Registrations not approved within 3 days are removed.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -488,11 +527,11 @@ export default function Register() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                       </svg>
-                      Creating account...
+                      Submitting...
                     </span>
                   ) : (
                     <span className="flex items-center justify-center gap-2">
-                      Create account <ArrowRight size={16} />
+                      Submit registration <ArrowRight size={16} />
                     </span>
                   )}
                 </button>

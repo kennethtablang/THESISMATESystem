@@ -65,7 +65,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create(CreateGroupRequestDto dto)
         {
             try
@@ -78,15 +78,17 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPut("{id:int}")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(int id, UpdateGroupRequestDto dto)
         {
             try { return Ok(await _groups.UpdateGroupAsync(id, dto)); }
             catch (KeyNotFoundException) { return NotFound(); }
+            // Adviser/panel/member validation failures are the caller's input, not a server fault.
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPost("{id:int}/members")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> AddMember(int id, [FromBody] AddMemberRequestDto dto)
         {
             try { return Ok(await _groups.AddMemberAsync(id, dto.UserId)); }
@@ -95,7 +97,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpDelete("{id:int}/members/{userId}")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> RemoveMember(int id, string userId)
         {
             try { return Ok(await _groups.RemoveMemberAsync(id, userId)); }
@@ -103,7 +105,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/deadlines")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> SetDeadlines(int id, [FromBody] SetGroupDeadlinesRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -124,7 +126,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("{id:int}/deadline-list")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> CreateDeadline(int id, [FromBody] CreateGroupDeadlineRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -138,7 +140,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/deadline-list/{deadlineId:int}")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> UpdateDeadline(int id, int deadlineId, [FromBody] UpdateGroupDeadlineRequestDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -152,7 +154,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpDelete("{id:int}/deadline-list/{deadlineId:int}")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> DeleteDeadline(int id, int deadlineId)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -166,7 +168,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/archive")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Archive(int id)
         {
             var success = await _groups.ArchiveGroupAsync(id);
@@ -174,7 +176,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("{id:int}/logo")]
-        [Authorize(Roles = "Student,Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Student,Faculty,Admin")]
         public async Task<IActionResult> UploadLogo(int id, IFormFile file)
         {
             if (file is null || file.Length == 0)
@@ -209,7 +211,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/defense-outcome")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> SetDefenseOutcome(int id, [FromBody] SetGroupDefenseOutcomeRequestDto dto)
         {
             try { return Ok(await _groups.SetDefenseOutcomeAsync(id, dto)); }

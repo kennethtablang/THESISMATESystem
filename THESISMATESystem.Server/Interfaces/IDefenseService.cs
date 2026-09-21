@@ -15,6 +15,10 @@ namespace THESISMATESystem.Server.Interfaces
         Task<DefenseScheduleResponseDto> UpdateScheduleAsync(int id, UpdateDefenseScheduleRequestDto dto);
         Task<bool> CancelScheduleAsync(int id);
         Task<bool> SetRatingOpenAsync(int id, bool isOpen);
+        // Marks a defense completed, which opens its rating form and notifies the panel.
+        Task<DefenseScheduleResponseDto> CompleteDefenseAsync(int id);
+        // Background job: completes every defense whose scheduled end time has passed.
+        Task<int> CompleteEndedDefensesAsync(CancellationToken ct = default);
 
         // Which groups still have no defense scheduled, per phase, for the given academic year.
         Task<DefenseCoverageDto> GetCoverageAsync(string academicYear);

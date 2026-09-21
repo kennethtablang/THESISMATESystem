@@ -29,6 +29,7 @@ namespace THESISMATESystem.Server.Models
         public ApplicationUser Adviser { get; set; } = null!;
 
         public ICollection<GroupMember> Members { get; set; } = [];
+        public ICollection<GroupPanelMember> PanelMembers { get; set; } = [];
         public ICollection<ChapterSubmission> ChapterSubmissions { get; set; } = [];
         public ICollection<ConsultationLog> ConsultationLogs { get; set; } = [];
         public ICollection<DefenseSchedule> DefenseSchedules { get; set; } = [];

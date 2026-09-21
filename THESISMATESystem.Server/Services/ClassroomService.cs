@@ -24,23 +24,43 @@ namespace THESISMATESystem.Server.Services
 
         // ── Create ──────────────────────────────────────────────────────────
 
-        public async Task<ClassroomResponseDto> CreateClassroomAsync(string facultyICId, CreateClassroomRequestDto dto)
+        public async Task<ClassroomResponseDto> CreateClassroomAsync(CreateClassroomRequestDto dto)
         {
-            var joinCode = await GenerateUniqueJoinCodeAsync();
+            // Classrooms are created by the Admin, who names the section it is offered to and the
+            // faculty member teaching it.
+            var section = await _db.Sections.FirstOrDefaultAsync(s => s.Id == dto.SectionId && s.IsActive)
+                ?? throw new InvalidOperationException("The selected block/section does not exist or is inactive.");
+
+            var teacherIsFaculty = await _db.Users
+                .Where(u => u.Id == dto.FacultyId && u.IsActive)
+                .AnyAsync(u => _db.UserRoles.Any(ur => ur.UserId == u.Id
+                    && _db.Roles.Any(r => r.Id == ur.RoleId && r.Name == "Faculty")));
+            if (!teacherIsFaculty)
+                throw new InvalidOperationException("The subject teacher must be an active Faculty member.");
 
             var classroom = new Classroom
             {
-                ClassName = dto.ClassName,
-                AcademicYear = dto.AcademicYear,
-                JoinCode = joinCode,
-                FacultyICId = facultyICId
+                ClassName = dto.ClassName.Trim(),
+                AcademicYear = dto.AcademicYear.Trim(),
+                JoinCode = await GenerateUniqueJoinCodeAsync(),
+                FacultyICId = dto.FacultyId,
+                SectionId = section.Id,
             };
 
             _db.Classrooms.Add(classroom);
             await _db.SaveChangesAsync();
 
             await _db.Entry(classroom).Reference(c => c.FacultyIC).LoadAsync();
+            await _db.Entry(classroom).Reference(c => c.Section).LoadAsync();
             await _db.Entry(classroom).Collection(c => c.Enrollments).LoadAsync();
+
+            try
+            {
+                await _notifications.SendAsync(dto.FacultyId,
+                    $"You have been assigned as subject teacher of \"{classroom.ClassName}\" ({section.Name}).",
+                    NotificationType.ClassroomInvitation);
+            }
+            catch { /* best-effort */ }
 
             return MapClassroomToDto(classroom);
         }
@@ -51,6 +71,7 @@ namespace THESISMATESystem.Server.Services
         {
             var classroom = await _db.Classrooms
                 .Include(c => c.FacultyIC)
+                .Include(c => c.Section)
                 .Include(c => c.Enrollments)
                 .Where(c => c.FacultyICId == facultyICId && c.IsActive)
                 .OrderByDescending(c => c.CreatedAt)
@@ -63,6 +84,7 @@ namespace THESISMATESystem.Server.Services
         {
             var classrooms = await _db.Classrooms
                 .Include(c => c.FacultyIC)
+                .Include(c => c.Section)
                 .Include(c => c.Enrollments)
                 .Where(c => c.FacultyICId == facultyICId)
                 .OrderByDescending(c => c.CreatedAt)
@@ -77,9 +99,12 @@ namespace THESISMATESystem.Server.Services
         {
             var classroom = await _db.Classrooms
                 .Include(c => c.FacultyIC)
+                .Include(c => c.Section)
                 .Include(c => c.Enrollments)
                 .FirstOrDefaultAsync(c => c.JoinCode == dto.JoinCode.ToUpper() && c.IsActive)
                 ?? throw new KeyNotFoundException("Classroom not found or is inactive.");
+
+            await EnsureStudentInSectionAsync(studentId, classroom);
 
             var existing = classroom.Enrollments.FirstOrDefault(e => e.StudentId == studentId);
             if (existing is not null)
@@ -104,11 +129,81 @@ namespace THESISMATESystem.Server.Services
             return MapClassroomToDto(classroom);
         }
 
+        public async Task<IEnumerable<ClassroomResponseDto>> GetAvailableClassroomsAsync(string studentId)
+        {
+            var sectionId = await _db.Users.Where(u => u.Id == studentId).Select(u => u.SectionId).FirstOrDefaultAsync();
+            if (sectionId is null) return [];
+
+            // Only the classes offered to the student's own section are listed.
+            var classrooms = await _db.Classrooms
+                .Include(c => c.FacultyIC)
+                .Include(c => c.Section)
+                .Include(c => c.Enrollments)
+                .Where(c => c.IsActive && c.SectionId == sectionId)
+                .OrderBy(c => c.ClassName)
+                .ToListAsync();
+
+            return classrooms.Select(c =>
+            {
+                var dto = MapClassroomToDto(c);
+                dto.IsEnrolled = c.Enrollments.Any(e => e.StudentId == studentId && e.Status == EnrollmentStatus.Active);
+                // The join code is only useful to people already in the class.
+                if (dto.IsEnrolled != true) dto.JoinCode = string.Empty;
+                return dto;
+            });
+        }
+
+        public async Task<ClassroomResponseDto> EnrollAsync(string studentId, int classroomId)
+        {
+            var classroom = await _db.Classrooms
+                .Include(c => c.FacultyIC)
+                .Include(c => c.Section)
+                .Include(c => c.Enrollments)
+                .FirstOrDefaultAsync(c => c.Id == classroomId && c.IsActive)
+                ?? throw new KeyNotFoundException("Classroom not found or is inactive.");
+
+            await EnsureStudentInSectionAsync(studentId, classroom);
+
+            var existing = classroom.Enrollments.FirstOrDefault(e => e.StudentId == studentId);
+            if (existing is { Status: EnrollmentStatus.Active })
+                throw new InvalidOperationException("You are already enrolled in this classroom.");
+
+            if (existing is not null) existing.Status = EnrollmentStatus.Active;
+            else _db.ClassroomEnrollments.Add(new ClassroomEnrollment
+            {
+                ClassroomId = classroom.Id,
+                StudentId = studentId,
+                Status = EnrollmentStatus.Active,
+            });
+
+            await _db.SaveChangesAsync();
+            await _db.Entry(classroom).Collection(c => c.Enrollments).LoadAsync();
+            return MapClassroomToDto(classroom);
+        }
+
+        /// <summary>
+        /// A student may only be in the classes of their own section. Enforced here on the
+        /// server, not just by what the UI lists, so a crafted request cannot cross sections.
+        /// Classrooms created before sections existed have no section and stay open.
+        /// </summary>
+        private async Task EnsureStudentInSectionAsync(string studentId, Classroom classroom)
+        {
+            if (classroom.SectionId is null) return;
+
+            var studentSection = await _db.Users.Where(u => u.Id == studentId).Select(u => u.SectionId).FirstOrDefaultAsync();
+            if (studentSection is null)
+                throw new UnauthorizedAccessException("Your account is not assigned to a block/section yet. Please contact the administrator.");
+            if (studentSection != classroom.SectionId)
+                throw new UnauthorizedAccessException("This class is not offered to your block/section.");
+        }
+
         public async Task<ClassroomResponseDto?> GetStudentClassroomAsync(string studentId)
         {
             var enrollment = await _db.ClassroomEnrollments
                 .Include(e => e.Classroom)
                     .ThenInclude(c => c.FacultyIC)
+                .Include(e => e.Classroom)
+                    .ThenInclude(c => c.Section)
                 .Include(e => e.Classroom)
                     .ThenInclude(c => c.Enrollments)
                 .Where(e => e.StudentId == studentId && e.Status == EnrollmentStatus.Active && e.Classroom.IsActive)
@@ -300,6 +395,17 @@ namespace THESISMATESystem.Server.Services
                     throw new UnauthorizedAccessException("You can only assign students enrolled in your own classrooms.");
             }
 
+            var sectionIds = await _db.Users
+                .Where(u => dto.StudentIds.Contains(u.Id)
+                         || _db.GroupMembers.Any(gm => gm.CapstoneGroupId == dto.GroupId && gm.UserId == u.Id && !dto.StudentIds.Contains(u.Id)))
+                .Select(u => u.SectionId)
+                .Distinct()
+                .ToListAsync();
+            if (sectionIds.Contains(null))
+                throw new InvalidOperationException("Every student must be assigned to a block/section before joining a group.");
+            if (sectionIds.Count > 1)
+                throw new InvalidOperationException("All members of a group must belong to the same block/section.");
+
             foreach (var studentId in dto.StudentIds)
             {
                 // Remove existing group membership(s) for this student (any group)
@@ -322,67 +428,35 @@ namespace THESISMATESystem.Server.Services
 
         // ── Create group within classroom ────────────────────────────────────
 
-        public async Task<CapstoneGroupResponseDto> CreateGroupInClassroomAsync(int classroomId, string callerId, string callerRole, CreateGroupInClassroomRequestDto dto)
+        public async Task<CapstoneGroupResponseDto> CreateGroupInClassroomAsync(int classroomId, CreateGroupInClassroomRequestDto dto)
         {
             var classroom = await _db.Classrooms.FindAsync(classroomId)
                 ?? throw new KeyNotFoundException("Classroom not found.");
 
-            // Fix 1: Faculty can only create groups in classrooms they own.
-            // Admin/SuperAdmin bypass the ownership check.
-            if (callerRole == "Faculty" && classroom.FacultyICId != callerId)
-                throw new UnauthorizedAccessException("You do not own this classroom.");
-
-            // Fix 3: Validate that the specified adviser exists and holds the Faculty role.
-            var adviserId = !string.IsNullOrWhiteSpace(dto.AdviserId) ? dto.AdviserId : callerId;
-            var adviserIsValid = await _db.Users
-                .Where(u => u.Id == adviserId)
-                .Join(_db.UserRoles, u => u.Id, ur => ur.UserId, (u, ur) => ur.RoleId)
-                .Join(_db.Roles, roleId => roleId, r => r.Id, (roleId, r) => r.Name)
-                .AnyAsync(name => name == "Faculty");
-            if (!adviserIsValid)
-                throw new InvalidOperationException("The specified adviser must be an existing Faculty member.");
-
-            var group = new CapstoneGroup
+            // Only students enrolled in this classroom may be placed in its groups.
+            var memberIds = dto.MemberIds.Distinct().ToList();
+            if (memberIds.Count > 0)
             {
-                GroupName = dto.GroupName,
-                AdviserId = adviserId,
-                AcademicYear = classroom.AcademicYear,
-            };
-
-            _db.CapstoneGroups.Add(group);
-            await _db.SaveChangesAsync();
-
-            if (dto.MemberIds.Count > 0)
-            {
-                // Fix 2: Only allow students who are actually enrolled in this classroom.
-                // This prevents cross-classroom member manipulation.
                 var enrolledIds = await _db.ClassroomEnrollments
-                    .Where(e => e.ClassroomId == classroomId && dto.MemberIds.Contains(e.StudentId))
+                    .Where(e => e.ClassroomId == classroomId && memberIds.Contains(e.StudentId))
                     .Select(e => e.StudentId)
                     .ToListAsync();
 
-                var unauthorised = dto.MemberIds.Except(enrolledIds).ToList();
+                var unauthorised = memberIds.Except(enrolledIds).ToList();
                 if (unauthorised.Count > 0)
                     throw new InvalidOperationException(
                         $"{unauthorised.Count} submitted member(s) are not enrolled in this classroom.");
-
-                // Remove any existing group memberships for the validated students
-                var existing = await _db.GroupMembers
-                    .Where(gm => enrolledIds.Contains(gm.UserId))
-                    .ToListAsync();
-                _db.GroupMembers.RemoveRange(existing);
-
-                _db.GroupMembers.AddRange(enrolledIds.Select(uid => new GroupMember
-                {
-                    CapstoneGroupId = group.Id,
-                    UserId = uid
-                }));
-
-                await _db.SaveChangesAsync();
             }
 
-            return await _groups.GetGroupByIdAsync(group.Id)
-                ?? throw new InvalidOperationException("Failed to load created group.");
+            return await _groups.CreateGroupAsync(new CreateGroupRequestDto
+            {
+                GroupName = dto.GroupName,
+                AdviserId = dto.AdviserId,
+                AcademicYear = classroom.AcademicYear,
+                MemberIds = memberIds,
+                PanelistIds = dto.PanelistIds,
+                PanelChairId = dto.PanelChairId,
+            });
         }
 
         // ── Admin: all classrooms ────────────────────────────────────────────
@@ -391,6 +465,7 @@ namespace THESISMATESystem.Server.Services
         {
             var classrooms = await _db.Classrooms
                 .Include(c => c.FacultyIC)
+                .Include(c => c.Section)
                 .Include(c => c.Enrollments)
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
@@ -403,9 +478,21 @@ namespace THESISMATESystem.Server.Services
         {
             var classroom = await _db.Classrooms
                 .Include(c => c.FacultyIC)
+                .Include(c => c.Section)
                 .Include(c => c.Enrollments)
                 .FirstOrDefaultAsync(c => c.Id == classroomId && c.IsActive)
                 ?? throw new KeyNotFoundException("Classroom not found or inactive.");
+
+            if (classroom.SectionId is not null)
+            {
+                var outside = await _db.Users
+                    .Where(u => dto.StudentIds.Contains(u.Id) && u.SectionId != classroom.SectionId)
+                    .Select(u => u.FirstName + " " + u.LastName)
+                    .ToListAsync();
+                if (outside.Count > 0)
+                    throw new InvalidOperationException(
+                        $"{string.Join(", ", outside)} {(outside.Count == 1 ? "is" : "are")} not in this class's block/section.");
+            }
 
             foreach (var studentUserId in dto.StudentIds)
             {
@@ -503,6 +590,7 @@ namespace THESISMATESystem.Server.Services
                     FullName = $"{s.FirstName} {s.LastName}".Trim(),
                     Email = s.Email ?? string.Empty,
                     StudentId = s.StudentId,
+                    SectionId = s.SectionId,
                     ActiveGroupId = membership?.CapstoneGroupId,
                     ActiveGroupName = membership?.GroupName,
                 };
@@ -559,7 +647,9 @@ namespace THESISMATESystem.Server.Services
                 FullName = $"{c.FacultyIC.FirstName} {c.FacultyIC.LastName}".Trim(),
                 Email = c.FacultyIC.Email ?? string.Empty
             },
-            EnrollmentCount = c.Enrollments.Count
+            EnrollmentCount = c.Enrollments.Count,
+            SectionId = c.SectionId,
+            SectionName = c.Section?.Name,
         };
 
         private static AnnouncementResponseDto MapAnnouncementToDto(ClassroomAnnouncement a) => new()

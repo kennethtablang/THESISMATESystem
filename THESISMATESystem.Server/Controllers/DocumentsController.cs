@@ -86,7 +86,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPost("{id:int}/comments")]
-        [Authorize(Roles = "Student,Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Student,Faculty,Admin")]
         public async Task<IActionResult> AddComment(int id, [FromBody] AddDocumentCommentRequestDto dto)
         {
             var authorId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -107,7 +107,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = "Student,Admin,SuperAdmin")]
+        [Authorize(Roles = "Student,Admin")]
         public async Task<IActionResult> Delete(int id)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -144,7 +144,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("{id:int}/status")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateDocumentStatusRequestDto dto)
         {
             var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

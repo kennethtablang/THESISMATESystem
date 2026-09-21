@@ -39,7 +39,7 @@ namespace THESISMATESystem.Server.Controllers
         {
             var success = await _auth.VerifyEmailAsync(dto.UserId, dto.Token);
             return success
-                ? Ok(new { message = "Email verified successfully. You can now log in." })
+                ? Ok(new { message = "Email verified. An administrator will review your registration; you will be emailed once it is approved." })
                 : BadRequest(new { message = "The verification link is invalid or has expired. Please request a new verification email." });
         }
 
@@ -161,12 +161,24 @@ namespace THESISMATESystem.Server.Controllers
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
         }
 
+        // Admin reads the directory to pick advisers, panelists and students; only the SuperAdmin
+        // may create or change accounts.
         [HttpGet("users")]
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> GetAllUsers() => Ok(await _auth.GetAllUsersAsync());
 
+        [HttpPost("users")]
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> CreateUser(CreateUserRequestDto dto)
+        {
+            var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try { return Ok(await _auth.CreateUserAsync(dto, callerId)); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         [HttpPut("users/{userId}")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> UpdateUser(string userId, UpdateUserRequestDto dto)
         {
             var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
@@ -178,7 +190,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpPatch("users/{userId}/deactivate")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> DeactivateUser(string userId)
         {
             var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

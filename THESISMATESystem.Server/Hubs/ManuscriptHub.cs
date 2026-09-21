@@ -125,6 +125,8 @@ namespace THESISMATESystem.Server.Hubs
                 "Faculty" =>
                     await db.CapstoneGroups
                         .AnyAsync(g => g.Id == groupId && g.AdviserId == userId) ||
+                    await db.GroupPanelMembers
+                        .AnyAsync(p => p.PanelistId == userId && p.CapstoneGroupId == groupId) ||
                     await db.PanelAssignments
                         .AnyAsync(pa => pa.PanelistId == userId &&
                             pa.DefenseSchedule.CapstoneGroupId == groupId) ||
