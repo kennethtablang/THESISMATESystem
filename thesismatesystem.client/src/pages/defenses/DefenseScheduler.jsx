@@ -203,7 +203,8 @@ export default function DefenseScheduler() {
         const [grps, defs, users] = await Promise.all([
           groupService.list(),
           defenseService.list(),
-          authService.allUsers().catch(() => []),
+          // The user directory is Admin-only; Faculty only view the calendar.
+          canModify ? authService.allUsers().catch(() => []) : Promise.resolve([]),
         ])
         setGroups(Array.isArray(grps)  ? grps.filter(g => g.status === 'Active') : [])
         setDefenses(Array.isArray(defs) ? defs : [])

@@ -188,7 +188,8 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
                   <div className="min-w-0 flex-1">
                     <p className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{g.projectTitle || g.groupName}</p>
                     <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                      {g.groupName} · panel: {(g.panelMembers?.length ?? 0) || 'none'}
+                      {/* The first line already shows the group name when there is no title yet. */}
+                      {g.projectTitle ? `${g.groupName} · ` : ''}panel: {(g.panelMembers?.length ?? 0) || 'none'}
                     </p>
                   </div>
                 </label>

@@ -232,7 +232,7 @@ export default function JoinClass() {
               </div>
               <div className="flex gap-6 text-sm">
                 <div>
-                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Faculty IC</p>
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Subject Teacher</p>
                   <p className="text-white">{classroom.facultyIC?.fullName}</p>
                 </div>
                 <div>
@@ -244,7 +244,7 @@ export default function JoinClass() {
 
             <div className="mb-4">
               <h2 className="font-semibold text-lg" style={{ color: 'var(--text-heading)' }}>Class Announcements</h2>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Updates from your Faculty-In-Charge</p>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Updates from your subject teacher</p>
             </div>
 
             {announcements.length === 0 ? (

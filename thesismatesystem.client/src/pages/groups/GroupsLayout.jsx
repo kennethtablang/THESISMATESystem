@@ -244,7 +244,10 @@ export default function GroupsLayout() {
               <div className="py-10 px-4 text-center">
                 <Users size={28} className="mx-auto mb-2" style={{ color: 'var(--text-muted)', opacity: 0.3 }} />
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                  {search ? 'No groups match your search.' : isAdmin ? 'No groups yet. Create one above.' : 'No groups found.'}
+                  {search ? 'No groups match your search.'
+                    : isAdmin ? 'No groups yet. Create one above.'
+                    : isStudent ? "You're not in a capstone group yet. The Admin assigns groups once your class is set up."
+                    : 'No groups found.'}
                 </p>
               </div>
             ) : filtered.map(g => (
@@ -539,7 +542,7 @@ function GroupListItem({ group, selected, onClick, onEdit, onEditVersion, onUplo
 
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {group.members?.length ?? 0} members
+            {group.members?.length ?? 0} member{(group.members?.length ?? 0) === 1 ? '' : 's'}
           </span>
           <span
             className="text-xs px-1.5 py-0.5 rounded-md font-medium"

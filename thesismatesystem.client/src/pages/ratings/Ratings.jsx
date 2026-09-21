@@ -121,7 +121,10 @@ export default function Ratings() {
   // panelists to open a dead rubric.
   const active  = defenses.filter(d => d.status !== 'Cancelled')
   const ratable = active.filter(d => d.isRatingOpen)
-  const locked  = active.filter(d => !d.isRatingOpen)
+  // Rating opens when a defense is completed, so a not-yet-held defense is "upcoming",
+  // not "locked" — lumping the two together read as if the panelist had missed something.
+  const upcoming = active.filter(d => !d.isRatingOpen && d.status !== 'Completed')
+  const locked   = active.filter(d => !d.isRatingOpen && d.status === 'Completed')
 
   return (
     <div>
@@ -152,10 +155,25 @@ export default function Ratings() {
                 </div>
               </section>
             )}
+            {upcoming.length > 0 && (
+              <section>
+                <h2 className="font-display font-semibold text-lg mb-1" style={{ color: 'var(--text-heading)', letterSpacing: '-0.3px' }}>
+                  Upcoming
+                </h2>
+                <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                  The rating form opens automatically once each defense is completed.
+                </p>
+                <div className="space-y-4">
+                  {upcoming.map(d => (
+                    <DefenseRatingCard key={d.id} defense={d} rated={ratedIds.has(d.id)} onRate={() => openRating(d)} />
+                  ))}
+                </div>
+              </section>
+            )}
             {locked.length > 0 && (
               <section>
                 <h2 className="font-display font-semibold text-lg mb-4" style={{ color: 'var(--text-heading)', letterSpacing: '-0.3px' }}>
-                  Locked / Completed
+                  Completed &amp; Locked
                 </h2>
                 <div className="space-y-4">
                   {locked.map(d => (
