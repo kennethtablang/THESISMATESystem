@@ -5,7 +5,7 @@ import {
   BookOpen, FileText, Download, MessageSquare, Users,
   CheckCircle, AlertCircle, Clock, Eye, Send, History,
   ChevronDown, ChevronUp, ArrowLeftRight, Search, User,
-  File as FileIcon,
+  File as FileIcon, Highlighter,
 } from 'lucide-react'
 import { renderAsync } from 'docx-preview'
 import { toast } from '../../utils/toast'
@@ -486,6 +486,20 @@ export default function ManuscriptReview() {
                     </div>
                   </div>
                 </div>
+
+                {/* Chapters 1–5 are written in the Manuscript editor; reviewers highlight and comment there */}
+                <button
+                  onClick={() => navigate(`/manuscript/review/${selectedGroupId}`)}
+                  className="w-full mb-3 px-3 py-2.5 rounded-xl flex items-center gap-2.5 text-left transition-all"
+                  style={{ background: 'rgba(37,99,235,0.07)', border: '1px solid rgba(37,99,235,0.2)' }}>
+                  <Highlighter size={15} style={{ color: '#2563eb', flexShrink: 0 }} />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>Open Manuscript</span>
+                    <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Read Chapters 1–5 and References live, highlight and comment in your own colour
+                    </span>
+                  </span>
+                </button>
 
                 {/* Full thesis title */}
                 {groupDetail?.projectTitle && (

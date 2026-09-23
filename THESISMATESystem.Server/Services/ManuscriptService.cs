@@ -103,7 +103,7 @@ namespace THESISMATESystem.Server.Services
             var group = membership.CapstoneGroup;
 
             if (group.ManuscriptLocked)
-                throw new InvalidOperationException("The manuscript is locked. Voting has been finalized.");
+                throw new InvalidOperationException("The manuscript is locked for review.");
 
             var section = await _db.ManuscriptSections
                 .FirstOrDefaultAsync(s => s.CapstoneGroupId == group.Id && s.SectionKey == sectionKey);
@@ -146,7 +146,9 @@ namespace THESISMATESystem.Server.Services
             return _mapper.Map<ManuscriptSectionResponseDto>(section);
         }
 
-        // Finalization voting
+        // Lock status. Students no longer vote to finalize (removed in revision round 3); the
+        // lock state is still reported so a group locked before that change stays read-only
+        // until its adviser opens the next revision.
 
         public async Task<ManuscriptVoteStatusDto> GetVoteStatusAsync(string studentId)
         {
@@ -157,80 +159,6 @@ namespace THESISMATESystem.Server.Services
                 ?? throw new KeyNotFoundException("No active group.");
 
             var group = membership.CapstoneGroup;
-            return await BuildVoteStatusAsync(group, studentId);
-        }
-
-        public async Task<ManuscriptVoteStatusDto> CastVoteAsync(string studentId)
-        {
-            var membership = await _db.GroupMembers
-                .Include(gm => gm.CapstoneGroup)
-                .FirstOrDefaultAsync(gm => gm.UserId == studentId &&
-                    gm.CapstoneGroup.Status == GroupStatus.Active)
-                ?? throw new KeyNotFoundException("No active group.");
-
-            var group = membership.CapstoneGroup;
-
-            if (group.ManuscriptLocked)
-                throw new InvalidOperationException("Already locked for this revision.");
-
-            // Validate references count
-            var refSection = await _db.ManuscriptSections
-                .FirstOrDefaultAsync(s => s.CapstoneGroupId == group.Id && s.SectionKey == "references");
-            var refCount = CountReferences(refSection?.Content ?? string.Empty);
-            if (refCount < 30)
-                throw new InvalidOperationException($"The References section must contain at least 30 entries. Currently has {refCount}.");
-
-            var already = await _db.ManuscriptFinalizationVotes
-                .AnyAsync(v => v.CapstoneGroupId == group.Id && v.UserId == studentId && v.Revision == group.ManuscriptRevision);
-
-            if (!already)
-            {
-                _db.ManuscriptFinalizationVotes.Add(new ManuscriptFinalizationVote
-                {
-                    CapstoneGroupId = group.Id,
-                    UserId = studentId,
-                    Revision = group.ManuscriptRevision
-                });
-                await _db.SaveChangesAsync();
-            }
-
-            // Check if all members have voted
-            var totalMembers = await _db.GroupMembers.CountAsync(gm => gm.CapstoneGroupId == group.Id);
-            var voteCount = await _db.ManuscriptFinalizationVotes
-                .CountAsync(v => v.CapstoneGroupId == group.Id && v.Revision == group.ManuscriptRevision);
-
-            if (voteCount >= totalMembers && totalMembers > 0)
-            {
-                group.ManuscriptLocked = true;
-                await _db.SaveChangesAsync();
-                await NotifyLockAsync(group);
-            }
-
-            return await BuildVoteStatusAsync(group, studentId);
-        }
-
-        public async Task<ManuscriptVoteStatusDto> RevokeVoteAsync(string studentId)
-        {
-            var membership = await _db.GroupMembers
-                .Include(gm => gm.CapstoneGroup)
-                .FirstOrDefaultAsync(gm => gm.UserId == studentId &&
-                    gm.CapstoneGroup.Status == GroupStatus.Active)
-                ?? throw new KeyNotFoundException("No active group.");
-
-            var group = membership.CapstoneGroup;
-
-            if (group.ManuscriptLocked)
-                throw new InvalidOperationException("Cannot revoke a vote after locking.");
-
-            var vote = await _db.ManuscriptFinalizationVotes
-                .FirstOrDefaultAsync(v => v.CapstoneGroupId == group.Id && v.UserId == studentId && v.Revision == group.ManuscriptRevision);
-
-            if (vote != null)
-            {
-                _db.ManuscriptFinalizationVotes.Remove(vote);
-                await _db.SaveChangesAsync();
-            }
-
             return await BuildVoteStatusAsync(group, studentId);
         }
 
@@ -274,6 +202,11 @@ namespace THESISMATESystem.Server.Services
             if (!ValidKeys.Contains(sectionKey))
                 throw new ArgumentException($"Invalid section key: {sectionKey}");
 
+            var content = dto.Content?.Trim() ?? string.Empty;
+            var quote   = string.IsNullOrWhiteSpace(dto.Quote) ? null : dto.Quote;
+            if (content.Length == 0 && quote is null)
+                throw new ArgumentException("Write a comment or highlight some text.");
+
             var group = await _db.CapstoneGroups.FindAsync(groupId)
                 ?? throw new KeyNotFoundException("Group not found.");
 
@@ -283,8 +216,11 @@ namespace THESISMATESystem.Server.Services
                 SectionKey      = sectionKey,
                 Revision        = group.ManuscriptRevision,
                 AuthorId        = userId,
-                Content         = dto.Content,
-                CreatedAt       = PhilippineTime.Now
+                Content         = content,
+                CreatedAt       = PhilippineTime.Now,
+                Field           = quote is null ? null : dto.Field,
+                Quote           = quote,
+                Prefix          = quote is null ? null : dto.Prefix,
             };
             _db.ManuscriptSectionComments.Add(comment);
             await _db.SaveChangesAsync();
@@ -294,6 +230,69 @@ namespace THESISMATESystem.Server.Services
             // Attach role and return
             var result = await AttachRolesToCommentsAsync([comment]);
             return result[0];
+        }
+
+        public async Task<string> DeleteCommentAsync(string userId, int groupId, int commentId)
+        {
+            var comment = await _db.ManuscriptSectionComments
+                .FirstOrDefaultAsync(c => c.Id == commentId && c.CapstoneGroupId == groupId)
+                ?? throw new KeyNotFoundException("Comment not found.");
+
+            // A reviewer's highlight is theirs alone: another panelist, and the students, can
+            // read it but not remove it.
+            if (comment.AuthorId != userId)
+                throw new UnauthorizedAccessException("You can only remove your own highlights.");
+
+            _db.ManuscriptSectionComments.Remove(comment);
+            await _db.SaveChangesAsync();
+            return comment.SectionKey;
+        }
+
+        // ── Reviewer colours ─────────────────────────────────────────────────
+        // The adviser is always blue and each standing panelist gets their own colour in panel
+        // order, so a highlight shows whose remark it is. Anyone else with access (the subject
+        // teacher, a panelist added only through a defense schedule) shares a neutral colour.
+
+        private const string AdviserColor = "#2563eb";
+        private static readonly string[] PanelColors = ["#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2", "#db2777"];
+        private const string OtherReviewerColor = "#a16207";
+
+        public async Task<List<ManuscriptReviewerDto>> GetReviewersAsync(int groupId)
+        {
+            var reviewers = new List<ManuscriptReviewerDto>();
+
+            var adviser = await _db.CapstoneGroups
+                .Where(g => g.Id == groupId && g.AdviserId != "")
+                .Select(g => new { g.AdviserId, g.Adviser.FirstName, g.Adviser.LastName })
+                .FirstOrDefaultAsync();
+            if (adviser is not null)
+                reviewers.Add(new ManuscriptReviewerDto
+                {
+                    UserId = adviser.AdviserId,
+                    FullName = $"{adviser.FirstName} {adviser.LastName}".Trim(),
+                    Label = "Adviser",
+                    Color = AdviserColor,
+                });
+
+            var panel = await _db.GroupPanelMembers
+                .Where(p => p.CapstoneGroupId == groupId)
+                .OrderByDescending(p => p.IsChair).ThenBy(p => p.Id)
+                .Select(p => new { p.PanelistId, p.Panelist.FirstName, p.Panelist.LastName, p.IsChair })
+                .ToListAsync();
+
+            for (int i = 0; i < panel.Count; i++)
+            {
+                if (reviewers.Any(r => r.UserId == panel[i].PanelistId)) continue;
+                reviewers.Add(new ManuscriptReviewerDto
+                {
+                    UserId = panel[i].PanelistId,
+                    FullName = $"{panel[i].FirstName} {panel[i].LastName}".Trim(),
+                    Label = panel[i].IsChair ? "Panel Chair" : $"Panel {i + 1}",
+                    Color = PanelColors[i % PanelColors.Length],
+                });
+            }
+
+            return reviewers;
         }
 
         public async Task<IEnumerable<ManuscriptCommentDto>> GetCommentsAsync(int groupId, string? sectionKey, int? revision)
@@ -524,11 +523,25 @@ namespace THESISMATESystem.Server.Services
                 .GroupBy(x => x.UserId)
                 .ToDictionary(g => g.Key, g => g.First().Name);
 
+            // Comments passed in always belong to a single group.
+            var reviewers = (await GetReviewersAsync(comments[0].CapstoneGroupId))
+                .ToDictionary(r => r.UserId);
+
             var dtos = new List<ManuscriptCommentDto>(comments.Count);
             foreach (var c in comments)
             {
                 var dto = _mapper.Map<ManuscriptCommentDto>(c);
                 dto.AuthorRole = roleMap.GetValueOrDefault(c.AuthorId, string.Empty);
+                if (reviewers.TryGetValue(c.AuthorId, out var reviewer))
+                {
+                    dto.ReviewerLabel = reviewer.Label;
+                    dto.Color = reviewer.Color;
+                }
+                else
+                {
+                    dto.ReviewerLabel = dto.AuthorRole == "Admin" ? "Subject Teacher" : dto.AuthorRole;
+                    dto.Color = OtherReviewerColor;
+                }
                 dtos.Add(dto);
             }
             return dtos;
@@ -547,21 +560,6 @@ namespace THESISMATESystem.Server.Services
             {
                 UserId = uid,
                 Message = message,
-                Type = NotificationType.ManuscriptUpdated,
-                RelatedGroupId = group.Id
-            }));
-            await _db.SaveChangesAsync();
-        }
-
-        private async Task NotifyLockAsync(CapstoneGroup group)
-        {
-            var msg = $"The manuscript for \"{group.GroupName}\" has been finalized and locked by all members. It is now ready for review.";
-            var recipientIds = await BuildRecipientSetAsync(group, includeMembers: true);
-
-            _db.Notifications.AddRange(recipientIds.Select(uid => new Notification
-            {
-                UserId = uid,
-                Message = msg,
                 Type = NotificationType.ManuscriptUpdated,
                 RelatedGroupId = group.Id
             }));
@@ -611,21 +609,6 @@ namespace THESISMATESystem.Server.Services
             var text = Regex.Replace(html, "<[^>]+>", " ");
             text = System.Net.WebUtility.HtmlDecode(text);
             return text.Split([' ', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries).Length;
-        }
-
-        private static int CountReferences(string html)
-        {
-            if (string.IsNullOrWhiteSpace(html)) return 0;
-            // Count <li> tags (numbered or bulleted list references)
-            var listMatches = Regex.Matches(html, @"<li[\s>]", RegexOptions.IgnoreCase);
-            if (listMatches.Count > 0) return listMatches.Count;
-            // Fallback: count <p> blocks with substantial text (>10 non-whitespace chars)
-            var pMatches = Regex.Matches(html, @"<p[\s>].*?</p>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            return pMatches.Count(m =>
-            {
-                var text = Regex.Replace(m.Value, "<[^>]+>", string.Empty).Trim();
-                return System.Net.WebUtility.HtmlDecode(text).Length > 10;
-            });
         }
 
         private static string SectionLabel(string key) => key switch

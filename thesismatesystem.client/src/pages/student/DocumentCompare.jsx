@@ -57,11 +57,12 @@ async function extractHtmlParagraphs(arrayBuffer, mam) {
         for (const section of el.children) {
           for (const row of section.children) {
             const rowText = row.textContent.trim()
-            if (rowText) items.push({ text: rowText, outerHtml: row.outerHTML })
+            if (rowText) items.push({ text: rowText, raw: row.textContent, outerHtml: row.outerHTML })
           }
         }
       } else {
-        items.push({ text, outerHtml: el.outerHTML })
+        // `raw` keeps the untrimmed text so word-diff offsets line up with the DOM text nodes.
+        items.push({ text, raw: el.textContent, outerHtml: el.outerHTML })
       }
     }
   }
@@ -108,13 +109,17 @@ function buildDiffGroups(parasA, parasB, diffLib) {
       const pairs    = []
 
       for (let j = 0; j < Math.max(del.length, ins.length); j++) {
-        const oldP = del[j] ?? null
-        const newP = ins[j] ?? null
+        const oldP  = del[j] ?? null
+        const newP  = ins[j] ?? null
+        const words = (oldP && newP) ? diffLib.diffWordsWithSpace(oldP.raw, newP.raw) : null
         pairs.push({
           old:   oldP,
           new:   newP,
-          // word diff used only for stats; rendering uses outerHtml
-          words: (oldP && newP) ? diffLib.diffWords(oldP.text, newP.text) : null,
+          words,
+          // Only the words that changed are marked (e.g. "angelo" → "angelo de vera" marks just
+          // "de vera"). Paragraphs that were rewritten wholesale read better as a plain
+          // delete + insert, so the inline view is used only when most of the text survived.
+          inlineHtml: words && sharedRatio(words) >= 0.3 ? inlineDiffHtml(newP.outerHtml, words) : null,
         })
       }
       groups.push({ type: 'modified', pairs })
@@ -131,6 +136,91 @@ function buildDiffGroups(parasA, parasB, diffLib) {
   }
 
   return groups
+}
+
+// Share of characters common to both sides of a word diff (0–1).
+function sharedRatio(parts) {
+  let same = 0, oldLen = 0, newLen = 0
+  for (const p of parts) {
+    if (p.added) newLen += p.value.length
+    else if (p.removed) oldLen += p.value.length
+    else { same += p.value.length; oldLen += p.value.length; newLen += p.value.length }
+  }
+  return same / Math.max(oldLen, newLen, 1)
+}
+
+/**
+ * Re-renders the new paragraph's HTML with word-level marks: inserted words wrapped in
+ * <ins class="tc-word-ins">, deleted words re-inserted in place as <del class="tc-word-del">.
+ * The diff runs on the paragraph's text, so marks are applied by walking its text nodes —
+ * bold/italic/etc. from the DOCX stay intact around them.
+ */
+function inlineDiffHtml(newHtml, parts) {
+  const insRanges = []   // [start, end) offsets into the new text
+  const dels = []        // { at, text } — removed text anchored at a new-text offset
+  let off = 0
+  for (const p of parts) {
+    if (p.added) { insRanges.push([off, off + p.value.length]); off += p.value.length }
+    else if (p.removed) dels.push({ at: off, text: p.value, done: false })
+    else off += p.value.length
+  }
+
+  const tpl = document.createElement('template')
+  tpl.innerHTML = newHtml
+  const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT)
+  const nodes = []
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n)
+
+  const mkDel = text => {
+    const el = document.createElement('del')
+    el.className = 'tc-word-del'
+    el.textContent = text
+    return el
+  }
+
+  let pos = 0
+  for (const node of nodes) {
+    const text  = node.nodeValue
+    const start = pos
+    const end   = pos + text.length
+    pos = end
+    if (!text.length) continue
+
+    const cuts = new Set([0, text.length])
+    for (const [a, b] of insRanges) {
+      if (a > start && a < end) cuts.add(a - start)
+      if (b > start && b < end) cuts.add(b - start)
+    }
+    for (const d of dels) if (d.at > start && d.at < end) cuts.add(d.at - start)
+    const bounds = [...cuts].sort((x, y) => x - y)
+
+    const frag = document.createDocumentFragment()
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const abs = start + bounds[i]
+      for (const d of dels) if (!d.done && d.at === abs) { d.done = true; frag.appendChild(mkDel(d.text)) }
+      const piece = text.slice(bounds[i], bounds[i + 1])
+      if (insRanges.some(([a, b]) => abs >= a && abs < b)) {
+        const el = document.createElement('ins')
+        el.className = 'tc-word-ins'
+        el.textContent = piece
+        frag.appendChild(el)
+      } else {
+        frag.appendChild(document.createTextNode(piece))
+      }
+    }
+    node.parentNode.replaceChild(frag, node)
+  }
+
+  // Text removed from the very end of the paragraph has no following node to sit before.
+  const tail = dels.filter(d => !d.done)
+  if (tail.length) {
+    const host = tpl.content.lastElementChild ?? tpl.content
+    tail.forEach(d => host.appendChild(mkDel(d.text)))
+  }
+
+  const wrap = document.createElement('div')
+  wrap.appendChild(tpl.content)
+  return wrap.innerHTML
 }
 
 function computeStats(groups, parasA, parasB) {
@@ -176,7 +266,7 @@ const PURIFY_CONFIG = {
     'ul','ol','li','table','thead','tbody','tfoot','tr','th','td',
     'strong','b','em','i','u','s','del','ins','sup','sub','br','span','a',
   ],
-  ALLOWED_ATTR: ['style', 'href', 'colspan', 'rowspan'],
+  ALLOWED_ATTR: ['style', 'href', 'colspan', 'rowspan', 'class'],
 }
 function sanitize(html) {
   return DOMPurify.sanitize(html ?? '', PURIFY_CONFIG)
@@ -189,7 +279,8 @@ function sanitize(html) {
  * Unchanged  → raw HTML (full formatting, no colour change)
  * Removed    → HTML wrapped in .tc-removed  (CSS: red + strikethrough on all children)
  * Added      → HTML wrapped in .tc-added    (CSS: green + underline on all children)
- * Modified   → old HTML in .tc-removed, then new HTML in .tc-added
+ * Modified   → the new paragraph with only its changed words marked (inline), or — when the
+ *              paragraph was largely rewritten — old HTML in .tc-removed then new in .tc-added
  *
  * Because the CSS classes target every descendant (`*`), bold, italic, font-size
  * and other formatting from the original DOCX are all preserved — only colour
@@ -247,7 +338,9 @@ function TrackedGroup({ group, groupIdx, isCurrentChange, registerChangeRef }) {
         />
       ))}
 
-      {group.type === 'modified' && group.pairs.map((pair, i) => (
+      {group.type === 'modified' && group.pairs.map((pair, i) => pair.inlineHtml ? (
+        <div key={i} dangerouslySetInnerHTML={{ __html: sanitize(pair.inlineHtml) }} />
+      ) : (
         <div key={i}>
           {pair.old && (
             <div

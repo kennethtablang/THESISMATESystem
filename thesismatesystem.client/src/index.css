@@ -440,3 +440,18 @@
 }
 .tc-added strong, .tc-added b { font-weight: bold; }
 .tc-added em,     .tc-added i { font-style: italic; }
+
+/* Word-level marks inside an edited paragraph: only the words that actually changed are
+   coloured, the rest of the paragraph keeps its normal ink. */
+.tc-word-ins {
+  color: #107C41;
+  text-decoration: underline;
+  background-color: rgba(16, 124, 65, 0.12);
+  border-radius: 2px;
+}
+.tc-word-del {
+  color: #C00000;
+  text-decoration: line-through;
+  background-color: rgba(192, 0, 0, 0.08);
+  border-radius: 2px;
+}

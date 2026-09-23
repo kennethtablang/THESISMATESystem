@@ -1,5 +1,6 @@
 using AutoMapper;
 using THESISMATESystem.Server.DTOs.Response;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Models;
 
 namespace THESISMATESystem.Server.Profiles
@@ -75,7 +76,9 @@ namespace THESISMATESystem.Server.Profiles
             CreateMap<ManuscriptSection, ManuscriptSectionResponseDto>()
                 .ForMember(d => d.UpdatedBy, o => o.MapFrom(s => s.UpdatedBy))
                 .ForMember(d => d.YjsState, o => o.MapFrom(s =>
-                    s.YjsState != null ? Convert.ToBase64String(s.YjsState) : null));
+                    s.YjsState != null ? Convert.ToBase64String(s.YjsState) : null))
+                .ForMember(d => d.CompletionPercent, o => o.MapFrom(s =>
+                    ManuscriptCompletion.Percent(s.SectionKey, s.Content, s.WordCount)));
 
             CreateMap<ManuscriptSectionComment, ManuscriptCommentDto>()
                 .ForMember(d => d.Author, o => o.MapFrom(s => s.Author));

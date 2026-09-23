@@ -12,6 +12,9 @@ namespace THESISMATESystem.Server.DTOs.Response
         public int EnrollmentCount { get; set; }
         public int? SectionId { get; set; }
         public string? SectionName { get; set; }
+        // The Admin(s)/subject teacher(s) assigned to this block. Filled on the student's
+        // My Class view, where the block's teacher — not the classroom's faculty — is shown.
+        public List<UserSummaryDto> SubjectTeachers { get; set; } = [];
         // Student-facing listing only: whether the caller is already enrolled.
         public bool? IsEnrolled { get; set; }
     }

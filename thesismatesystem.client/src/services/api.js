@@ -179,10 +179,8 @@ export const manuscriptService = {
   byGroup: (groupId) => api.get(`/manuscript/group/${groupId}`),
   saveSection: (sectionKey, data) => api.put(`/manuscript/my-group/${sectionKey}`, data),
 
-  // Voting
+  // Lock / revision status
   voteStatus: () => api.get('/manuscript/my-group/vote-status'),
-  castVote: () => api.post('/manuscript/my-group/vote'),
-  revokeVote: () => api.delete('/manuscript/my-group/vote'),
 
   // Comments
   comments: (groupId, sectionKey, revision) => {
@@ -199,6 +197,10 @@ export const manuscriptService = {
   },
   addComment: (groupId, sectionKey, data) =>
     api.post(`/manuscript/group/${groupId}/comments/${sectionKey}`, data),
+  deleteComment: (groupId, commentId) =>
+    api.delete(`/manuscript/group/${groupId}/comments/${commentId}`),
+  // Adviser + panel with their highlight colours
+  reviewers: (groupId) => api.get(`/manuscript/group/${groupId}/reviewers`),
 
   // Revision management (Adviser / FIC)
   openRevision: (groupId) => api.post(`/manuscript/group/${groupId}/open-revision`),

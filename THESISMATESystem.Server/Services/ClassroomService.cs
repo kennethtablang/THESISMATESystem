@@ -143,9 +143,12 @@ namespace THESISMATESystem.Server.Services
                 .OrderBy(c => c.ClassName)
                 .ToListAsync();
 
+            var teachers = await LoadSubjectTeachersAsync(sectionId.Value);
+
             return classrooms.Select(c =>
             {
                 var dto = MapClassroomToDto(c);
+                dto.SubjectTeachers = teachers;
                 dto.IsEnrolled = c.Enrollments.Any(e => e.StudentId == studentId && e.Status == EnrollmentStatus.Active);
                 // The join code is only useful to people already in the class.
                 if (dto.IsEnrolled != true) dto.JoinCode = string.Empty;
@@ -210,8 +213,37 @@ namespace THESISMATESystem.Server.Services
                 .OrderByDescending(e => e.JoinedAt)
                 .FirstOrDefaultAsync();
 
-            return enrollment is null ? null : MapClassroomToDto(enrollment.Classroom);
+            if (enrollment is null) return null;
+
+            var dto = MapClassroomToDto(enrollment.Classroom);
+
+            // The student's block decides who their subject teacher is. A classroom created
+            // before sections existed has no SectionId, so fall back to the student's own block.
+            var sectionId = enrollment.Classroom.SectionId
+                ?? await _db.Users.Where(u => u.Id == studentId).Select(u => u.SectionId).FirstOrDefaultAsync();
+
+            if (sectionId is not null)
+            {
+                dto.SectionId = sectionId;
+                dto.SectionName ??= await _db.Sections.Where(s => s.Id == sectionId).Select(s => s.Name).FirstOrDefaultAsync();
+                dto.SubjectTeachers = await LoadSubjectTeachersAsync(sectionId.Value);
+            }
+
+            return dto;
         }
+
+        // The Admin(s) assigned to a block are its subject teachers.
+        private Task<List<UserSummaryDto>> LoadSubjectTeachersAsync(int sectionId) =>
+            _db.SectionAdminAssignments
+                .Where(a => a.SectionId == sectionId && a.Admin.IsActive)
+                .OrderBy(a => a.AssignedAt)
+                .Select(a => new UserSummaryDto
+                {
+                    Id = a.Admin.Id,
+                    FullName = (a.Admin.FirstName + " " + a.Admin.LastName).Trim(),
+                    Email = a.Admin.Email ?? string.Empty,
+                })
+                .ToListAsync();
 
         // ── Enrollments ──────────────────────────────────────────────────────
 

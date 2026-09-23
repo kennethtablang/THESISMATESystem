@@ -13,5 +13,13 @@ namespace THESISMATESystem.Server.Models
         public ApplicationUser Author { get; set; } = null!;
         public string Content { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
+
+        // Anchor for an in-text highlight left by an adviser/panelist. Null on older,
+        // section-level comments. Field is the chapter sub-topic (Yjs fragment) the text is in;
+        // Quote is the highlighted text and Prefix the text just before it, which together
+        // locate the highlight again even after the students edit around it.
+        public string? Field { get; set; }
+        public string? Quote { get; set; }
+        public string? Prefix { get; set; }
     }
 }

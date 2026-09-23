@@ -79,15 +79,40 @@ namespace THESISMATESystem.Server.Services
                 .Where(cs => cs.CapstoneGroupId == group.Id)
                 .ToListAsync();
 
-            // Latest submission per chapter number
-            var latestByChapter = submissions
-                .GroupBy(cs => cs.ChapterNumber)
-                .Select(g => g.OrderByDescending(cs => cs.Version).First())
+            // Chapters reach the adviser two ways: the Chapters page (ChapterSubmission) and the
+            // manuscript's Finalize → Upload Documents flow (DocumentSubmission, Chapter1–5). An
+            // adviser approving Chapter 1 from the Manuscripts page only touches the latter, so
+            // both are read and the more recent entry per chapter decides its status.
+            var chapterEntries = submissions
+                .Select(cs => (Chapter: cs.ChapterNumber, cs.Status, At: cs.SubmittedAt))
                 .ToList();
 
-            int approved      = latestByChapter.Count(cs => cs.Status == ChapterStatus.Approved);
-            int underRevision = latestByChapter.Count(cs => cs.Status == ChapterStatus.UnderRevision);
-            int pending       = latestByChapter.Count(cs => cs.Status == ChapterStatus.PendingReview);
+            var chapterDocs = await _db.DocumentSubmissions
+                .Where(d => d.CapstoneGroupId == group.Id
+                         && d.Section >= DocumentSection.Chapter1 && d.Section <= DocumentSection.Chapter5
+                         && d.SubmissionStatus != DocumentSubmissionStatus.Draft)
+                .Select(d => new { d.Section, d.SubmissionStatus, d.SubmittedAt })
+                .ToListAsync();
+
+            chapterEntries.AddRange(chapterDocs.Select(d => (
+                Chapter: (int)d.Section!.Value - (int)DocumentSection.Chapter1 + 1,
+                Status: d.SubmissionStatus switch
+                {
+                    DocumentSubmissionStatus.Approved      => ChapterStatus.Approved,
+                    DocumentSubmissionStatus.NeedsRevision => ChapterStatus.UnderRevision,
+                    _                                      => ChapterStatus.PendingReview,
+                },
+                At: d.SubmittedAt)));
+
+            // Latest entry per chapter number
+            var latestByChapter = chapterEntries
+                .GroupBy(e => e.Chapter)
+                .Select(g => g.OrderByDescending(e => e.At).First())
+                .ToList();
+
+            int approved      = latestByChapter.Count(e => e.Status == ChapterStatus.Approved);
+            int underRevision = latestByChapter.Count(e => e.Status == ChapterStatus.UnderRevision);
+            int pending       = latestByChapter.Count(e => e.Status == ChapterStatus.PendingReview);
             int totalChapters = latestByChapter.Count;
 
             // Score: each approved chapter = 20 pts (5 chapters = 100), with small partial credit
@@ -119,13 +144,21 @@ namespace THESISMATESystem.Server.Services
                 .Where(ms => ms.CapstoneGroupId == group.Id)
                 .ToListAsync();
 
-            int sectionsWithContent = sections.Count(ms => ms.WordCount > 100);
+            // Each chapter counts by the share of its required sub-topics that are filled in, so
+            // a half-written chapter earns half credit instead of all-or-nothing.
+            var sectionPercents = sections
+                .GroupBy(ms => ms.SectionKey)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Max(ms => ManuscriptCompletion.Percent(ms.SectionKey, ms.Content, ms.WordCount)));
+
+            int sectionsWithContent = sectionPercents.Values.Count(p => p >= 100);
             DateTime? lastManuscriptUpdate = sections.Count > 0
                 ? sections.Max(ms => ms.UpdatedAt)
                 : null;
 
-            // Score: 6 sections total (chapter1–5 + references)
-            int manuscriptScore = (int)Math.Round(sectionsWithContent / 6.0 * 100);
+            // Score: average over the 6 sections (chapter1–5 + references); missing ones count 0
+            int manuscriptScore = (int)Math.Round(sectionPercents.Values.Sum() / 6.0);
 
             // ── Consultations ─────────────────────────────────────────────────
             var consultations = await _db.ConsultationLogs

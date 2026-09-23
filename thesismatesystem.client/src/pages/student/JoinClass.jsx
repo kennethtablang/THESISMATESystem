@@ -36,7 +36,8 @@ export default function JoinClass() {
     setEnrollingId(cls.id)
     try {
       const joined = await classroomService.enroll(cls.id)
-      setClassroom(joined)
+      // my-class carries the block's subject teacher, which the enroll response does not.
+      setClassroom(await classroomService.myClass().catch(() => joined))
       const anns = await classroomService.myAnnouncements().catch(() => [])
       setAnnouncements(anns || [])
     } catch (err) {
@@ -69,7 +70,7 @@ export default function JoinClass() {
     setLoading(true)
     try {
       const data = await classroomService.join({ joinCode: code.trim().toUpperCase() })
-      setClassroom(data)
+      setClassroom(await classroomService.myClass().catch(() => data))
       setCode('')
       const anns = await classroomService.myAnnouncements().catch(() => [])
       setAnnouncements(anns || [])
@@ -176,7 +177,7 @@ export default function JoinClass() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-heading)' }}>{cls.className}</p>
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {cls.sectionName} · {cls.academicYear} · Teacher: {cls.facultyIC?.fullName}
+                        {cls.sectionName} · {cls.academicYear} · Teacher: {cls.subjectTeachers?.map(t => t.fullName).join(", ") || "Not yet assigned"}
                       </p>
                     </div>
                     <button onClick={() => handleEnroll(cls)} disabled={enrollingId === cls.id}
@@ -230,10 +231,18 @@ export default function JoinClass() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-6 text-sm">
+              <div className="flex gap-6 text-sm flex-wrap">
                 <div>
                   <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Subject Teacher</p>
-                  <p className="text-white">{classroom.facultyIC?.fullName}</p>
+                  <p className="text-white">
+                    {classroom.subjectTeachers?.length
+                      ? classroom.subjectTeachers.map(t => t.fullName).join(', ')
+                      : 'Not yet assigned'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Block</p>
+                  <p className="text-white">{classroom.sectionName ?? '—'}</p>
                 </div>
                 <div>
                   <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Students</p>

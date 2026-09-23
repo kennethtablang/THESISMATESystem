@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { manuscriptService, groupService, documentService } from '../../services/api'
 import { toast } from '../../utils/toast'
@@ -8,8 +8,9 @@ import { PageLoader } from '../../components/ui/Spinner'
 import {
   Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Image, Table as TableIcon, Save, Lock, Users, List, ListOrdered, Strikethrough,
-  Wifi, WifiOff, ZoomIn, ZoomOut, Download, FileText, ChevronDown,
-  Heading1, Heading2, Heading3, MessageSquare, X, Trash2, FileUp, Check,
+  Wifi, WifiOff, ZoomIn, ZoomOut, Download, FileText, ChevronDown, ChevronUp,
+  Heading1, Heading2, Heading3, MessageSquare, X, Trash2, FileUp, Check, Highlighter,
+  CheckCircle2, Circle, AlertTriangle, BookMarked, ArrowLeft,
 } from 'lucide-react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -32,6 +33,11 @@ import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import { SignalRYjsProvider } from '../../lib/SignalRYjsProvider'
 import { downloadDocx, generateDocxBlob } from '../../lib/exportDocx'
 import { GrammarCheck } from '../../lib/GrammarCheckExtension'
+import { ReviewAnnotations, setReviewAnnotations, anchorForRange } from '../../lib/ReviewAnnotations'
+import {
+  templateFor, chapterNumber, composeChapterHtml, completionFromHtml, checkCitations,
+  htmlToText, LEGACY_FIELD,
+} from '../../lib/chapterTemplates'
 
 // Custom FontSize extension (free alternative to @tiptap-pro/extension-font-size)
 const FontSize = Extension.create({
@@ -57,7 +63,7 @@ const FontSize = Extension.create({
   }
 })
 
-// Inline comment mark — stores commentId, synced via Yjs
+// Inline comment mark — stores commentId, synced via Yjs (students' own comments)
 const CommentMark = Mark.create({
   name: 'comment',
   excludes: '',
@@ -83,13 +89,16 @@ const CommentMark = Mark.create({
 })
 
 const SECTIONS = [
-  { key: 'chapter1', label: 'Chapter 1', subtitle: 'Introduction' },
-  { key: 'chapter2', label: 'Chapter 2', subtitle: 'RRL' },
-  { key: 'chapter3', label: 'Chapter 3', subtitle: 'Methodology' },
-  { key: 'chapter4', label: 'Chapter 4', subtitle: 'Results' },
-  { key: 'chapter5', label: 'Chapter 5', subtitle: 'Summary' },
+  { key: 'chapter1', label: 'Chapter 1' },
+  { key: 'chapter2', label: 'Chapter 2' },
+  { key: 'chapter3', label: 'Chapter 3' },
+  { key: 'chapter4', label: 'Chapter 4' },
+  { key: 'chapter5', label: 'Chapter 5' },
   { key: 'references', label: 'References', subtitle: 'Bibliography' },
-]
+].map(s => ({ ...s, subtitle: s.subtitle ?? templateFor(s.key)?.title ?? '' }))
+
+const CHAPTER_KEYS = SECTIONS.filter(s => s.key !== 'references').map(s => s.key)
+const MIN_REFERENCES = 30
 
 const FONT_FAMILIES = [
   { label: 'Default', value: '' },
@@ -103,6 +112,7 @@ const FONT_FAMILIES = [
 const FONT_SIZES = ['10', '11', '12', '14', '16', '18', '20', '24', '28', '32']
 
 const USER_COLORS = ['#ef4444', '#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6']
+const FALLBACK_REVIEWER = { label: 'Reviewer', color: '#a16207' }
 
 const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), hi)
 
@@ -124,59 +134,95 @@ function userColor(uid) {
   return USER_COLORS[Math.abs(h) % USER_COLORS.length]
 }
 
-function countReferences(html) {
-  if (!html) return 0
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
-  const lis = doc.querySelectorAll('li')
-  if (lis.length > 0) return lis.length
-  const ps = [...doc.querySelectorAll('p')].filter(p => p.textContent.trim().length > 10)
-  return ps.length
+function sectionLabelOf(key) {
+  return key === 'references' ? 'References' : `Chapter ${chapterNumber(key)}`
 }
 
+/**
+ * Student: /manuscript — writes the group's manuscript.
+ * Adviser / panel / subject teacher: /manuscript/review/:groupId — reads it live and leaves
+ * highlights and comments in their own colour; they cannot change the text.
+ */
 export default function ManuscriptEditor() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const { groupId: reviewGroupParam } = useParams()
+  const [searchParams] = useSearchParams()
+  const reviewMode = !!reviewGroupParam
+
+  const requestedKey = searchParams.get('section')
   const [group, setGroup] = useState(undefined)   // undefined=loading, null=no group
-  const [activeKey, setActiveKey] = useState('chapter1')
+  const [activeKey, setActiveKey] = useState(
+    SECTIONS.some(s => s.key === requestedKey) ? requestedKey : 'chapter1')
   const [sections, setSections] = useState({})
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [voteStatus, setVoteStatus] = useState(null)
-  const [voteLoading, setVoteLoading] = useState(false)
+  const [lockStatus, setLockStatus] = useState(null)
   const [revSummary, setRevSummary] = useState(null)   // RevisionSummaryDto
   const [ydoc, setYdoc] = useState(null)
   const [provider, setProvider] = useState(null)
   const [hubState, setHubState] = useState('disconnected') // 'connecting'|'connected'|'disconnected'
   const [finalizing, setFinalizing] = useState(false)
+  const [annotations, setAnnotations] = useState([])     // adviser/panel highlights for the open section
+  const [reviewers, setReviewers] = useState([])
+  const [liveHtml, setLiveHtml] = useState(null)          // composed HTML of the open section, as typed
 
   const connectionRef = useRef(null)
   const providerRef = useRef(null)
   const activeKeyRef = useRef(activeKey)
   activeKeyRef.current = activeKey
 
+  const myReviewer = useMemo(() => {
+    if (!reviewMode) return null
+    const r = reviewers.find(x => x.userId === user?.id)
+    if (r) return r
+    return user?.role === 'Admin' ? { label: 'Subject Teacher', color: FALLBACK_REVIEWER.color } : FALLBACK_REVIEWER
+  }, [reviewMode, reviewers, user])
+  const myReviewerRef = useRef(myReviewer)
+  myReviewerRef.current = myReviewer
+
   useEffect(() => {
-    groupService.myGroup()
+    const load = reviewMode ? groupService.get(Number(reviewGroupParam)) : groupService.myGroup()
+    load
       .then(g => setGroup(g))
       .catch(err => {
         // Only a 404 means "no group"; other failures should not tell the student they have none.
-        if (err.status !== 404) toast.error(err.message || 'An error occurred while loading your group.')
+        if (err.status !== 404) toast.error(err.message || 'An error occurred while loading the group.')
         setGroup(null)
       })
-  }, [])
+  }, [reviewMode, reviewGroupParam])
 
   useEffect(() => {
     if (!group) return
-    manuscriptService.myGroup()
+    const loadSections = reviewMode ? manuscriptService.byGroup(group.id) : manuscriptService.myGroup()
+    loadSections
       .then(data => {
         const map = {}
         data.forEach(s => { map[s.sectionKey] = s })
         setSections(map)
       })
       .catch(err => toast.error(err.message || 'An error occurred while loading the manuscript.'))
-    manuscriptService.voteStatus().then(setVoteStatus).catch(() => {})
-    manuscriptService.myRevisionSummary().then(setRevSummary).catch(() => {})
-  }, [group])
+    if (reviewMode) {
+      manuscriptService.revisionSummary(group.id).then(setRevSummary).catch(() => {})
+      manuscriptService.reviewers(group.id).then(setReviewers).catch(() => {})
+    } else {
+      manuscriptService.voteStatus().then(setLockStatus).catch(() => {})
+      manuscriptService.myRevisionSummary().then(setRevSummary).catch(() => {})
+    }
+  }, [group, reviewMode])
+
+  // Adviser/panel highlights of the open section
+  const loadAnnotations = useCallback((key) => {
+    if (!group) return
+    const req = reviewMode ? manuscriptService.comments(group.id, key) : manuscriptService.myGroupComments(key)
+    req
+      .then(list => { if (activeKeyRef.current === key) setAnnotations((list ?? []).filter(c => c.quote)) })
+      .catch(() => {})
+  }, [group, reviewMode])
+  const loadAnnotationsRef = useRef(loadAnnotations)
+  loadAnnotationsRef.current = loadAnnotations
+
+  useEffect(() => { loadAnnotations(activeKey) }, [activeKey, loadAnnotations])
 
   // Build SignalR connection once per group
   useEffect(() => {
@@ -194,6 +240,10 @@ export default function ManuscriptEditor() {
       await conn.invoke('JoinSection', group.id, activeKeyRef.current).catch(console.warn)
     })
     conn.onclose(() => setHubState('disconnected'))
+    // A reviewer added or removed a highlight in this section
+    conn.on('AnnotationsChanged', key => {
+      if (key === activeKeyRef.current) loadAnnotationsRef.current(key)
+    })
 
     let active = true  // guards against StrictMode double-mount race
     setHubState('connecting')
@@ -213,14 +263,14 @@ export default function ManuscriptEditor() {
       conn.stop()
       connectionRef.current = null
     }
-  }, [group])
+  }, [group]) // eslint-disable-line react-hooks/exhaustive-deps -- activateProvider reads refs only
 
   function activateProvider(groupId, sectionKey, conn) {
     const doc = new Y.Doc()
-    const prov = new SignalRYjsProvider(doc, groupId, sectionKey, conn)
+    const prov = new SignalRYjsProvider(doc, groupId, sectionKey, conn, { readOnly: reviewMode })
     prov.setUser({
-      name: `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() || 'Student',
-      color: userColor(user?.id ?? 'x'),
+      name: `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() || (reviewMode ? 'Reviewer' : 'Student'),
+      color: reviewMode ? (myReviewerRef.current?.color ?? FALLBACK_REVIEWER.color) : userColor(user?.id ?? 'x'),
     })
     prov.connect().catch(console.warn)
     providerRef.current = prov
@@ -234,15 +284,16 @@ export default function ManuscriptEditor() {
     providerRef.current = null
     setYdoc(null)
     setProvider(null)
+    setAnnotations([])
+    setLiveHtml(null)
     setActiveKey(key)
     if (connectionRef.current && group) {
       activateProvider(group.id, key, connectionRef.current)
     }
   }
 
-  const handleSave = useCallback(async (editorInstance, currentYdoc) => {
-    if (!editorInstance || !group || !currentYdoc) return
-    const html = editorInstance.getHTML()
+  const handleSave = useCallback(async (html, currentYdoc) => {
+    if (reviewMode || !group || !currentYdoc) return
     const state = Y.encodeStateAsUpdate(currentYdoc)
     let binary = ''
     for (let i = 0; i < state.length; i++) binary += String.fromCharCode(state[i])
@@ -261,30 +312,10 @@ export default function ManuscriptEditor() {
     } finally {
       setSaving(false)
     }
-  }, [group])
-
-  async function handleVote() {
-    setVoteLoading(true)
-    setSaveError('')
-    try {
-      const status = voteStatus?.currentUserVoted
-        ? await manuscriptService.revokeVote()
-        : await manuscriptService.castVote()
-      setVoteStatus(status)
-    } catch (err) {
-      setSaveError(err.message)
-    } finally {
-      setVoteLoading(false)
-    }
-  }
-
-  const FINALIZABLE_SECTIONS = new Set(['chapter1','chapter2','chapter3','chapter4','chapter5','references'])
-  const activeSectionLabel = activeKey === 'references'
-    ? 'References'
-    : `Chapter ${activeKey.replace('chapter', '')}`
+  }, [group, reviewMode])
 
   async function handleFinalize(html, sectionLabel) {
-    if (!group?.id || finalizing || !FINALIZABLE_SECTIONS.has(activeKey)) return
+    if (!group?.id || finalizing || reviewMode) return
     setFinalizing(true)
     setSaveError('')
     try {
@@ -295,7 +326,7 @@ export default function ManuscriptEditor() {
       const fd = new FormData()
       fd.append('file', blob, `${activeKey}.docx`)
       await documentService.finalizeSection(group.id, activeKey, fd)
-      toast.success(`${activeSectionLabel} exported to Upload Documents.`)
+      toast.success(`${sectionLabelOf(activeKey)} exported to Upload Documents.`)
     } catch (err) {
       setSaveError(err.message || 'Failed to export section.')
     } finally {
@@ -303,12 +334,55 @@ export default function ManuscriptEditor() {
     }
   }
 
+  async function handleAddAnnotation(data) {
+    if (!group) return false
+    try {
+      await manuscriptService.addComment(group.id, activeKey, data)
+      loadAnnotations(activeKey)
+      return true
+    } catch (err) {
+      toast.error(err.message || 'Could not save the highlight.')
+      return false
+    }
+  }
+
+  async function handleDeleteAnnotation(id) {
+    if (!group) return
+    try {
+      await manuscriptService.deleteComment(group.id, id)
+      loadAnnotations(activeKey)
+    } catch (err) {
+      toast.error(err.message || 'Could not remove the highlight.')
+    }
+  }
+
+  // Latest HTML per section: what is being typed for the open one, the saved copy otherwise
+  const htmlOf = useCallback(key => (key === activeKey && liveHtml != null) ? liveHtml : (sections[key]?.content ?? ''),
+    [activeKey, liveHtml, sections])
+
+  const progressByKey = useMemo(() => {
+    const out = {}
+    CHAPTER_KEYS.forEach(k => { out[k] = completionFromHtml(k, htmlOf(k)) })
+    return out
+  }, [htmlOf])
+
+  const overallPercent = Math.round(
+    CHAPTER_KEYS.reduce((n, k) => n + (progressByKey[k]?.percent ?? 0), 0) / CHAPTER_KEYS.length)
+
+  const chapterTexts = useMemo(() => {
+    const out = {}
+    CHAPTER_KEYS.forEach(k => { out[k] = htmlToText(sections[k]?.content ?? '') })
+    return out
+  }, [sections])
+
+  const citations = useMemo(() => checkCitations(htmlOf('references'), chapterTexts), [htmlOf, chapterTexts])
+
   if (group === undefined) return <><TopBar title="Manuscript Editor" /><PageLoader /></>
 
   if (group === null) {
     return (
       <div>
-        <TopBar title="Manuscript Editor" />
+        <TopBar title={reviewMode ? 'Manuscript Review' : 'Manuscript Editor'} />
         <div className="flex flex-col items-center justify-center" style={{ minHeight: 'calc(100vh - 80px)' }}>
           <div className="rounded-2xl p-10 text-center max-w-md"
             style={{ background: 'var(--bg-card)', border: '1px solid var(--border-main)' }}>
@@ -317,36 +391,48 @@ export default function ManuscriptEditor() {
               <Users size={28} style={{ color: '#c9a84c' }} />
             </div>
             <h2 className="font-display font-semibold text-lg mb-2" style={{ color: 'var(--text-heading)' }}>
-              No Group Yet
+              {reviewMode ? 'Group not available' : 'No Group Yet'}
             </h2>
             <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-              You need to be part of a capstone group before you can use the manuscript editor.
+              {reviewMode
+                ? 'This group could not be loaded, or you are not its adviser or panelist.'
+                : 'You need to be part of a capstone group before you can use the manuscript editor.'}
             </p>
-            <button className="btn-primary" onClick={() => navigate('/groups')}>View Groups</button>
+            <button className="btn-primary" onClick={() => navigate(reviewMode ? '/documents' : '/groups')}>
+              {reviewMode ? 'Back to Manuscripts' : 'View Groups'}
+            </button>
           </div>
         </div>
       </div>
     )
   }
 
-  const isLocked = voteStatus?.isLocked ?? false
-  const votePct = voteStatus ? (voteStatus.voteCount / Math.max(voteStatus.totalMembers, 1)) * 100 : 0
-  const referenceCount = countReferences(sections['references']?.content ?? '')
-  const hasEnoughReferences = referenceCount >= 30
+  const isLocked = !reviewMode && (lockStatus?.isLocked ?? false)
+  const readOnly = reviewMode || isLocked
+  const citedCount = citations.filter(c => c.status === 'cited').length
 
   return (
     <div>
       <TopBar
-        title="Manuscript Editor"
-        subtitle={`${group.groupName} · Revision ${voteStatus?.revision ?? 1}`}
+        title={reviewMode ? 'Manuscript Review' : 'Manuscript Editor'}
+        subtitle={reviewMode
+          ? `${group.groupName} · highlight and comment`
+          : `${group.groupName} · Revision ${lockStatus?.revision ?? 1}`}
       />
 
       <div className="flex" style={{ height: 'calc(100vh - 64px)' }}>
         {/* Section sidebar */}
         <aside className="flex flex-col shrink-0 border-r overflow-hidden"
-          style={{ width: 184, background: 'var(--bg-card)', borderColor: 'var(--border-main)' }}>
+          style={{ width: 196, background: 'var(--bg-card)', borderColor: 'var(--border-main)' }}>
+          {reviewMode && (
+            <button onClick={() => navigate('/documents')}
+              className="mx-2 mt-2 px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5"
+              style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-main)' }}>
+              <ArrowLeft size={12} /> Back to Manuscripts
+            </button>
+          )}
           {/* "All reviewed" celebration banner inside sidebar */}
-          {revSummary?.isCurrentRevisionReviewed && isLocked && (
+          {!reviewMode && revSummary?.isCurrentRevisionReviewed && isLocked && (
             <div className="mx-2 mt-2 px-3 py-2 rounded-xl text-center"
               style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
               <p className="text-[10px] font-semibold leading-tight" style={{ color: '#16a34a' }}>
@@ -359,63 +445,68 @@ export default function ManuscriptEditor() {
           )}
           <div className="p-2.5 space-y-0.5 flex-1 overflow-y-auto">
             {SECTIONS.map(s => {
-              const filled   = !!sections[s.key]?.content
               const active   = activeKey === s.key
               const st       = revSummary?.sections?.find(r => r.sectionKey === s.key)
-              const reviewed = st?.isReviewed ?? false
               const cmtCount = st?.commentCount ?? 0
-
-              // Border: active=gold, reviewed=green, otherwise default
-              const borderColor = active
-                ? 'rgba(201,168,76,0.22)'
-                : reviewed ? 'rgba(34,197,94,0.2)' : 'transparent'
-              const bgColor = active
-                ? 'rgba(201,168,76,0.10)'
-                : reviewed ? 'rgba(34,197,94,0.05)' : 'transparent'
+              const progress = progressByKey[s.key]
+              const isRefs   = s.key === 'references'
+              const refTotal = isRefs ? citations.length : 0
+              const complete = isRefs ? refTotal > 0 && citedCount === refTotal : progress?.percent === 100
+              const barColor = complete ? '#16a34a' : '#c9a84c'
 
               return (
                 <button key={s.key} onClick={() => switchSection(s.key)}
                   className="w-full text-left px-3 py-2.5 rounded-xl transition-all"
-                  style={{ background: bgColor, border: `1px solid ${borderColor}` }}>
+                  style={{
+                    background: active ? 'rgba(201,168,76,0.10)' : 'transparent',
+                    border: `1px solid ${active ? 'rgba(201,168,76,0.22)' : 'transparent'}`,
+                  }}>
                   <div className="flex items-center gap-2">
-                    {/* Content dot */}
-                    <span className="w-2 h-2 rounded-full shrink-0 transition-colors"
-                      style={{ background: filled ? '#16a34a' : active ? '#c9a84c' : 'var(--border-main)' }} />
                     <span className="text-sm font-medium truncate flex-1"
                       style={{ color: active ? '#c9a84c' : 'var(--text-primary)' }}>
                       {s.label}
                     </span>
-                    {s.key === 'references' && !isLocked && (
-                      <span
-                        className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
+                    {!isRefs && (
+                      <span className="text-[10px] font-bold tabular-nums shrink-0" style={{ color: barColor }}>
+                        {progress?.percent ?? 0}%
+                      </span>
+                    )}
+                    {isRefs && refTotal > 0 && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
+                        title="References cited in Chapters 1–5"
                         style={{
-                          background: hasEnoughReferences ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                          color: hasEnoughReferences ? '#16a34a' : '#ef4444',
+                          background: complete ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                          color: complete ? '#16a34a' : '#ef4444',
                         }}>
-                        {referenceCount}/30
+                        {citedCount}/{refTotal}
                       </span>
                     )}
                     {/* Reviewer comment indicator */}
                     {cmtCount > 0 && (
-                      <span
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0"
-                        style={{
-                          background: reviewed ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
-                          color: reviewed ? '#16a34a' : '#f59e0b',
-                        }}
-                      >
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0"
+                        title={`${cmtCount} reviewer highlight${cmtCount !== 1 ? 's' : ''}`}
+                        style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
                         {cmtCount}
                       </span>
                     )}
                   </div>
-                  <p className="text-xs mt-0.5 pl-4 truncate" style={{ color: 'var(--text-muted)' }}>
-                    {sections[s.key]?.wordCount
-                      ? `${sections[s.key].wordCount.toLocaleString()} words`
-                      : s.subtitle}
+                  <p className="text-[10px] mt-0.5 truncate uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                    {s.subtitle}
                   </p>
-                  {reviewed && (
-                    <p className="text-[10px] mt-0.5 pl-4" style={{ color: '#16a34a' }}>
-                      Reviewed
+                  {!isRefs && (
+                    <>
+                      <div className="h-1 rounded-full mt-1.5" style={{ background: 'var(--bg-subtle)' }}>
+                        <div className="h-1 rounded-full transition-all duration-500"
+                          style={{ width: `${progress?.percent ?? 0}%`, background: barColor }} />
+                      </div>
+                      <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {progress?.filled ?? 0} of {progress?.total ?? 0} sub-topics
+                      </p>
+                    </>
+                  )}
+                  {isRefs && (
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                      {refTotal} of {MIN_REFERENCES} references
                     </p>
                   )}
                 </button>
@@ -423,77 +514,32 @@ export default function ManuscriptEditor() {
             })}
           </div>
 
-          {/* Vote panel */}
+          {/* Overall progress (replaces the old finalize vote) */}
           <div className="p-3 border-t shrink-0" style={{ borderColor: 'var(--border-main)' }}>
             {isLocked ? (
               <div className="text-center py-1">
                 <div className="flex items-center justify-center gap-1.5 mb-1 text-xs font-semibold"
                   style={{ color: '#c9a84c' }}>
-                  <Lock size={11} /> Finalized
+                  <Lock size={11} /> Locked for review
                 </div>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Rev {voteStatus?.revision} — locked for review
+                  Rev {lockStatus?.revision} — waiting for your adviser
                 </p>
               </div>
             ) : (
               <>
                 <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Finalize</span>
-                  <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                    {voteStatus?.voteCount ?? 0}/{voteStatus?.totalMembers ?? 0} voted
+                  <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Chapters 1–5</span>
+                  <span className="text-xs font-bold tabular-nums" style={{ color: overallPercent === 100 ? '#16a34a' : '#c9a84c' }}>
+                    {overallPercent}%
                   </span>
                 </div>
-
                 <div className="h-1.5 rounded-full mb-1.5" style={{ background: 'var(--bg-subtle)' }}>
                   <div className="h-1.5 rounded-full transition-all duration-500"
-                    style={{ width: `${votePct}%`, background: '#c9a84c' }} />
+                    style={{ width: `${overallPercent}%`, background: overallPercent === 100 ? '#16a34a' : '#c9a84c' }} />
                 </div>
-
-                {/* Voter avatars */}
-                {voteStatus?.voters?.length > 0 && (
-                  <div className="flex items-center gap-1 mb-2 flex-wrap">
-                    {voteStatus.voters.map(v => {
-                      const initials = v.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')
-                      return (
-                        <span
-                          key={v.fullName}
-                          className="w-6 h-6 rounded-full text-[9px] font-bold flex items-center justify-center shrink-0"
-                          style={{ background: 'rgba(34,197,94,0.15)', color: '#16a34a', border: '1px solid rgba(34,197,94,0.3)' }}
-                          title={`${v.fullName} voted`}
-                        >
-                          {initials.toUpperCase()}
-                        </span>
-                      )
-                    })}
-                    <span className="text-[10px] ml-1" style={{ color: 'var(--text-muted)' }}>voted</span>
-                  </div>
-                )}
-
-                {!hasEnoughReferences && !voteStatus?.currentUserVoted && (
-                  <p className="text-[10px] mb-1.5 text-center leading-tight px-1"
-                    style={{ color: '#ef4444' }}>
-                    Need {30 - referenceCount} more reference{30 - referenceCount !== 1 ? 's' : ''} ({referenceCount}/30)
-                  </p>
-                )}
-                <button
-                  className="w-full text-xs py-1.5 rounded-lg font-medium transition-all"
-                  onClick={handleVote}
-                  disabled={voteLoading || (!voteStatus?.currentUserVoted && !hasEnoughReferences)}
-                  style={{
-                    background: voteStatus?.currentUserVoted ? 'rgba(201,168,76,0.15)' : 'rgba(201,168,76,0.06)',
-                    color: '#c9a84c',
-                    border: '1px solid rgba(201,168,76,0.25)',
-                    cursor: (voteLoading || (!voteStatus?.currentUserVoted && !hasEnoughReferences)) ? 'not-allowed' : 'pointer',
-                    opacity: (voteLoading || (!voteStatus?.currentUserVoted && !hasEnoughReferences)) ? 0.45 : 1,
-                  }}>
-                  {voteLoading
-                    ? '…'
-                    : voteStatus?.currentUserVoted
-                      ? '✓ Voted — Revoke'
-                      : 'Vote to Finalize'}
-                </button>
-                <p className="text-xs mt-1.5 text-center leading-tight" style={{ color: 'var(--text-muted)' }}>
-                  Locking requires all {voteStatus?.totalMembers ?? '?'} members
+                <p className="text-[10px] leading-tight" style={{ color: 'var(--text-muted)' }}>
+                  A chapter is complete when every required sub-topic has content.
                 </p>
               </>
             )}
@@ -509,7 +555,7 @@ export default function ManuscriptEditor() {
               <div className="flex items-center gap-3 px-4 py-2 shrink-0 text-xs font-medium flex-wrap"
                 style={{ background: 'rgba(201,168,76,0.07)', borderBottom: '1px solid rgba(201,168,76,0.15)', color: '#a0832a' }}>
                 <Lock size={12} className="shrink-0" />
-                <span>Revision {voteStatus?.revision} is finalized and read-only.</span>
+                <span>Revision {lockStatus?.revision} is locked and read-only until your adviser opens the next revision.</span>
                 {revSummary && (
                   <span
                     className="ml-auto px-2 py-0.5 rounded-lg text-[10px] font-semibold"
@@ -527,24 +573,6 @@ export default function ManuscriptEditor() {
             )
           })()}
 
-          {activeKey === 'references' && !isLocked && (
-            <div className="px-4 py-2 shrink-0 flex items-center gap-3"
-              style={{ background: hasEnoughReferences ? 'rgba(34,197,94,0.07)' : 'rgba(239,68,68,0.07)', borderBottom: '1px solid', borderColor: hasEnoughReferences ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)' }}>
-              <span className="text-xs font-medium shrink-0" style={{ color: hasEnoughReferences ? '#16a34a' : '#ef4444' }}>
-                References: {referenceCount}/30
-              </span>
-              <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
-                <div className="h-1.5 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min((referenceCount / 30) * 100, 100)}%`, background: hasEnoughReferences ? '#16a34a' : '#ef4444' }} />
-              </div>
-              {!hasEnoughReferences && (
-                <span className="text-[11px] shrink-0" style={{ color: '#ef4444' }}>
-                  {30 - referenceCount} more needed to finalize
-                </span>
-              )}
-            </div>
-          )}
-
           {saveError && (
             <div className="px-4 py-2 shrink-0 text-sm flex items-center justify-between"
               style={{ background: '#fef2f2', color: '#dc2626', borderBottom: '1px solid #fecaca' }}>
@@ -554,20 +582,30 @@ export default function ManuscriptEditor() {
           )}
 
           {ydoc && provider ? (
-            <TipTapPane
+            <SectionPane
               key={activeKey}
               ydoc={ydoc}
               provider={provider}
               sectionKey={activeKey}
+              reviewMode={reviewMode}
+              readOnly={readOnly}
               isLocked={isLocked}
               saving={saving}
               sectionData={sections[activeKey]}
-              onSave={(ed) => handleSave(ed, ydoc)}
+              onSave={(html) => handleSave(html, ydoc)}
+              onLiveHtml={setLiveHtml}
               hubState={hubState}
               allSections={sections}
               groupName={group?.groupName ?? 'Manuscript'}
-              onFinalize={handleFinalize}
+              onFinalize={reviewMode ? null : handleFinalize}
               finalizing={finalizing}
+              annotations={annotations}
+              reviewers={reviewers}
+              myReviewer={myReviewer}
+              myUserId={user?.id}
+              onAddAnnotation={handleAddAnnotation}
+              onDeleteAnnotation={handleDeleteAnnotation}
+              citations={activeKey === 'references' ? citations : null}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-2"
@@ -582,7 +620,72 @@ export default function ManuscriptEditor() {
   )
 }
 
-function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData, onSave, hubState, allSections, groupName, onFinalize, finalizing }) {
+// ── One sub-topic's editor ─────────────────────────────────────────────────────
+// Every sub-topic is its own TipTap editor bound to its own fragment of the chapter's Y.Doc,
+// so the headings stay fixed and each sub-topic can be counted as filled or not.
+function SubEditor({ ydoc, provider, field, placeholder, readOnly, compact, onReady, onChange, onFocused, annotations, activeAnnotationId }) {
+  const editor = useEditor({
+    extensions: [
+      // undoRedo: false → Collaboration manages its own Yjs-based undo history
+      // underline: false → we supply it explicitly below to keep the toolbar command name stable
+      StarterKit.configure({ history: false, undoRedo: false, underline: false }),
+      UnderlineExt,
+      TextStyle,
+      FontFamily.configure({ types: ['textStyle'] }),
+      FontSize.configure({ types: ['textStyle'] }),
+      Color.configure({ types: ['textStyle'] }),
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      Placeholder.configure({ placeholder }),
+      ImageExt.configure({ inline: false }),
+      TableExt.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      Collaboration.configure({ document: ydoc, field }),
+      CollaborativeCursors.configure({ provider, field }),
+      CommentMark,
+      ReviewAnnotations,
+      ...(readOnly ? [] : [GrammarCheck]),
+    ],
+    editable: !readOnly,
+    editorProps: {
+      attributes: { class: `ms-editor-body${compact ? ' ms-sub-body' : ''}`, spellcheck: 'false' },
+    },
+  }, [ydoc, provider, field, readOnly])
+
+  useEffect(() => {
+    if (!editor) return
+    onReady(field, editor)
+    return () => onReady(field, null)
+  }, [editor, field, onReady])
+
+  useEffect(() => {
+    if (!editor) return
+    const handleUpdate = () => onChange(field, editor)
+    const handleFocus = () => onFocused(field, editor)
+    editor.on('update', handleUpdate)
+    editor.on('focus', handleFocus)
+    return () => {
+      editor.off('update', handleUpdate)
+      editor.off('focus', handleFocus)
+    }
+  }, [editor, field, onChange, onFocused])
+
+  useEffect(() => {
+    setReviewAnnotations(editor, annotations, activeAnnotationId)
+  }, [editor, annotations, activeAnnotationId])
+
+  return <EditorContent editor={editor} />
+}
+
+function SectionPane({
+  ydoc, provider, sectionKey, reviewMode, readOnly, isLocked, saving, sectionData, onSave, onLiveHtml,
+  hubState, allSections, groupName, onFinalize, finalizing, annotations, reviewers, myReviewer, myUserId,
+  onAddAnnotation, onDeleteAnnotation, citations,
+}) {
+  const template = templateFor(sectionKey)
+  const sectionLabel = sectionLabelOf(sectionKey)
+
   const [fontFamily, setFontFamily] = useState('')
   const [fontSize, setFontSize] = useState('12')
   const [textColor, setTextColor] = useState('#000000')
@@ -591,29 +694,60 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
   const [zoom, setZoom] = useState(100)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [floatBar, setFloatBar] = useState(null)
-  const [showCommentInput, setShowCommentInput] = useState(false)
+  const [commentMode, setCommentMode] = useState(null)   // null | 'student' | 'review'
   const [commentText, setCommentText] = useState('')
-  const [savedSelection, setSavedSelection] = useState(null)
+  const [savedSelection, setSavedSelection] = useState(null) // { field, from, to }
   const [showCommentPanel, setShowCommentPanel] = useState(true)
   const [commentsData, setCommentsData] = useState({})
-  const [commentPositions, setCommentPositions] = useState([])
+  const [railItems, setRailItems] = useState([])
   const [activeCommentId, setActiveCommentId] = useState(null)
   const [paperHeight, setPaperHeight] = useState(1056)
+  const [collabUsers, setCollabUsers] = useState([])
+  const [hasLegacy, setHasLegacy] = useState(false)
+  const [filledFields, setFilledFields] = useState({})
+  const [activeEditor, setActiveEditor] = useState(null)
+  const [mountedEditors, setMountedEditors] = useState({})   // field → editor, for rendering
+  const [, forceToolbar] = useState(0)
+  const [showCitations, setShowCitations] = useState(true)
+
   const exportMenuRef = useRef(null)
   const canvasScrollRef = useRef(null)
   const commentInputRef = useRef(null)
   const pageRef = useRef(null)
   const commentStyleRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const editorsRef = useRef(new Map())   // field → editor
   // Ref so document-level event closures can read the current value without re-registering
   const commentInputOpenRef = useRef(false)
-  const [collabUsers, setCollabUsers] = useState([])
-  const fileInputRef = useRef(null)
 
   // Auto-save
   const autoSaveTimerRef = useRef(null)
+  const liveTimerRef = useRef(null)
   const savedFlashTimerRef = useRef(null)
   const prevSavingRef = useRef(false)
   const [recentlySaved, setRecentlySaved] = useState(false)
+
+  // Fields shown: the earlier whole-chapter draft (only while it still has text), then each sub-topic.
+  const fields = useMemo(() => {
+    if (!template) return [{ key: LEGACY_FIELD, title: null, placeholder: `Start writing ${sectionLabel}…` }]
+    const subs = template.subsections.map(s => ({
+      key: s.key, title: s.title, optional: !!s.optional,
+      placeholder: `Write the ${s.title.toLowerCase()} here…`,
+    }))
+    return hasLegacy
+      ? [{ key: LEGACY_FIELD, title: 'Earlier draft', legacy: true, placeholder: '' }, ...subs]
+      : subs
+  }, [template, hasLegacy, sectionLabel])
+
+  // Chapters written before the sub-topic format kept everything in the default fragment.
+  useEffect(() => {
+    if (!template) return
+    const frag = ydoc.getXmlFragment(LEGACY_FIELD)
+    const check = () => setHasLegacy(frag.length > 0 && frag.toString().replace(/<[^>]+>/g, '').trim().length > 0)
+    check()
+    frag.observeDeep(check)
+    return () => frag.unobserveDeep(check)
+  }, [ydoc, template])
 
   useEffect(() => {
     if (!provider) return
@@ -631,66 +765,69 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
     return () => provider.awareness.off('change', sync)
   }, [provider])
 
-  const sectionLabel = sectionKey === 'references'
-    ? 'References'
-    : `Chapter ${sectionKey.replace('chapter', '')}`
+  const compose = useCallback(() => {
+    const byField = {}
+    editorsRef.current.forEach((ed, f) => { if (!ed.isDestroyed) byField[f] = ed.getHTML() })
+    return template ? composeChapterHtml(sectionKey, byField) : (byField[LEGACY_FIELD] ?? '')
+  }, [template, sectionKey])
 
-  const editor = useEditor({
-    extensions: [
-      // undoRedo: false → Collaboration manages its own Yjs-based undo history
-      // underline: false → we supply it explicitly below to keep the toolbar command name stable
-      StarterKit.configure({ history: false, undoRedo: false, underline: false }),
-      UnderlineExt,
-      TextStyle,
-      FontFamily.configure({ types: ['textStyle'] }),
-      FontSize.configure({ types: ['textStyle'] }),
-      Color.configure({ types: ['textStyle'] }),
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Placeholder.configure({ placeholder: `Start writing ${sectionLabel}…` }),
-      ImageExt.configure({ inline: false }),
-      TableExt.configure({ resizable: true }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      Collaboration.configure({ document: ydoc }),
-      CollaborativeCursors.configure({ provider }),
-      CommentMark,
-      GrammarCheck,
-    ],
-    editable: !isLocked,
-    editorProps: {
-      attributes: { class: 'ms-editor-body', spellcheck: 'false' },
-    },
-  }, [ydoc, provider, isLocked])
+  const refreshFilled = useCallback(() => {
+    const next = {}
+    editorsRef.current.forEach((ed, f) => { if (!ed.isDestroyed) next[f] = !ed.isEmpty })
+    setFilledFields(next)
+  }, [])
+
+  const publishLive = useCallback(() => {
+    clearTimeout(liveTimerRef.current)
+    liveTimerRef.current = setTimeout(() => onLiveHtml?.(compose()), 400)
+  }, [compose, onLiveHtml])
+
+  const handleReady = useCallback((field, ed) => {
+    if (ed) editorsRef.current.set(field, ed)
+    else editorsRef.current.delete(field)
+    setMountedEditors(Object.fromEntries(editorsRef.current))
+    refreshFilled()
+  }, [refreshFilled])
+
+  const handleChange = useCallback(() => {
+    refreshFilled()
+    publishLive()
+    if (!readOnly) {
+      setRecentlySaved(false)
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = setTimeout(() => onSave(compose()), 2000)
+    }
+  }, [refreshFilled, publishLive, readOnly, onSave, compose])
+
+  const handleFocused = useCallback((_field, ed) => setActiveEditor(ed), [])
+
+  useEffect(() => () => { clearTimeout(autoSaveTimerRef.current); clearTimeout(liveTimerRef.current) }, [])
+
+  // Keep toolbar button states in step with the focused editor
+  useEffect(() => {
+    if (!activeEditor) return
+    const tick = () => forceToolbar(t => t + 1)
+    activeEditor.on('transaction', tick)
+    return () => activeEditor.off('transaction', tick)
+  }, [activeEditor])
+
+  const toolbarEditor = activeEditor && !activeEditor.isDestroyed
+    ? activeEditor
+    : mountedEditors[fields[0]?.key] ?? null
 
   // Ctrl+S / Cmd+S shortcut — cancel any pending debounce and save immediately
   useEffect(() => {
-    if (!editor) return
+    if (readOnly) return
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
         clearTimeout(autoSaveTimerRef.current)
-        onSave(editor)
+        onSave(compose())
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editor, onSave])
-
-  // Auto-save: 2-second debounce after every content change
-  useEffect(() => {
-    if (!editor || !onSave || isLocked) return
-    const handleUpdate = () => {
-      setRecentlySaved(false)
-      clearTimeout(autoSaveTimerRef.current)
-      autoSaveTimerRef.current = setTimeout(() => onSave(editor), 2000)
-    }
-    editor.on('update', handleUpdate)
-    return () => {
-      editor.off('update', handleUpdate)
-      clearTimeout(autoSaveTimerRef.current)
-    }
-  }, [editor, onSave, isLocked])
+  }, [readOnly, onSave, compose])
 
   // Flash "All changes saved" for 3 s whenever a save completes
   useEffect(() => {
@@ -712,43 +849,52 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
   }, [])
 
   // Keep the ref in sync so stale closures below can read the live value
-  useEffect(() => { commentInputOpenRef.current = showCommentInput }, [showCommentInput])
+  useEffect(() => { commentInputOpenRef.current = !!commentMode }, [commentMode])
+
+  // The text selection inside one of the sub-topic editors, if any. Read from the DOM so it
+  // also works for a reviewer, whose editors are read-only and never take focus.
+  const selectionInfo = useCallback(() => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null
+    for (const [field, ed] of editorsRef.current) {
+      if (ed.isDestroyed) continue
+      const dom = ed.view.dom
+      if (!dom.contains(sel.anchorNode) || !dom.contains(sel.focusNode)) continue
+      let a, b
+      try {
+        a = ed.view.posAtDOM(sel.anchorNode, sel.anchorOffset)
+        b = ed.view.posAtDOM(sel.focusNode, sel.focusOffset)
+      } catch { return null }
+      if (a === b) return null
+      const rect = sel.getRangeAt(0).getBoundingClientRect()
+      if (!rect.width || !rect.height) return null
+      return { field, editor: ed, from: Math.min(a, b), to: Math.max(a, b), rect }
+    }
+    return null
+  }, [])
 
   // Floating mini-toolbar: trigger on mouseup/keyup (selectionUpdate fires before
   // the browser commits window.getSelection, so rect would be zero-width there)
   useEffect(() => {
-    if (!editor) return
-
+    if (isLocked) return
     const showIfSelected = () => {
       // Don't disturb the toolbar while the comment textarea has focus
       if (commentInputOpenRef.current) return
       requestAnimationFrame(() => {
         if (commentInputOpenRef.current) return
-        if (!editor || editor.state.selection.empty) { setFloatBar(null); return }
-        const sel = window.getSelection()
-        if (!sel || sel.rangeCount === 0) { setFloatBar(null); return }
-        const rect = sel.getRangeAt(0).getBoundingClientRect()
-        if (!rect.width || !rect.height) { setFloatBar(null); return }
-        setFloatBar({ x: rect.left + rect.width / 2, y: rect.top })
+        const info = selectionInfo()
+        if (!info) { setFloatBar(null); return }
+        setFloatBar({ x: info.rect.left + info.rect.width / 2, y: info.rect.top, field: info.field })
       })
     }
-
-    const collapseHide = () => {
-      if (commentInputOpenRef.current) return
-      if (editor.state.selection.empty) setFloatBar(null)
-    }
-
     document.addEventListener('mouseup', showIfSelected)
     document.addEventListener('keyup', showIfSelected)
-    editor.on('selectionUpdate', collapseHide)
-
     return () => {
       document.removeEventListener('mouseup', showIfSelected)
       document.removeEventListener('keyup', showIfSelected)
-      editor.off('selectionUpdate', collapseHide)
       setFloatBar(null)
     }
-  }, [editor])
+  }, [isLocked, selectionInfo])
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -758,7 +904,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
     return () => document.removeEventListener('mousedown', handler)
   }, [showExportMenu])
 
-  // Comments — stored in Yjs ydoc.getMap('comments') for real-time sync
+  // Students' own comments — stored in Yjs ydoc.getMap('comments') for real-time sync
   const commentsMap = useMemo(() => ydoc?.getMap('comments') ?? null, [ydoc])
 
   useEffect(() => {
@@ -769,40 +915,52 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
     return () => commentsMap.unobserve(sync)
   }, [commentsMap])
 
-  // Calculate comment bubble positions relative to the paper div
-  const calcCommentPositions = useCallback(() => {
-    if (!showCommentPanel || !pageRef.current) { setCommentPositions([]); return }
+  // Reviewer highlights grouped by sub-topic, one stable array per editor
+  const annotationsByField = useMemo(() => {
+    const out = {}
+    fields.forEach(f => { out[f.key] = [] })
+    ;(annotations ?? []).forEach(a => {
+      const f = a.field ?? LEGACY_FIELD
+      ;(out[f] ??= []).push(a)
+    })
+    return out
+  }, [annotations, fields])
+
+  // Position the comment bubbles (students' comments and reviewers' highlights) next to their text
+  const calcRail = useCallback(() => {
+    if (!showCommentPanel || !pageRef.current) { setRailItems([]); return }
     requestAnimationFrame(() => {
       if (!pageRef.current) return
       const pageEl = pageRef.current
       const pageRect = pageEl.getBoundingClientRect()
-      // getBoundingClientRect already returns viewport/scaled coordinates with transform: scale(),
-      // and the wrapper has no zoom — so the difference is directly usable as wrapper layout pixels.
-      const raw = Object.entries(commentsData).flatMap(([id, comment]) => {
-        const markEl = pageEl.querySelector(`mark[data-comment-id="${id}"]`)
-        if (!markEl) return []
-        const r = markEl.getBoundingClientRect()
-        return [{ id, top: r.top - pageRect.top, comment }]
+      const scale = zoom / 100
+      const raw = []
+      Object.entries(commentsData).forEach(([id, comment]) => {
+        const el = pageEl.querySelector(`mark[data-comment-id="${id}"]`)
+        if (el) raw.push({ kind: 'student', id, top: el.getBoundingClientRect().top - pageRect.top, comment })
       })
-
+      ;(annotations ?? []).forEach(a => {
+        const el = pageEl.querySelector(`[data-annot-id="${a.id}"]`)
+        if (el) raw.push({ kind: 'review', id: `r-${a.id}`, top: el.getBoundingClientRect().top - pageRect.top, annotation: a })
+      })
       raw.sort((a, b) => a.top - b.top)
       let nextMin = 0
-      const resolved = raw.map(pos => {
+      setRailItems(raw.map(pos => {
+        // getBoundingClientRect is already scaled; the rail sits in scaled wrapper coordinates
         const top = Math.max(pos.top, nextMin)
-        nextMin = top + 90
+        nextMin = top + 96 * Math.max(scale, 0.8)
         return { ...pos, top }
-      })
-      setCommentPositions(resolved)
+      }))
     })
-  }, [showCommentPanel, commentsData, zoom])
+  }, [showCommentPanel, commentsData, annotations, zoom])
 
-  useEffect(() => { calcCommentPositions() }, [calcCommentPositions])
+  useEffect(() => { calcRail() }, [calcRail, filledFields, paperHeight])
 
-  useEffect(() => {
-    if (!editor) return
-    editor.on('update', calcCommentPositions)
-    return () => editor.off('update', calcCommentPositions)
-  }, [editor, calcCommentPositions])
+  // Reviewer highlights not found in the text any more (the students rewrote that passage)
+  const orphanAnnotations = useMemo(() => {
+    const placed = new Set(railItems.filter(r => r.kind === 'review').map(r => r.annotation.id))
+    return (annotations ?? []).filter(a => !placed.has(a.id))
+  }, [annotations, railItems])
 
   // Ctrl+scroll anywhere in the editor pane → zoom (prevents browser page zoom)
   useEffect(() => {
@@ -817,7 +975,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
-  // Per-comment color highlights + active ring + numbered badge injected as a dynamic <style>
+  // Per-comment colour underline + active ring + numbered badge for students' comments
   useEffect(() => {
     let el = commentStyleRef.current
     if (!el) {
@@ -826,7 +984,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
       commentStyleRef.current = el
     }
     const indexMap = {}
-    commentPositions.forEach(({ id }, i) => { indexMap[id] = i + 1 })
+    railItems.forEach(({ id }, i) => { indexMap[id] = i + 1 })
     el.textContent = Object.entries(commentsData).map(([id, c]) => {
       const color = /^#[0-9a-f]{6}$/i.test(c.authorColor ?? '') ? c.authorColor : '#c9a84c'
       const active = id === activeCommentId
@@ -843,115 +1001,125 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
         badge,
       ].join('\n')
     }).join('\n')
-  }, [commentsData, activeCommentId, commentPositions])
+  }, [commentsData, activeCommentId, railItems])
 
   useEffect(() => () => { commentStyleRef.current?.remove() }, [])
 
   // Focus comment textarea when it appears
   useEffect(() => {
-    if (showCommentInput) {
-      setTimeout(() => commentInputRef.current?.focus(), 50)
-    }
-  }, [showCommentInput])
+    if (commentMode) setTimeout(() => commentInputRef.current?.focus(), 50)
+  }, [commentMode])
 
   function cancelComment() {
-    setShowCommentInput(false)
+    setCommentMode(null)
     setCommentText('')
     setSavedSelection(null)
     setFloatBar(null)
   }
 
-  function addComment(text) {
-    if (!editor || !commentsMap || !text.trim()) return
-    const sel = savedSelection
-    if (!sel || sel.from === sel.to) return  // nothing was selected
+  function beginComment(mode) {
+    // Must capture selection NOW — textarea focus will clear it
+    const info = selectionInfo()
+    if (!info) return
+    setSavedSelection({ field: info.field, from: info.from, to: info.to })
+    setCommentMode(mode)
+  }
 
-    const user = JSON.parse(sessionStorage.getItem('tm_user') || '{}')
+  function addStudentComment(text) {
+    const sel = savedSelection
+    const ed = sel && editorsRef.current.get(sel.field)
+    if (!ed || !commentsMap || !text.trim() || sel.from === sel.to) return
+
+    const stored = JSON.parse(sessionStorage.getItem('tm_user') || '{}')
     const commentId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-    const author = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Student'
-    const authorColor = userColor(user.id ?? 'x')
+    const author = `${stored.firstName ?? ''} ${stored.lastName ?? ''}`.trim() || 'Student'
+    const authorColor = userColor(stored.id ?? 'x')
 
     // Restore the selection that was saved before the textarea stole focus
-    editor.chain().focus().setTextSelection({ from: sel.from, to: sel.to }).setComment(commentId).run()
+    ed.chain().focus().setTextSelection({ from: sel.from, to: sel.to }).setComment(commentId).run()
     commentsMap.set(commentId, { text: text.trim(), author, authorColor, createdAt: new Date().toISOString() })
 
-    setShowCommentInput(false)
-    setCommentText('')
-    setSavedSelection(null)
-    setFloatBar(null)
+    cancelComment()
     setActiveCommentId(commentId)
     setShowCommentPanel(true)
   }
 
-  function deleteComment(commentId) {
+  async function addReviewAnnotation(text, selOverride) {
+    const sel = selOverride ?? savedSelection
+    const ed = sel && editorsRef.current.get(sel.field)
+    if (!ed) return
+    const anchor = anchorForRange(ed.state.doc, sel.from, sel.to)
+    if (!anchor || !anchor.quote.trim()) {
+      toast.error('Select text within a single paragraph to highlight it.')
+      return
+    }
+    const ok = await onAddAnnotation({ field: sel.field, quote: anchor.quote, prefix: anchor.prefix, content: text.trim() })
+    if (ok) {
+      cancelComment()
+      window.getSelection()?.removeAllRanges()
+      setShowCommentPanel(true)
+    }
+  }
+
+  function highlightOnly() {
+    const info = selectionInfo()
+    if (!info) return
+    addReviewAnnotation('', { field: info.field, from: info.from, to: info.to })
+  }
+
+  function deleteStudentComment(commentId) {
     if (!commentsMap) return
     commentsMap.delete(commentId)
 
-    if (editor) {
-      const { state } = editor
-      const { doc, schema } = state
-      const commentMarkType = schema.marks.comment
-      if (commentMarkType) {
-        const tr = state.tr
-        let modified = false
-        doc.descendants((node, pos) => {
-          if (!node.isText) return
-          const hasMark = node.marks.some(
-            m => m.type === commentMarkType && m.attrs.commentId === commentId
-          )
-          if (hasMark) {
-            tr.removeMark(pos, pos + node.nodeSize, commentMarkType)
-            modified = true
-          }
-        })
-        if (modified) editor.view.dispatch(tr)
-      }
-    }
+    editorsRef.current.forEach(ed => {
+      if (ed.isDestroyed) return
+      const { state } = ed
+      const commentMarkType = state.schema.marks.comment
+      if (!commentMarkType) return
+      const tr = state.tr
+      let modified = false
+      state.doc.descendants((node, pos) => {
+        if (!node.isText) return
+        if (node.marks.some(m => m.type === commentMarkType && m.attrs.commentId === commentId)) {
+          tr.removeMark(pos, pos + node.nodeSize, commentMarkType)
+          modified = true
+        }
+      })
+      if (modified) ed.view.dispatch(tr)
+    })
 
     if (activeCommentId === commentId) setActiveCommentId(null)
   }
 
-  function jumpToComment(commentId) {
-    if (!editor) return
-    const { doc } = editor.state
-    let found = null
-    doc.descendants((node, pos) => {
-      if (found) return false
-      if (node.isText && node.marks.some(m => m.type.name === 'comment' && m.attrs.commentId === commentId)) {
-        found = pos
-        return false
-      }
-    })
-    if (found !== null) {
-      editor.chain().setTextSelection(found).scrollIntoView().run()
-    }
-    setActiveCommentId(commentId)
+  function jumpToRailItem(id) {
+    setActiveCommentId(id)
+    const selector = id.startsWith('r-') ? `[data-annot-id="${id.slice(2)}"]` : `mark[data-comment-id="${id}"]`
     requestAnimationFrame(() => {
-      pageRef.current?.querySelector(`mark[data-comment-id="${commentId}"]`)
+      pageRef.current?.querySelector(selector)
         ?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
     })
   }
 
   function jumpToUser(cursor) {
-    if (!editor || !cursor) return
-    const pos = clamp(cursor.from, 0, editor.state.doc.content.size)
-    editor.chain().setTextSelection(pos).scrollIntoView().run()
+    if (!cursor) return
+    const ed = editorsRef.current.get(cursor.field ?? LEGACY_FIELD)
+    if (!ed || ed.isDestroyed) return
+    const pos = clamp(cursor.from, 0, ed.state.doc.content.size)
+    ed.chain().setTextSelection(pos).scrollIntoView().run()
   }
 
   async function handleExportSection() {
     setShowExportMenu(false)
-    const html = editor?.getHTML() ?? ''
-    const sec = SECTIONS.find(s => s.key === sectionKey)
     await downloadDocx({
-      sections: [{ label: sec?.label ?? sectionKey, html }],
+      sections: [{ label: sectionLabel, html: compose() }],
       filename: `${sectionKey}.docx`,
-      title: sec?.label ?? sectionKey,
+      title: sectionLabel,
     })
   }
 
   async function handleExportAll() {
     setShowExportMenu(false)
-    const liveHtml = editor?.getHTML() ?? ''
+    const liveHtml = compose()
     const secs = SECTIONS.map(s => ({
       label: s.label,
       html: s.key === sectionKey ? liveHtml : (allSections?.[s.key]?.content ?? ''),
@@ -965,7 +1133,8 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
 
   async function handleImageFile(e) {
     const file = e.target.files?.[0]
-    if (!file || !editor) return
+    const ed = toolbarEditor
+    if (!file || !ed) return
     e.target.value = ''
     setImageError('')
 
@@ -977,7 +1146,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
     setImageUploading(true)
     try {
       const result = await manuscriptService.uploadImage(file)
-      editor.chain().focus().setImage({ src: result.url }).run()
+      ed.chain().focus().setImage({ src: result.url }).run()
     } catch (err) {
       setImageError(err.message)
     } finally {
@@ -985,14 +1154,24 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
     }
   }
 
-  if (!editor) return null
-
   const connected = hubState === 'connected'
+  const ed = toolbarEditor
+  const requiredFields = fields.filter(f => f.title && !f.optional && !f.legacy)
+  const filledCount = requiredFields.filter(f => filledFields[f.key]).length
+  const legendReviewers = useMemo(() => {
+    if (reviewMode) return reviewers
+    const seen = new Map()
+    ;(annotations ?? []).forEach(a => {
+      if (!seen.has(a.author?.id)) seen.set(a.author?.id, { userId: a.author?.id, fullName: a.author?.fullName, label: a.reviewerLabel, color: a.color })
+    })
+    return [...seen.values()]
+  }, [reviewMode, reviewers, annotations])
+  const totalRemarks = Object.keys(commentsData).length + (annotations?.length ?? 0)
 
   return (
     <div ref={canvasScrollRef} className="flex-1 flex flex-col overflow-hidden" style={{ minWidth: 0 }}>
       {/* Toolbar */}
-      {!isLocked && (
+      {!readOnly && ed && (
         <div className="flex items-center gap-1 flex-wrap px-3 py-2 shrink-0 border-b"
           style={{ background: 'var(--bg-card)', borderColor: 'var(--border-main)' }}>
 
@@ -1000,8 +1179,8 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           <select value={fontFamily}
             onChange={e => {
               setFontFamily(e.target.value)
-              if (e.target.value) editor.chain().focus().setFontFamily(e.target.value).run()
-              else editor.chain().focus().unsetFontFamily().run()
+              if (e.target.value) ed.chain().focus().setFontFamily(e.target.value).run()
+              else ed.chain().focus().unsetFontFamily().run()
             }}
             className="text-xs rounded-lg px-2 py-1.5 border"
             style={{ borderColor: 'var(--border-main)', background: 'var(--bg-input)', color: 'var(--text-primary)', minWidth: 132 }}>
@@ -1012,7 +1191,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           <select value={fontSize}
             onChange={e => {
               setFontSize(e.target.value)
-              editor.chain().focus().setFontSize(e.target.value + 'px').run()
+              ed.chain().focus().setFontSize(e.target.value + 'px').run()
             }}
             className="text-xs rounded-lg px-2 py-1.5 border"
             style={{ borderColor: 'var(--border-main)', background: 'var(--bg-input)', color: 'var(--text-primary)', width: 60 }}>
@@ -1034,46 +1213,46 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
               value={textColor}
               onChange={e => {
                 setTextColor(e.target.value)
-                editor.chain().focus().setColor(e.target.value).run()
+                ed.chain().focus().setColor(e.target.value).run()
               }} />
           </label>
 
           <Sep />
 
-          <TB active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold (Ctrl+B)">
+          <TB active={ed.isActive('bold')} onClick={() => ed.chain().focus().toggleBold().run()} title="Bold (Ctrl+B)">
             <Bold size={13} />
           </TB>
-          <TB active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic (Ctrl+I)">
+          <TB active={ed.isActive('italic')} onClick={() => ed.chain().focus().toggleItalic().run()} title="Italic (Ctrl+I)">
             <Italic size={13} />
           </TB>
-          <TB active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline (Ctrl+U)">
+          <TB active={ed.isActive('underline')} onClick={() => ed.chain().focus().toggleUnderline().run()} title="Underline (Ctrl+U)">
             <UnderlineIcon size={13} />
           </TB>
-          <TB active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough">
+          <TB active={ed.isActive('strike')} onClick={() => ed.chain().focus().toggleStrike().run()} title="Strikethrough">
             <Strikethrough size={13} />
           </TB>
 
           <Sep />
 
-          <TB active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()} title="Align Left">
+          <TB active={ed.isActive({ textAlign: 'left' })} onClick={() => ed.chain().focus().setTextAlign('left').run()} title="Align Left">
             <AlignLeft size={13} />
           </TB>
-          <TB active={editor.isActive({ textAlign: 'center' })} onClick={() => editor.chain().focus().setTextAlign('center').run()} title="Align Center">
+          <TB active={ed.isActive({ textAlign: 'center' })} onClick={() => ed.chain().focus().setTextAlign('center').run()} title="Align Center">
             <AlignCenter size={13} />
           </TB>
-          <TB active={editor.isActive({ textAlign: 'right' })} onClick={() => editor.chain().focus().setTextAlign('right').run()} title="Align Right">
+          <TB active={ed.isActive({ textAlign: 'right' })} onClick={() => ed.chain().focus().setTextAlign('right').run()} title="Align Right">
             <AlignRight size={13} />
           </TB>
-          <TB active={editor.isActive({ textAlign: 'justify' })} onClick={() => editor.chain().focus().setTextAlign('justify').run()} title="Justify">
+          <TB active={ed.isActive({ textAlign: 'justify' })} onClick={() => ed.chain().focus().setTextAlign('justify').run()} title="Justify">
             <AlignJustify size={13} />
           </TB>
 
           <Sep />
 
-          <TB active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bullet List">
+          <TB active={ed.isActive('bulletList')} onClick={() => ed.chain().focus().toggleBulletList().run()} title="Bullet List">
             <List size={13} />
           </TB>
-          <TB active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered List">
+          <TB active={ed.isActive('orderedList')} onClick={() => ed.chain().focus().toggleOrderedList().run()} title="Numbered List">
             <ListOrdered size={13} />
           </TB>
 
@@ -1085,67 +1264,21 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           </TB>
           <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,.gif,.webp" className="hidden" onChange={handleImageFile} />
 
-          <TB onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Insert 3×3 Table">
+          <TB onClick={() => ed.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Insert 3×3 Table">
             <TableIcon size={13} />
           </TB>
 
           <div className="flex-1" />
 
-          {/* Export dropdown */}
-          <div ref={exportMenuRef} style={{ position: 'relative' }} className="shrink-0">
-            <button onClick={() => setShowExportMenu(v => !v)}
-              className="text-xs flex items-center gap-1 py-1.5 px-2.5 rounded-lg border transition-all"
-              style={{
-                borderColor: 'var(--border-main)',
-                background: showExportMenu ? 'var(--bg-subtle)' : 'transparent',
-                color: 'var(--text-secondary)',
-              }}>
-              <Download size={11} />
-              Export
-              <ChevronDown size={10} />
-            </button>
-            {showExportMenu && (
-              <div style={{
-                position: 'absolute', right: 0, top: 'calc(100% + 4px)',
-                background: 'var(--bg-card)', border: '1px solid var(--border-main)',
-                borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-                minWidth: 210, zIndex: 'var(--z-dropdown)', overflow: 'hidden',
-              }}>
-                <button onClick={handleExportSection}
-                  className="w-full text-left flex items-center gap-2.5 px-3.5 py-2.5 text-xs transition-colors"
-                  style={{ color: 'var(--text-primary)', background: 'transparent' }}
-                  onMouseEnter={e => e.currentTarget.style.background='var(--bg-subtle)'}
-                  onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                  <FileText size={12} style={{ color: '#c9a84c', flexShrink: 0 }} />
-                  <div>
-                    <div className="font-medium">Export This Section</div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>Current chapter only · .docx</div>
-                  </div>
-                </button>
-                <div style={{ height: 1, background: 'var(--border-main)', margin: '0 12px' }} />
-                <button onClick={handleExportAll}
-                  className="w-full text-left flex items-center gap-2.5 px-3.5 py-2.5 text-xs transition-colors"
-                  style={{ color: 'var(--text-primary)', background: 'transparent' }}
-                  onMouseEnter={e => e.currentTarget.style.background='var(--bg-subtle)'}
-                  onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                  <Download size={12} style={{ color: '#c9a84c', flexShrink: 0 }} />
-                  <div>
-                    <div className="font-medium">Export Full Manuscript</div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>All chapters · Save first · .docx</div>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
+          <ExportMenu
+            menuRef={exportMenuRef} open={showExportMenu} setOpen={setShowExportMenu}
+            onSection={handleExportSection} onAll={handleExportAll}
+          />
 
-          {!isLocked && onFinalize && (
+          {onFinalize && (
             <button
               className="text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0 rounded-lg font-medium transition-all"
-              onClick={() => {
-                const html = editor?.getHTML() ?? ''
-                const sec = SECTIONS.find(s => s.key === sectionKey)
-                onFinalize(html, sec?.label ?? sectionKey)
-              }}
+              onClick={() => onFinalize(compose(), sectionLabel)}
               disabled={finalizing || saving}
               title="Export this section to Upload Documents for adviser review"
               style={{
@@ -1162,12 +1295,29 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           )}
           <button
             className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0"
-            onClick={() => onSave(editor)}
+            onClick={() => { clearTimeout(autoSaveTimerRef.current); onSave(compose()) }}
             disabled={saving}>
             <Save size={12} />
             {saving ? 'Saving…' : 'Save'}
             {!saving && <kbd className="ml-0.5 opacity-60 text-xs" style={{ fontSize: 10 }}>Ctrl+S</kbd>}
           </button>
+        </div>
+      )}
+
+      {/* Reviewer bar — who is highlighting in which colour */}
+      {reviewMode && (
+        <div className="flex items-center gap-3 flex-wrap px-4 py-2 shrink-0 border-b text-xs"
+          style={{ background: 'var(--bg-card)', borderColor: 'var(--border-main)', color: 'var(--text-secondary)' }}>
+          <Highlighter size={13} style={{ color: myReviewer?.color }} />
+          <span>
+            Select text to <strong>highlight</strong> or <strong>comment</strong>. You are highlighting as{' '}
+            <span className="font-semibold" style={{ color: myReviewer?.color }}>{myReviewer?.label}</span>.
+          </span>
+          <div className="flex-1" />
+          <ExportMenu
+            menuRef={exportMenuRef} open={showExportMenu} setOpen={setShowExportMenu}
+            onSection={handleExportSection} onAll={handleExportAll}
+          />
         </div>
       )}
 
@@ -1181,9 +1331,14 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
       )}
 
       {/* Status bar */}
-      <div className="flex items-center gap-3 px-4 py-1.5 shrink-0 border-b text-xs"
+      <div className="flex items-center gap-3 px-4 py-1.5 shrink-0 border-b text-xs flex-wrap"
         style={{ background: 'var(--bg-subtle)', borderColor: 'var(--border-main)', color: 'var(--text-muted)' }}>
         <span>{sectionData?.wordCount?.toLocaleString() ?? 0} words</span>
+        {template && (
+          <span className="font-semibold" style={{ color: filledCount === requiredFields.length ? '#16a34a' : '#c9a84c' }}>
+            {filledCount}/{requiredFields.length} sub-topics · {Math.round(filledCount / Math.max(requiredFields.length, 1) * 100)}% complete
+          </span>
+        )}
 
         {saving ? (
           <span className="flex items-center gap-1">
@@ -1205,7 +1360,19 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
         )}
 
         <div className="ml-auto flex items-center gap-3">
-          {isLocked && (
+          {/* Reviewer colour legend */}
+          {legendReviewers.length > 0 && (
+            <span className="flex items-center gap-2">
+              {legendReviewers.map(r => (
+                <span key={r.userId ?? r.label} className="flex items-center gap-1" title={r.fullName}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: r.color, display: 'inline-block' }} />
+                  <span style={{ fontSize: 10 }}>{r.label}</span>
+                </span>
+              ))}
+            </span>
+          )}
+
+          {readOnly && (
             <span className="flex items-center gap-1" style={{ color: '#c9a84c' }}>
               <Lock size={10} /> Read-only
             </span>
@@ -1233,17 +1400,10 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
                   </span>
                 ))}
               </span>
-              <span
-                onClick={() => collabUsers.length === 1 && jumpToUser(collabUsers[0].cursor)}
-                style={{
-                  color: 'var(--text-muted)', fontSize: 10,
-                  cursor: collabUsers.length === 1 && collabUsers[0].cursor ? 'pointer' : 'default',
-                  textDecoration: collabUsers.length === 1 && collabUsers[0].cursor ? 'underline' : 'none',
-                  textUnderlineOffset: 2,
-                }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
                 {collabUsers.length === 1
                   ? `${collabUsers[0].name} is here`
-                  : `${collabUsers.length} others editing`}
+                  : `${collabUsers.length} others here`}
               </span>
             </span>
           )}
@@ -1258,7 +1418,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           <button
             onClick={() => setShowCommentPanel(v => !v)}
             className="flex items-center gap-1.5 transition-all"
-            title={showCommentPanel ? 'Hide comment annotations' : 'Show comment annotations'}
+            title={showCommentPanel ? 'Hide comments' : 'Show comments'}
             style={{
               color: showCommentPanel ? '#c9a84c' : 'var(--text-muted)',
               fontSize: 11, padding: '2px 7px', borderRadius: 5,
@@ -1267,12 +1427,12 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
             }}>
             <MessageSquare size={10} />
             <span>Comments</span>
-            {Object.keys(commentsData).length > 0 && (
+            {totalRemarks > 0 && (
               <span style={{
                 background: '#c9a84c', color: '#0a1628', fontSize: 9, fontWeight: 700,
                 borderRadius: 8, padding: '0 4px', lineHeight: '14px',
               }}>
-                {Object.keys(commentsData).length}
+                {totalRemarks}
               </span>
             )}
           </button>
@@ -1307,15 +1467,17 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
         </div>
       </div>
 
+      {/* Reference citation check */}
+      {citations && (
+        <CitationPanel citations={citations} open={showCitations} onToggle={() => setShowCitations(v => !v)} />
+      )}
+
       {/* Canvas — gray Word-style background, scrollable */}
       <div className="flex-1 overflow-auto" style={{ background: '#525659', minWidth: 0 }}>
         {/*
           minWidth: max-content prevents the centering flex container from ever being
-          narrower than its content. Without this, justify-content: center produces a
-          negative margin-left when content is wider than the viewport, which causes
-          left-side overflow that bleeds upward through the flex tree and breaks the
-          toolbar / navbar. With max-content, overflow is always to the RIGHT and the
-          scroll container handles it with scrollbars — the toolbar stays untouched.
+          narrower than its content, so overflow is always to the RIGHT and the scroll
+          container handles it with scrollbars — the toolbar stays untouched.
         */}
         <div style={{
           display: 'flex',
@@ -1327,7 +1489,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
         }}>
           <div style={{
             position: 'relative',
-            width: 816 * (zoom / 100),
+            width: 816 * (zoom / 100) + (showCommentPanel ? 250 : 0),
             height: paperHeight * (zoom / 100),
             flexShrink: 0,
           }}>
@@ -1346,96 +1508,111 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
                 transform: `scale(${zoom / 100})`,
               }}
               onClick={(e) => {
-                const el = e.target.closest('mark[data-comment-id]')
-                if (el) {
-                  const commentId = el.getAttribute('data-comment-id')
-                  setActiveCommentId(commentId)
+                const mark = e.target.closest('mark[data-comment-id]')
+                const annot = e.target.closest('[data-annot-id]')
+                const id = annot ? `r-${annot.getAttribute('data-annot-id')}` : mark?.getAttribute('data-comment-id')
+                if (id) {
+                  setActiveCommentId(id)
                   setShowCommentPanel(true)
-                  requestAnimationFrame(() => {
-                    const pos = commentPositions.find(p => p.id === commentId)
-                    if (pos && canvasScrollRef.current) {
-                      const target = 28 + pos.top - canvasScrollRef.current.clientHeight / 2 + 45
-                      canvasScrollRef.current.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
-                    }
-                  })
                 }
               }}>
-              <EditorContent editor={editor} />
-            </div>
+              {/* Chapter heading — fixed by the format, not editable */}
+              <div className="ms-chapter-head">
+                {template ? (
+                  <>
+                    <p>Chapter {chapterNumber(sectionKey)}</p>
+                    <p><strong>{template.title}</strong></p>
+                  </>
+                ) : (
+                  <p><strong>REFERENCES</strong></p>
+                )}
+              </div>
 
-            {/* Word-style comment bubbles — natural size, anchored to wrapper layout coords */}
-            {showCommentPanel && commentPositions.map(({ id, top, comment }, commentIdx) => {
-              const clr = comment.authorColor ?? '#c9a84c'
-              const isActive = activeCommentId === id
-              const displayIdx = commentIdx + 1
-              return (
-              <div key={id} style={{
-                position: 'absolute',
-                top,
-                left: 816 * (zoom / 100) + 20,
-                width: 210,
-              }}>
-                <div style={{
-                  position: 'absolute', top: 14, left: -20, width: 20, height: 0,
-                  borderTop: `1.5px dashed ${clr}`,
-                  opacity: isActive ? 1 : 0.5,
-                  transition: 'opacity 0.15s',
-                }} />
-                <div
-                  onClick={() => jumpToComment(id)}
-                  style={{
-                    background: '#fff',
-                    border: `1px solid ${isActive ? hexAlpha(clr, 0.4) : 'rgba(0,0,0,0.13)'}`,
-                    borderLeft: `3px solid ${clr}`,
-                    borderRadius: 6,
-                    padding: '8px 10px',
-                    cursor: 'pointer',
-                    boxShadow: isActive
-                      ? `0 0 0 2.5px ${hexAlpha(clr, 0.35)}, 0 4px 16px ${hexAlpha(clr, 0.2)}`
-                      : '0 1px 4px rgba(0,0,0,0.1)',
-                    transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.boxShadow = `0 0 0 1.5px ${hexAlpha(clr, 0.25)}, 0 2px 8px rgba(0,0,0,0.1)` }}
-                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.1)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        minWidth: 16, height: 16, padding: '0 4px',
-                        borderRadius: 8, background: clr, color: '#fff',
-                        fontSize: 9, fontWeight: 700, flexShrink: 0,
-                        boxSizing: 'border-box', lineHeight: 1,
-                      }}>
-                        {displayIdx}
+              {fields.map(f => (
+                <div key={f.key} className="ms-subsection">
+                  {f.title && (
+                    <div className="ms-sub-head">
+                      <span className="ms-sub-status" title={f.legacy ? '' : filledFields[f.key] ? 'Has content' : f.optional ? 'Optional' : 'Not yet written'}>
+                        {f.legacy
+                          ? <AlertTriangle size={11} style={{ color: '#d97706' }} />
+                          : filledFields[f.key]
+                            ? <CheckCircle2 size={11} style={{ color: '#16a34a' }} />
+                            : <Circle size={11} style={{ color: f.optional ? '#cbd5e1' : '#f59e0b' }} />}
                       </span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: clr, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {comment.author}
+                      <span className="ms-sub-title">
+                        {f.title}
+                        {f.optional && <span className="ms-sub-optional"> (optional)</span>}
                       </span>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteComment(id) }}
-                      style={{ color: '#ccc', background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0, marginLeft: 4 }}
-                      onMouseEnter={e => e.currentTarget.style.color='#ef4444'}
-                      onMouseLeave={e => e.currentTarget.style.color='#ccc'}>
-                      <Trash2 size={11} />
-                    </button>
+                  )}
+                  {f.legacy && (
+                    <p className="ms-legacy-note">
+                      Text written before the chapter format. Move it into the sub-topics below, then delete it here — it does not count toward completion.
+                    </p>
+                  )}
+                  <div className={f.legacy ? 'ms-legacy-body' : ''}>
+                    <SubEditor
+                      ydoc={ydoc}
+                      provider={provider}
+                      field={f.key}
+                      placeholder={f.placeholder}
+                      readOnly={readOnly}
+                      compact={!!template}
+                      onReady={handleReady}
+                      onChange={handleChange}
+                      onFocused={handleFocused}
+                      annotations={annotationsByField[f.key]}
+                      activeAnnotationId={activeCommentId?.startsWith('r-') ? Number(activeCommentId.slice(2)) : null}
+                    />
                   </div>
-                  <p style={{ fontSize: 11, color: '#333', lineHeight: 1.55, margin: 0 }}>{comment.text}</p>
-                  <p style={{ fontSize: 10, color: '#999', marginTop: 5, marginBottom: 0 }}>
-                    {fmtPHT(comment.createdAt)}
-                  </p>
                 </div>
+              ))}
+            </div>
+
+            {/* Word-style comment bubbles — anchored to wrapper layout coords */}
+            {showCommentPanel && railItems.map((item, idx) => (
+              <RailBubble
+                key={item.id}
+                item={item}
+                index={idx + 1}
+                left={816 * (zoom / 100) + 20}
+                active={activeCommentId === item.id}
+                onSelect={() => jumpToRailItem(item.id)}
+                canDelete={item.kind === 'student'
+                  ? !reviewMode && !readOnly
+                  : reviewMode && item.annotation.author?.id === myUserId}
+                onDelete={() => item.kind === 'student'
+                  ? deleteStudentComment(item.id)
+                  : onDeleteAnnotation(item.annotation.id)}
+              />
+            ))}
+            {showCommentPanel && orphanAnnotations.length > 0 && (
+              <div style={{
+                position: 'absolute', left: 816 * (zoom / 100) + 20, width: 220,
+                top: Math.max(paperHeight * (zoom / 100) - 40 - orphanAnnotations.length * 70, (railItems.at(-1)?.top ?? 0) + 110),
+              }}>
+                <p style={{ fontSize: 10, color: '#e2e8f0', marginBottom: 4 }}>Highlighted text since changed:</p>
+                {orphanAnnotations.map(a => (
+                  <RailBubble
+                    key={a.id}
+                    item={{ kind: 'review', id: `r-${a.id}`, annotation: a }}
+                    static
+                    active={false}
+                    onSelect={() => {}}
+                    canDelete={reviewMode && a.author?.id === myUserId}
+                    onDelete={() => onDeleteAnnotation(a.id)}
+                  />
+                ))}
               </div>
-              )
-            })}
+            )}
           </div>
         </div>
       </div>
 
       {/* Floating mini-toolbar — appears above selected text */}
-      {floatBar && !isLocked && editor && (
+      {floatBar && (
         <div
-          onMouseDown={e => e.preventDefault()}
+          onMouseDown={e => { if (e.target.tagName !== 'TEXTAREA') e.preventDefault() }}
           style={{
             position: 'fixed',
             left: floatBar.x,
@@ -1444,21 +1621,22 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
             background: 'linear-gradient(145deg, #1e3d6e 0%, #112952 50%, #0a1f3d 100%)',
             border: '1px solid rgba(100,160,255,0.18)',
             borderRadius: 10,
-            padding: showCommentInput ? '6px 8px' : '3px 5px',
+            padding: commentMode ? '6px 8px' : '3px 5px',
             display: 'flex',
-            flexDirection: showCommentInput ? 'column' : 'row',
-            alignItems: showCommentInput ? 'stretch' : 'center',
-            gap: showCommentInput ? 6 : 2,
+            flexDirection: commentMode ? 'column' : 'row',
+            alignItems: commentMode ? 'stretch' : 'center',
+            gap: commentMode ? 6 : 2,
             zIndex: 'var(--z-dropdown)',
             boxShadow: '0 6px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(100,160,255,0.08)',
-            minWidth: showCommentInput ? 220 : undefined,
+            minWidth: commentMode ? 240 : undefined,
           }}>
-          {showCommentInput ? (
-            /* Comment input mode */
+          {commentMode ? (
             <>
               <div className="flex items-center gap-1.5 mb-0.5">
-                <MessageSquare size={11} style={{ color: '#c9a84c', flexShrink: 0 }} />
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#c9a84c' }}>Add Comment</span>
+                <MessageSquare size={11} style={{ color: commentMode === 'review' ? myReviewer?.color : '#c9a84c', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#c9a84c' }}>
+                  {commentMode === 'review' ? `Comment as ${myReviewer?.label}` : 'Add Comment'}
+                </span>
                 <button
                   onClick={cancelComment}
                   style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.5)', lineHeight: 1 }}>
@@ -1470,8 +1648,12 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
                 value={commentText}
                 onChange={e => setCommentText(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(commentText) }
-                  if (e.key === 'Escape') { cancelComment() }
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    if (commentMode === 'review') addReviewAnnotation(commentText)
+                    else addStudentComment(commentText)
+                  }
+                  if (e.key === 'Escape') cancelComment()
                 }}
                 placeholder="Type a comment… (Enter to save)"
                 rows={3}
@@ -1489,7 +1671,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
                   Cancel
                 </button>
                 <button
-                  onClick={() => addComment(commentText)}
+                  onClick={() => commentMode === 'review' ? addReviewAnnotation(commentText) : addStudentComment(commentText)}
                   disabled={!commentText.trim()}
                   style={{ fontSize: 11, color: commentText.trim() ? '#0a1628' : 'rgba(255,255,255,0.3)',
                     padding: '3px 10px', borderRadius: 5, fontWeight: 600,
@@ -1499,46 +1681,50 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
                 </button>
               </div>
             </>
-          ) : (
+          ) : reviewMode ? (
+            /* Reviewer: highlight or comment in their own colour */
+            <>
+              <FloatBtn onClick={highlightOnly} title="Highlight">
+                <Highlighter size={13} style={{ color: myReviewer?.color }} />
+                <span>Highlight</span>
+              </FloatBtn>
+              <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
+              <FloatBtn onClick={() => beginComment('review')} title="Highlight and comment">
+                <MessageSquare size={13} style={{ color: myReviewer?.color }} />
+                <span>Comment</span>
+              </FloatBtn>
+            </>
+          ) : !readOnly && ed ? (
             /* Default mini-toolbar mode */
             <>
-              <TB active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold">
+              <TB active={ed.isActive('bold')} onClick={() => ed.chain().focus().toggleBold().run()} title="Bold">
                 <Bold size={13} />
               </TB>
-              <TB active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic">
+              <TB active={ed.isActive('italic')} onClick={() => ed.chain().focus().toggleItalic().run()} title="Italic">
                 <Italic size={13} />
               </TB>
-              <TB active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline">
+              <TB active={ed.isActive('underline')} onClick={() => ed.chain().focus().toggleUnderline().run()} title="Underline">
                 <UnderlineIcon size={13} />
               </TB>
-              <TB active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough">
+              <TB active={ed.isActive('strike')} onClick={() => ed.chain().focus().toggleStrike().run()} title="Strikethrough">
                 <Strikethrough size={13} />
               </TB>
               <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
-              <TB active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} title="Heading 1">
+              <TB active={ed.isActive('heading', { level: 1 })} onClick={() => ed.chain().focus().toggleHeading({ level: 1 }).run()} title="Heading 1">
                 <Heading1 size={13} />
               </TB>
-              <TB active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="Heading 2">
+              <TB active={ed.isActive('heading', { level: 2 })} onClick={() => ed.chain().focus().toggleHeading({ level: 2 }).run()} title="Heading 2">
                 <Heading2 size={13} />
               </TB>
-              <TB active={editor.isActive('heading', { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} title="Heading 3">
+              <TB active={ed.isActive('heading', { level: 3 })} onClick={() => ed.chain().focus().toggleHeading({ level: 3 }).run()} title="Heading 3">
                 <Heading3 size={13} />
               </TB>
               <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
-              <TB
-                active={false}
-                onClick={() => {
-                  // Must capture selection NOW — textarea focus will clear it
-                  const { from, to } = editor.state.selection
-                  if (from === to) return  // nothing selected
-                  setSavedSelection({ from, to })
-                  setShowCommentInput(true)
-                }}
-                title="Add comment">
+              <TB active={false} onClick={() => beginComment('student')} title="Add comment">
                 <MessageSquare size={13} />
               </TB>
             </>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -1551,6 +1737,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           color: #1a1a1a;
           min-height: 800px;
         }
+        .ms-editor-body.ms-sub-body { min-height: 2em; }
         .ms-editor-body p { margin: 0 0 0.6em; }
         .ms-editor-body ul, .ms-editor-body ol { padding-left: 1.5em; margin: 0.5em 0; }
         .ms-editor-body li { margin: 0.2em 0; }
@@ -1564,6 +1751,14 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           color: #bbb; content: attr(data-placeholder);
           float: left; height: 0; pointer-events: none; font-style: italic;
         }
+        .ms-chapter-head { text-align: center; font-family: "Times New Roman", serif; font-size: 12px; line-height: 2; color: #1a1a1a; margin-bottom: 0.6em; }
+        .ms-chapter-head p { margin: 0; }
+        .ms-subsection { position: relative; }
+        .ms-sub-head { position: relative; font-family: "Times New Roman", serif; font-size: 12px; font-weight: 700; line-height: 2; color: #1a1a1a; margin-top: 0.4em; user-select: none; }
+        .ms-sub-status { position: absolute; left: -22px; top: 50%; transform: translateY(-50%); display: flex; }
+        .ms-sub-optional { font-weight: 400; font-style: italic; color: #94a3b8; }
+        .ms-legacy-note { font-family: system-ui, sans-serif; font-size: 10px; color: #b45309; background: #fffbeb; border: 1px dashed #f59e0b; border-radius: 4px; padding: 4px 8px; margin: 2px 0 6px; }
+        .ms-legacy-body { background: #fffdf5; border-left: 2px solid #f59e0b; padding-left: 8px; margin-bottom: 1em; }
         /* Allow cursor name labels to float above the text without clipping */
         .ProseMirror { overflow: visible; }
         .collab-selection { border-radius: 1px; }
@@ -1573,6 +1768,7 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
           cursor: pointer;
           transition: background 0.15s, outline 0.15s;
         }
+        .ms-review-mark { border-radius: 2px; cursor: pointer; }
         /* LanguageTool grammar/spelling underlines */
         .lt-spelling {
           text-decoration: underline wavy #ef4444;
@@ -1584,6 +1780,213 @@ function TipTapPane({ ydoc, provider, sectionKey, isLocked, saving, sectionData,
         }
       `}</style>
     </div>
+  )
+}
+
+// ── Comment bubble in the right-hand rail ────────────────────────────────────
+function RailBubble({ item, index, left, active, onSelect, canDelete, onDelete, static: isStatic }) {
+  const review = item.kind === 'review'
+  const a = item.annotation
+  const c = item.comment
+  const clr = review ? (a.color || '#a16207') : (c.authorColor ?? '#c9a84c')
+  const author = review ? a.author?.fullName : c.author
+  const text = review ? a.content : c.text
+  const createdAt = review ? a.createdAt : c.createdAt
+
+  return (
+    <div style={isStatic
+      ? { marginBottom: 6 }
+      : { position: 'absolute', top: item.top, left, width: 220 }}>
+      {!isStatic && (
+        <div style={{
+          position: 'absolute', top: 14, left: -20, width: 20, height: 0,
+          borderTop: `1.5px dashed ${clr}`,
+          opacity: active ? 1 : 0.5,
+        }} />
+      )}
+      <div
+        onClick={onSelect}
+        style={{
+          background: '#fff',
+          border: `1px solid ${active ? hexAlpha(clr, 0.4) : 'rgba(0,0,0,0.13)'}`,
+          borderLeft: `3px solid ${clr}`,
+          borderRadius: 6,
+          padding: '8px 10px',
+          cursor: 'pointer',
+          boxShadow: active
+            ? `0 0 0 2.5px ${hexAlpha(clr, 0.35)}, 0 4px 16px ${hexAlpha(clr, 0.2)}`
+            : '0 1px 4px rgba(0,0,0,0.1)',
+          transition: 'all 0.15s',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+            {index != null && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                minWidth: 16, height: 16, padding: '0 4px',
+                borderRadius: 8, background: clr, color: '#fff',
+                fontSize: 9, fontWeight: 700, flexShrink: 0,
+                boxSizing: 'border-box', lineHeight: 1,
+              }}>
+                {index}
+              </span>
+            )}
+            {review && (
+              <span style={{
+                fontSize: 9, fontWeight: 700, color: '#fff', background: clr,
+                borderRadius: 3, padding: '1px 5px', flexShrink: 0, textTransform: 'uppercase', letterSpacing: 0.3,
+              }}>
+                {a.reviewerLabel}
+              </span>
+            )}
+            <span style={{ fontSize: 11, fontWeight: 700, color: clr, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {author}
+            </span>
+          </div>
+          {canDelete && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete() }}
+              title="Remove"
+              style={{ color: '#ccc', background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0, marginLeft: 4 }}
+              onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+              onMouseLeave={e => e.currentTarget.style.color = '#ccc'}>
+              <Trash2 size={11} />
+            </button>
+          )}
+        </div>
+        {review && (
+          <p style={{ fontSize: 10, color: '#64748b', margin: '0 0 3px', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            “{a.quote}”
+          </p>
+        )}
+        {text
+          ? <p style={{ fontSize: 11, color: '#333', lineHeight: 1.55, margin: 0 }}>{text}</p>
+          : <p style={{ fontSize: 11, color: '#94a3b8', margin: 0, fontStyle: 'italic' }}>Highlighted</p>}
+        <p style={{ fontSize: 10, color: '#999', marginTop: 5, marginBottom: 0 }}>
+          {fmtPHT(createdAt)}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ── Reference citation check ────────────────────────────────────────────────
+function CitationPanel({ citations, open, onToggle }) {
+  const total = citations.length
+  const cited = citations.filter(c => c.status === 'cited').length
+  const nameOnly = citations.filter(c => c.status === 'name-only').length
+  const notCited = total - cited - nameOnly
+  const allGood = total > 0 && cited === total
+  const accent = allGood ? '#16a34a' : '#ef4444'
+
+  return (
+    <div className="shrink-0 border-b" style={{ borderColor: 'var(--border-main)', background: allGood ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.05)' }}>
+      <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-2 text-xs text-left">
+        <BookMarked size={13} style={{ color: accent, flexShrink: 0 }} />
+        <span className="font-semibold" style={{ color: accent }}>
+          Citation check: {cited} of {total} reference{total !== 1 ? 's' : ''} cited in Chapters 1–5
+        </span>
+        {notCited > 0 && <span style={{ color: '#ef4444' }}>· {notCited} not cited</span>}
+        {nameOnly > 0 && <span style={{ color: '#d97706' }}>· {nameOnly} cited with a different year</span>}
+        <span style={{ color: total >= MIN_REFERENCES ? '#16a34a' : 'var(--text-muted)' }}>
+          · {total}/{MIN_REFERENCES} references
+        </span>
+        <span className="ml-auto" style={{ color: 'var(--text-muted)' }}>
+          {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </span>
+      </button>
+      {open && (
+        <div className="px-4 pb-3" style={{ maxHeight: 190, overflowY: 'auto' }}>
+          {total === 0 ? (
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              List each reference as its own paragraph or list item (APA: <em>Last name, Initials. (Year). Title…</em>).
+              Each one is matched to the chapters by its key identifier — the first author's last name and year.
+            </p>
+          ) : (
+            <table className="w-full text-xs">
+              <tbody>
+                {citations.map((c, i) => {
+                  const cfg = {
+                    'cited':     { color: '#16a34a', label: `Cited in Ch. ${c.chapters.join(', ')}` },
+                    'name-only': { color: '#d97706', label: `Name found (Ch. ${c.chapters.join(', ')}) but not with ${c.key?.year}` },
+                    'not-cited': { color: '#ef4444', label: 'Not cited in any chapter' },
+                  }[c.status]
+                  return (
+                    <tr key={i} style={{ borderTop: i ? '1px solid var(--border-light)' : 'none' }}>
+                      <td className="py-1 pr-3 whitespace-nowrap font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        {c.key ? `${c.key.author}${c.key.year ? ` (${c.key.year})` : ''}` : '—'}
+                      </td>
+                      <td className="py-1 pr-3" style={{ color: 'var(--text-muted)', maxWidth: 380 }}>
+                        <span className="block truncate" title={c.entry}>{c.entry}</span>
+                      </td>
+                      <td className="py-1 whitespace-nowrap font-medium" style={{ color: cfg.color }}>{cfg.label}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ExportMenu({ menuRef, open, setOpen, onSection, onAll }) {
+  return (
+    <div ref={menuRef} style={{ position: 'relative' }} className="shrink-0">
+      <button onClick={() => setOpen(v => !v)}
+        className="text-xs flex items-center gap-1 py-1.5 px-2.5 rounded-lg border transition-all"
+        style={{
+          borderColor: 'var(--border-main)',
+          background: open ? 'var(--bg-subtle)' : 'transparent',
+          color: 'var(--text-secondary)',
+        }}>
+        <Download size={11} />
+        Export
+        <ChevronDown size={10} />
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', right: 0, top: 'calc(100% + 4px)',
+          background: 'var(--bg-card)', border: '1px solid var(--border-main)',
+          borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+          minWidth: 210, zIndex: 'var(--z-dropdown)', overflow: 'hidden',
+        }}>
+          <MenuItem icon={FileText} title="Export This Section" desc="Current chapter only · .docx" onClick={onSection} />
+          <div style={{ height: 1, background: 'var(--border-main)', margin: '0 12px' }} />
+          <MenuItem icon={Download} title="Export Full Manuscript" desc="All chapters · Save first · .docx" onClick={onAll} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MenuItem({ icon: Icon, title, desc, onClick }) {
+  return (
+    <button onClick={onClick}
+      className="w-full text-left flex items-center gap-2.5 px-3.5 py-2.5 text-xs transition-colors"
+      style={{ color: 'var(--text-primary)', background: 'transparent' }}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-subtle)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+      <Icon size={12} style={{ color: '#c9a84c', flexShrink: 0 }} />
+      <div>
+        <div className="font-medium">{title}</div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>{desc}</div>
+      </div>
+    </button>
+  )
+}
+
+function FloatBtn({ children, onClick, title }) {
+  return (
+    <button title={title} onClick={onClick}
+      className="flex items-center gap-1.5 px-2 h-7 rounded-lg text-xs font-medium transition-all"
+      style={{ color: '#e2e8f0' }}
+      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+      {children}
+    </button>
   )
 }
 

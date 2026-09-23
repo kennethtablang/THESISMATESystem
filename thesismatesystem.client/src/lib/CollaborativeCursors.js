@@ -2,19 +2,21 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
-const KEY = new PluginKey('collab-cursors')
+// A chapter is several editors (one per sub-topic) over one Yjs doc and one awareness, so
+// each cursor carries the `field` it is in and each editor draws only its own field's cursors.
 
 export const CollaborativeCursors = Extension.create({
   name: 'collaborativeCursors',
 
   addOptions() {
-    return { provider: null }
+    return { provider: null, field: 'default' }
   },
 
   addProseMirrorPlugins() {
-    const provider = this.options.provider
+    const { provider, field } = this.options
     if (!provider) return []
     const { awareness } = provider
+    const KEY = new PluginKey(`collab-cursors-${field}`)
 
     return [
       new Plugin({
@@ -26,7 +28,7 @@ export const CollaborativeCursors = Extension.create({
           },
           apply(tr, decos, _old, newState) {
             if (tr.getMeta(KEY) || tr.docChanged) {
-              return buildDecos(newState, awareness)
+              return buildDecos(newState, awareness, field)
             }
             // Map existing decorations through position changes (inserts/deletes)
             return decos.map(tr.mapping, tr.doc)
@@ -34,9 +36,11 @@ export const CollaborativeCursors = Extension.create({
         },
 
         view(editorView) {
+          // Only the focused editor owns the local cursor; the others would overwrite it.
           const broadcastCursor = () => {
+            if (!editorView.hasFocus()) return
             const { from, to } = editorView.state.selection
-            awareness.setLocalStateField('cursor', { from, to })
+            awareness.setLocalStateField('cursor', { field, from, to })
           }
 
           const onAwarenessChange = () => {
@@ -54,7 +58,8 @@ export const CollaborativeCursors = Extension.create({
             },
             destroy() {
               awareness.off('change', onAwarenessChange)
-              awareness.setLocalStateField('cursor', null)
+              if (awareness.getLocalState()?.cursor?.field === field)
+                awareness.setLocalStateField('cursor', null)
             },
           }
         },
@@ -69,7 +74,7 @@ export const CollaborativeCursors = Extension.create({
   },
 })
 
-function buildDecos(state, awareness) {
+function buildDecos(state, awareness, field) {
   const decos = []
   const docSize = state.doc.content.size
 
@@ -77,6 +82,7 @@ function buildDecos(state, awareness) {
     if (clientId === awareness.clientID) return
     const { user, cursor } = s
     if (!user || !cursor) return
+    if ((cursor.field ?? 'default') !== field) return
 
     const color = user.color ?? '#c9a84c'
     const name = user.name ?? 'User'

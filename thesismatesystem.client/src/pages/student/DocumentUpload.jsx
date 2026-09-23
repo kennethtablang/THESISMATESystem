@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import DOMPurify from 'dompurify'
 import {
   Upload, MessageSquare, Download, Clock, ChevronDown, ChevronUp,
   Send, History, RefreshCw, CheckCircle, Zap, User,
-  File as FileIcon, Eye, X, AlertCircle, ArrowLeftRight,
+  File as FileIcon, Eye, X, AlertCircle, ArrowLeftRight, PenLine,
 } from 'lucide-react'
 import { renderAsync } from 'docx-preview'
 import TopBar from '../../components/layout/TopBar'
@@ -280,6 +281,7 @@ function CommentThread({ docId }) {
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function DocumentUpload() {
+  const navigate = useNavigate()
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(true)
   const [group, setGroup] = useState(null)
@@ -476,6 +478,10 @@ export default function DocumentUpload() {
               const isUploading = uploadingSection === section.key
               const docVersions = doc ? (versions[doc.id] ?? null) : null
               const isPreviewing = preview?.id === doc?.id
+              // Chapters 1–5 and References are written in the Manuscript editor, not uploaded;
+              // their entry here is the file the editor's Finalize produces.
+              const manuscriptKey = MANUSCRIPT_KEY_MAP[section.key]
+              const openInManuscript = () => navigate(`/manuscript?section=${manuscriptKey}`)
 
               return (
                 <div key={section.key} className="rounded-2xl overflow-hidden transition-all"
@@ -577,6 +583,12 @@ export default function DocumentUpload() {
                               {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                             </button>
                           </>
+                        ) : manuscriptKey ? (
+                          <button className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5"
+                            onClick={openInManuscript}
+                            title="Chapters are written in the Manuscript editor">
+                            <PenLine size={12} />Write in Manuscript
+                          </button>
                         ) : (
                           <>
                             <input ref={el => fileInputRefs.current[section.key] = el} type="file" className="hidden"
@@ -617,7 +629,7 @@ export default function DocumentUpload() {
                         <div className="flex justify-end mt-2">
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
                             style={{ background: 'rgba(245,158,11,0.1)', color: '#d97706', border: '1px solid rgba(245,158,11,0.2)' }}>
-                            <AlertCircle size={10} /> Needs Revision — upload a new version
+                            <AlertCircle size={10} /> Needs Revision — {manuscriptKey ? 'revise it in the Manuscript' : 'upload a new version'}
                           </div>
                         </div>
                       )
@@ -721,7 +733,18 @@ export default function DocumentUpload() {
                           </div>
                         )}
 
-                        {/* Upload new version */}
+                        {/* Upload new version — manuscript sections are revised in the editor instead */}
+                        {manuscriptKey ? (
+                          <div>
+                            <button onClick={openInManuscript}
+                              className="btn-primary text-xs px-4 py-2 flex items-center gap-1.5">
+                              <PenLine size={12} /> Revise in Manuscript
+                            </button>
+                            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                              Edit the chapter in the Manuscript editor, then press Finalize there to add a new version here.
+                            </p>
+                          </div>
+                        ) : (
                         <div>
                           <p className="text-xs font-semibold mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
                             <RefreshCw size={12} /> Upload Corrected Version
@@ -743,6 +766,7 @@ export default function DocumentUpload() {
                           </div>
                           <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Preserves full version history.</p>
                         </div>
+                        )}
 
                         {/* Comments */}
                         <div className="pt-4" style={{ borderTop: '1px solid var(--border-light)' }}>

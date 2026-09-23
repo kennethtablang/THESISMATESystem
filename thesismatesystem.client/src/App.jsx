@@ -182,6 +182,10 @@ export default function App() {
           } />
 
           <Route path="manuscript" element={<StaffOrStudent><ManuscriptPage /></StaffOrStudent>} />
+          {/* Adviser / panel / subject teacher read a group's manuscript and highlight + comment on it */}
+          <Route path="manuscript/review/:groupId" element={
+            <RoleGuard roles={['Admin', 'Faculty']}><ManuscriptEditor /></RoleGuard>
+          } />
 
           <Route path="monitoring" element={<StaffOrStudent><MonitoringDashboard /></StaffOrStudent>} />
 

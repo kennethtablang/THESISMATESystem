@@ -1129,6 +1129,15 @@ namespace THESISMATESystem.Server.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Field")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Prefix")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Quote")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("Revision")
                         .HasColumnType("int");
 

@@ -6,8 +6,11 @@ import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate, removeAwareness
  * Relays Yjs binary updates and awareness over WebSocket.
  */
 export class SignalRYjsProvider {
-  constructor(ydoc, groupId, sectionKey, connection) {
+  // readOnly: a reviewer (adviser/panel) follows the students' edits live but never sends
+  // document updates — the hub only accepts those from group members.
+  constructor(ydoc, groupId, sectionKey, connection, { readOnly = false } = {}) {
     this.ydoc = ydoc
+    this.readOnly = readOnly
     this.awareness = new Awareness(ydoc)
     this.groupId = groupId
     this.sectionKey = sectionKey
@@ -34,7 +37,7 @@ export class SignalRYjsProvider {
     // ones. A full-state update has no dependencies and always converges.
     const FULL_STATE_THRESHOLD = 10 * 1024 // 10 KB
     this._docUpdateHandler = (update, origin) => {
-      if (origin === this || !this._connected) return
+      if (origin === this || !this._connected || this.readOnly) return
       const payload = update.byteLength > FULL_STATE_THRESHOLD
         ? Y.encodeStateAsUpdate(this.ydoc)
         : update

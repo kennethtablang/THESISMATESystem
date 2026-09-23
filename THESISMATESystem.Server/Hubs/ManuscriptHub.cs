@@ -185,7 +185,7 @@ namespace THESISMATESystem.Server.Hubs
         // use — otherwise "Chapter1" and "chapter1" resolve to two rooms that never sync.
         private static string Normalize(string? sectionKey) => sectionKey?.ToLowerInvariant() ?? "";
 
-        private static string RoomKey(int groupId, string sectionKey) => $"{groupId}-{Normalize(sectionKey)}";
+        internal static string RoomKey(int groupId, string sectionKey) => $"{groupId}-{Normalize(sectionKey)}";
         private string? UserId() => Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
         private string? UserRole() => Context.User?.FindFirstValue(ClaimTypes.Role);
     }

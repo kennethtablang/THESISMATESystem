@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 using THESISMATESystem.Server.DTOs.Request;
+using THESISMATESystem.Server.Hubs;
 using THESISMATESystem.Server.Interfaces;
 
 namespace THESISMATESystem.Server.Controllers
@@ -12,8 +14,18 @@ namespace THESISMATESystem.Server.Controllers
     public class ManuscriptController : ControllerBase
     {
         private readonly IManuscriptService _manuscript;
+        private readonly IHubContext<ManuscriptHub> _hub;
 
-        public ManuscriptController(IManuscriptService manuscript) => _manuscript = manuscript;
+        public ManuscriptController(IManuscriptService manuscript, IHubContext<ManuscriptHub> hub)
+        {
+            _manuscript = manuscript;
+            _hub = hub;
+        }
+
+        // Tells everyone viewing the section to reload its highlights.
+        private Task BroadcastAnnotationsChangedAsync(int groupId, string sectionKey) =>
+            _hub.Clients.Group(ManuscriptHub.RoomKey(groupId, sectionKey))
+                .SendAsync("AnnotationsChanged", sectionKey);
 
         // ── Sections ──────────────────────────────────────────
 
@@ -51,7 +63,7 @@ namespace THESISMATESystem.Server.Controllers
             catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
         }
 
-        // ── Voting ────────────────────────────────────────────
+        // ── Lock status ─────────────────────────────────────────
 
         [HttpGet("my-group/vote-status")]
         [Authorize(Roles = "Student")]
@@ -60,26 +72,6 @@ namespace THESISMATESystem.Server.Controllers
             var studentId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             try { return Ok(await _manuscript.GetVoteStatusAsync(studentId)); }
             catch (KeyNotFoundException) { return NotFound(); }
-        }
-
-        [HttpPost("my-group/vote")]
-        [Authorize(Roles = "Student")]
-        public async Task<IActionResult> CastVote()
-        {
-            var studentId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            try { return Ok(await _manuscript.CastVoteAsync(studentId)); }
-            catch (KeyNotFoundException) { return NotFound(); }
-            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
-        }
-
-        [HttpDelete("my-group/vote")]
-        [Authorize(Roles = "Student")]
-        public async Task<IActionResult> RevokeVote()
-        {
-            var studentId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            try { return Ok(await _manuscript.RevokeVoteAsync(studentId)); }
-            catch (KeyNotFoundException) { return NotFound(); }
-            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
         }
 
         // ── Comments ──────────────────────────────────────────
@@ -113,9 +105,38 @@ namespace THESISMATESystem.Server.Controllers
             try
             {
                 var result = await _manuscript.AddCommentAsync(userId, groupId, sectionKey.ToLower(), dto);
+                await BroadcastAnnotationsChangedAsync(groupId, result.SectionKey);
                 return Ok(result);
             }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
+        [HttpDelete("group/{groupId:int}/comments/{commentId:int}")]
+        [Authorize(Roles = "Faculty,Admin")]
+        public async Task<IActionResult> DeleteComment(int groupId, int commentId)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role = User.FindFirstValue(ClaimTypes.Role)!;
+            if (!await _manuscript.IsAuthorizedForGroupAsync(userId, role, groupId)) return Forbid();
+            try
+            {
+                var sectionKey = await _manuscript.DeleteCommentAsync(userId, groupId, commentId);
+                await BroadcastAnnotationsChangedAsync(groupId, sectionKey);
+                return NoContent();
+            }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+        }
+
+        [HttpGet("group/{groupId:int}/reviewers")]
+        [Authorize(Roles = "Admin,Faculty")]
+        public async Task<IActionResult> GetReviewers(int groupId)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role = User.FindFirstValue(ClaimTypes.Role)!;
+            if (!await _manuscript.IsAuthorizedForGroupAsync(userId, role, groupId)) return Forbid();
+            return Ok(await _manuscript.GetReviewersAsync(groupId));
         }
 
         // ── Revision summary ──────────────────────────────────

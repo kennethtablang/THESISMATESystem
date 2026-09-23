@@ -793,7 +793,7 @@ export default function GroupDetail() {
             <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>Quick Links</h3>
             <div className="space-y-2">
               <QuickLink icon={Upload}      label="Documents"       desc="Upload & manage manuscript documents" color="#6366f1" onClick={() => navigate('/documents')} />
-              <QuickLink icon={BookOpen}    label="Manuscript"      desc="Collaborative manuscript editor" color="#7c3aed"  onClick={() => navigate('/manuscript')} />
+              <QuickLink icon={BookOpen}    label="Manuscript"      desc="Collaborative manuscript editor" color="#7c3aed"  onClick={() => navigate(user?.role === 'Student' ? '/manuscript' : `/manuscript/review/${id}`)} />
               <QuickLink icon={Calendar}    label="Defense"         desc="Defense schedules & ratings"    color="#3b82f6"  onClick={() => navigate('/defenses')} />
               <QuickLink icon={TrendingUp}  label="Monitoring"      desc="Group health & progress"        color="#f59e0b"  onClick={() => navigate('/monitoring')} />
               {isAdmin && (
