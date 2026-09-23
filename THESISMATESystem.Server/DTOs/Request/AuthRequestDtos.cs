@@ -21,7 +21,8 @@ namespace THESISMATESystem.Server.DTOs.Request
         public int SectionId { get; set; }
     }
 
-    // SuperAdmin-only account creation. Staff accounts can only be made this way.
+    // SuperAdmin-only account creation. The SuperAdmin only ever makes staff accounts —
+    // Admin/subject teacher and Faculty — so Role is limited to those two.
     public class CreateUserRequestDto
     {
         [Required, MaxLength(100)] public string FirstName { get; set; } = string.Empty;
@@ -29,10 +30,20 @@ namespace THESISMATESystem.Server.DTOs.Request
         [Required, MaxLength(100)] public string LastName { get; set; } = string.Empty;
         [Required, EmailAddress] public string Email { get; set; } = string.Empty;
         [Required, MinLength(8)] public string Password { get; set; } = string.Empty;
-        [Required] public string Role { get; set; } = string.Empty; // Student | Faculty | Admin | SuperAdmin
-        // Required when Role is Student.
+        [Required] public string Role { get; set; } = string.Empty; // Faculty | Admin
+        // Required when Role is Student. Kept for the seeder and older callers; the
+        // SuperAdmin UI no longer offers the Student role.
         [MaxLength(50)] public string? StudentId { get; set; }
         public int? SectionId { get; set; }
+        // Blocks an Admin/subject teacher takes. Required (at least one) when Role is Admin
+        // and any block exists, because it decides whose registrations they may approve.
+        public List<int> SectionIds { get; set; } = [];
+    }
+
+    // SuperAdmin-only. Replaces the blocks an Admin/subject teacher handles.
+    public class SetAdminSectionsRequestDto
+    {
+        public List<int> SectionIds { get; set; } = [];
     }
 
     public class RejectRegistrationRequestDto

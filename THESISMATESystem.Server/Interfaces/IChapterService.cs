@@ -11,7 +11,8 @@ namespace THESISMATESystem.Server.Interfaces
         Task<IEnumerable<ChapterSubmissionResponseDto>> GetChapterHistoryAsync(int groupId, int chapterNumber, string callerId, string callerRole);
         Task<ChapterSubmissionResponseDto?> GetChapterByIdAsync(int id, string callerId, string callerRole);
         Task<ChapterSubmissionResponseDto> UpdateChapterStatusAsync(int id, ChapterStatus status, string adviserId, string callerRole);
-        Task<RevisionNoteResponseDto> AddRevisionNoteAsync(int chapterId, string adviserId, string callerRole, AddRevisionNoteRequestDto dto);
+        Task<RevisionNoteResponseDto> AddRevisionNoteAsync(int chapterId, string authorId, string callerRole, AddRevisionNoteRequestDto dto);
+        Task<ChapterSubmissionResponseDto> SetPanelReviewAsync(int chapterId, string panelistId, SetChapterPanelReviewRequestDto dto);
         Task<string> GetDownloadPathAsync(int chapterId, string callerId, string callerRole);
     }
 }

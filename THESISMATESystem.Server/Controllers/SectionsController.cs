@@ -19,6 +19,7 @@ namespace THESISMATESystem.Server.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> GetOptions() => Ok(await _sections.GetActiveOptionsAsync());
 
+        // The SuperAdmin reads this to pick the blocks an Admin/subject teacher will handle.
         [HttpGet]
         [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> GetAll() => Ok(await _sections.GetAllAsync());

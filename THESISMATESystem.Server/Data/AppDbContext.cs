@@ -38,6 +38,8 @@ namespace THESISMATESystem.Server.Data
         public DbSet<Section> Sections => Set<Section>();
         public DbSet<SectionRosterEntry> SectionRosterEntries => Set<SectionRosterEntry>();
         public DbSet<GroupPanelMember> GroupPanelMembers => Set<GroupPanelMember>();
+        public DbSet<SectionAdminAssignment> SectionAdminAssignments => Set<SectionAdminAssignment>();
+        public DbSet<ChapterPanelReview> ChapterPanelReviews => Set<ChapterPanelReview>();
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -79,6 +81,37 @@ namespace THESISMATESystem.Server.Data
                 .WithMany(s => s.Roster)
                 .HasForeignKey(r => r.SectionId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // One row per (block, admin). The unique index keeps a re-assignment from stacking
+            // duplicates, which would otherwise show the same admin twice on a block.
+            builder.Entity<SectionAdminAssignment>(e =>
+            {
+                e.HasIndex(a => new { a.SectionId, a.AdminId }).IsUnique();
+                e.HasOne(a => a.Section)
+                 .WithMany(s => s.AdminAssignments)
+                 .HasForeignKey(a => a.SectionId)
+                 .OnDelete(DeleteBehavior.Cascade);
+                e.HasOne(a => a.Admin)
+                 .WithMany(u => u.HandledSections)
+                 .HasForeignKey(a => a.AdminId)
+                 .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // One verdict per panelist per submission — a second decision replaces the first
+            // rather than piling up, so the panel's standing is always unambiguous.
+            builder.Entity<ChapterPanelReview>(e =>
+            {
+                e.Property(r => r.Comment).HasMaxLength(2000);
+                e.HasIndex(r => new { r.ChapterSubmissionId, r.PanelistId }).IsUnique();
+                e.HasOne(r => r.ChapterSubmission)
+                 .WithMany(cs => cs.PanelReviews)
+                 .HasForeignKey(r => r.ChapterSubmissionId)
+                 .OnDelete(DeleteBehavior.Cascade);
+                e.HasOne(r => r.Panelist)
+                 .WithMany()
+                 .HasForeignKey(r => r.PanelistId)
+                 .OnDelete(DeleteBehavior.Restrict);
+            });
 
             builder.Entity<Classroom>()
                 .HasOne(c => c.Section)

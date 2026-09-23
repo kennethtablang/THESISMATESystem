@@ -18,6 +18,9 @@ namespace THESISMATESystem.Server.Models
         public int? SectionId { get; set; }
         public Section? Section { get; set; }
 
+        // Blocks this account handles when it is an Admin/subject teacher. Empty for everyone else.
+        public ICollection<SectionAdminAssignment> HandledSections { get; set; } = [];
+
         // Self-registration approval. Pending accounts cannot sign in and are removed once
         // RegistrationExpiresAt passes without an Admin decision.
         public RegistrationStatus RegistrationStatus { get; set; } = RegistrationStatus.Approved;

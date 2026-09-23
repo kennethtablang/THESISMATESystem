@@ -7,7 +7,7 @@ namespace THESISMATESystem.Server.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
+    [Authorize(Roles = "Admin,Faculty")]
     public class ReportsController : ControllerBase
     {
         private readonly IReportService _reports;
@@ -40,7 +40,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpGet("milestone-completion")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> MilestoneCompletion([FromQuery] string academicYear)
         {
             try
@@ -70,7 +70,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpGet("all-groups")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> AllGroups(
             [FromQuery] string? adviserId,
             [FromQuery] string? academicYear,

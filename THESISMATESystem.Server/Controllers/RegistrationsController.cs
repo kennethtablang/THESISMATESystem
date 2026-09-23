@@ -17,7 +17,11 @@ namespace THESISMATESystem.Server.Controllers
         public RegistrationsController(IRegistrationService registrations) => _registrations = registrations;
 
         [HttpGet("pending")]
-        public async Task<IActionResult> GetPending() => Ok(await _registrations.GetPendingAsync());
+        public async Task<IActionResult> GetPending()
+        {
+            var adminId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            return Ok(await _registrations.GetPendingAsync(adminId));
+        }
 
         [HttpPost("{userId}/approve")]
         public async Task<IActionResult> Approve(string userId)
@@ -29,6 +33,7 @@ namespace THESISMATESystem.Server.Controllers
                 return Ok(new { message = "Registration approved." });
             }
             catch (KeyNotFoundException) { return NotFound(); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
@@ -42,6 +47,7 @@ namespace THESISMATESystem.Server.Controllers
                 return Ok(new { message = "Registration rejected." });
             }
             catch (KeyNotFoundException) { return NotFound(); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
     }

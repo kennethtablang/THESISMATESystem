@@ -4,6 +4,7 @@ using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 using THESISMATESystem.Server.Models;
 
@@ -87,6 +88,8 @@ namespace THESISMATESystem.Server.Services
             var all = await _db.ChapterSubmissions
                 .Include(cs => cs.SubmittedBy)
                 .Include(cs => cs.RevisionNotes).ThenInclude(rn => rn.CreatedBy)
+                .Include(cs => cs.PanelReviews).ThenInclude(pr => pr.Panelist)
+                .AsSplitQuery()
                 .Where(cs => cs.CapstoneGroupId == groupId)
                 .ToListAsync();
 
@@ -106,6 +109,8 @@ namespace THESISMATESystem.Server.Services
             var submissions = await _db.ChapterSubmissions
                 .Include(cs => cs.SubmittedBy)
                 .Include(cs => cs.RevisionNotes).ThenInclude(rn => rn.CreatedBy)
+                .Include(cs => cs.PanelReviews).ThenInclude(pr => pr.Panelist)
+                .AsSplitQuery()
                 .Where(cs => cs.CapstoneGroupId == groupId && cs.ChapterNumber == chapterNumber)
                 .OrderByDescending(cs => cs.Version)
                 .ToListAsync();
@@ -118,6 +123,8 @@ namespace THESISMATESystem.Server.Services
             var submission = await _db.ChapterSubmissions
                 .Include(cs => cs.SubmittedBy)
                 .Include(cs => cs.RevisionNotes).ThenInclude(rn => rn.CreatedBy)
+                .Include(cs => cs.PanelReviews).ThenInclude(pr => pr.Panelist)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(cs => cs.Id == id);
 
             if (submission is null) return null;
@@ -163,23 +170,75 @@ namespace THESISMATESystem.Server.Services
                 ?? throw new InvalidOperationException("Failed to reload submission.");
         }
 
-        public async Task<RevisionNoteResponseDto> AddRevisionNoteAsync(
-            int chapterId, string adviserId, string callerRole, AddRevisionNoteRequestDto dto)
+        /// <summary>
+        /// Records, or replaces, one panel member's verdict on a submission. A panelist gets one
+        /// standing decision per submission, so changing their mind updates it in place.
+        /// </summary>
+        public async Task<ChapterSubmissionResponseDto> SetPanelReviewAsync(
+            int chapterId, string panelistId, SetChapterPanelReviewRequestDto dto)
         {
             var submission = await _db.ChapterSubmissions
                 .Include(cs => cs.CapstoneGroup)
                 .FirstOrDefaultAsync(cs => cs.Id == chapterId)
                 ?? throw new KeyNotFoundException($"Submission {chapterId} not found.");
 
-            // Only the group's adviser may add revision notes; admins bypass
-            if (callerRole == "Faculty" && submission.CapstoneGroup.AdviserId != adviserId)
-                throw new UnauthorizedAccessException("Only the group's adviser can add revision notes.");
+            if (!await IsPanelistAsync(submission.CapstoneGroupId, panelistId))
+                throw new UnauthorizedAccessException("Only this group's panel members can endorse its submissions.");
+
+            var review = await _db.ChapterPanelReviews
+                .FirstOrDefaultAsync(r => r.ChapterSubmissionId == chapterId && r.PanelistId == panelistId);
+
+            if (review is null)
+            {
+                review = new ChapterPanelReview { ChapterSubmissionId = chapterId, PanelistId = panelistId };
+                _db.ChapterPanelReviews.Add(review);
+            }
+
+            review.Approved = dto.Approved;
+            review.Comment = string.IsNullOrWhiteSpace(dto.Comment) ? null : dto.Comment.Trim();
+            review.DecidedAt = PhilippineTime.Now;
+            await _db.SaveChangesAsync();
+
+            var verdict = dto.Approved ? "approved" : "did not approve";
+            await _notifications.SendToGroupMembersAsync(
+                submission.CapstoneGroupId,
+                $"A panel member {verdict} Chapter {submission.ChapterNumber} (v{submission.Version}).",
+                NotificationType.ChapterPanelReviewed,
+                chapterId: chapterId);
+
+            return await LoadChapterDtoAsync(chapterId)
+                ?? throw new InvalidOperationException("Failed to reload submission.");
+        }
+
+        /// <summary>
+        /// Sits on the group's panel — either the standing panel set at group creation or a
+        /// panel seat on one of its defense schedules. Mirrors GroupAccessChecker's panel rule.
+        /// </summary>
+        private async Task<bool> IsPanelistAsync(int groupId, string userId) =>
+            await _db.GroupPanelMembers.AnyAsync(p => p.CapstoneGroupId == groupId && p.PanelistId == userId)
+            || await _db.PanelAssignments.AnyAsync(pa =>
+                   pa.PanelistId == userId && pa.DefenseSchedule.CapstoneGroupId == groupId);
+
+        public async Task<RevisionNoteResponseDto> AddRevisionNoteAsync(
+            int chapterId, string authorId, string callerRole, AddRevisionNoteRequestDto dto)
+        {
+            var submission = await _db.ChapterSubmissions
+                .Include(cs => cs.CapstoneGroup)
+                .FirstOrDefaultAsync(cs => cs.Id == chapterId)
+                ?? throw new KeyNotFoundException($"Submission {chapterId} not found.");
+
+            // The adviser and the group's panel may both leave notes — a panelist who sits on the
+            // group has to be able to say what needs fixing, not just watch. Admins bypass.
+            if (callerRole == "Faculty"
+                && submission.CapstoneGroup.AdviserId != authorId
+                && !await IsPanelistAsync(submission.CapstoneGroupId, authorId))
+                throw new UnauthorizedAccessException("Only the group's adviser or panel can add revision notes.");
 
             var note = new RevisionNote
             {
                 ChapterSubmissionId = chapterId,
                 Notes = dto.Notes,
-                CreatedById = adviserId
+                CreatedById = authorId
             };
 
             _db.RevisionNotes.Add(note);

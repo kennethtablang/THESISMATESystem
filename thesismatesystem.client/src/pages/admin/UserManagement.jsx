@@ -6,7 +6,7 @@ import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
 import { PageLoader } from '../../components/ui/Spinner'
-import { authService } from '../../services/api'
+import { authService, sectionService } from '../../services/api'
 import { useSort, SortIcon } from '../../hooks/useSort.jsx'
 import { useAuth } from '../../contexts/AuthContext'
 import CreateAccountModal from './CreateAccountModal'
@@ -43,7 +43,9 @@ export default function UserManagement() {
   const [toggleError, setToggleError] = useState('')
 
   const [editTarget, setEditTarget] = useState(null)
-  const [editForm, setEditForm] = useState({ firstName: '', middleName: '', lastName: '', phoneNumber: '', email: '', role: '' })
+  const [editForm, setEditForm] = useState({ firstName: '', middleName: '', lastName: '', phoneNumber: '', email: '', role: '', sectionIds: [] })
+  // Blocks exist so the SuperAdmin can say which ones an Admin/subject teacher handles.
+  const [sections, setSections] = useState([])
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -52,6 +54,13 @@ export default function UserManagement() {
   const [pwError, setPwError] = useState('')
   const [pwSuccess, setPwSuccess] = useState(false)
   const [pwVisible, setPwVisible] = useState({ newPassword: false, confirm: false })
+
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    sectionService.list()
+      .then(list => setSections(Array.isArray(list) ? list : []))
+      .catch(() => setSections([]))
+  }, [isSuperAdmin])
 
   const [showCreate, setShowCreate] = useState(false)
   const [twoFaDisabling, setTwoFaDisabling] = useState(false)
@@ -92,6 +101,13 @@ export default function UserManagement() {
     }
   }
 
+  // True when the ticked blocks differ from what the account already handles.
+  function blocksChanged() {
+    const before = new Set((editTarget?.handledSections ?? []).map(sec => sec.id))
+    const after = new Set(editForm.sectionIds)
+    return before.size !== after.size || [...after].some(id => !before.has(id))
+  }
+
   function handleEditOpen(user) {
     setEditError('')
     setEditForm({
@@ -101,6 +117,7 @@ export default function UserManagement() {
       phoneNumber: user.phoneNumber ?? '',
       email:       user.email       ?? '',
       role:        user.role        ?? '',
+      sectionIds:  (user.handledSections ?? []).map(sec => sec.id),
     })
     setPwForm({ newPassword: '', confirm: '' })
     setPwError('')
@@ -130,6 +147,13 @@ export default function UserManagement() {
       const newEmail = editForm.email.trim()
       if (isSuperAdmin && newEmail && newEmail !== editTarget.email) {
         updated = await authService.adminSetEmail(editTarget.id, newEmail)
+      }
+
+      // Blocks are their own endpoint because they only apply to Admin accounts, and the
+      // role above may only just have become Admin on this same save.
+      const roleNow = payload.role ?? editTarget.role
+      if (isSuperAdmin && roleNow === 'Admin' && blocksChanged()) {
+        updated = await authService.setAdminSections(editTarget.id, editForm.sectionIds)
       }
 
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
@@ -587,6 +611,50 @@ export default function UserManagement() {
                     ))}
                   </select>
                 </div>
+
+                {editForm.role === 'Admin' && (
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                      Blocks handled
+                    </label>
+                    {sections.length === 0 ? (
+                      <p className="text-xs px-3 py-2 rounded-xl"
+                        style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
+                        No blocks exist yet. An Admin creates them under Sections.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="rounded-xl overflow-hidden"
+                          style={{ border: '1px solid var(--border-light)', maxHeight: 160, overflowY: 'auto' }}>
+                          {sections.map((sec, idx) => (
+                            <div key={sec.id} className="flex items-center gap-3 px-3 py-2"
+                              style={{ borderBottom: idx < sections.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                              <input
+                                type="checkbox"
+                                id={`edit-block-${sec.id}`}
+                                checked={editForm.sectionIds.includes(sec.id)}
+                                onChange={() => setEditForm(f => ({
+                                  ...f,
+                                  sectionIds: f.sectionIds.includes(sec.id)
+                                    ? f.sectionIds.filter(x => x !== sec.id)
+                                    : [...f.sectionIds, sec.id],
+                                }))}
+                              />
+                              <label htmlFor={`edit-block-${sec.id}`}
+                                className="flex-1 min-w-0 text-sm truncate cursor-pointer"
+                                style={{ color: 'var(--text-primary)' }}>
+                                {sec.name} · {sec.academicYear}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                          This Admin reviews the student registrations for the blocks ticked here.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>

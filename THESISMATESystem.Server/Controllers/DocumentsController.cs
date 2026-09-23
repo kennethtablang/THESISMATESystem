@@ -35,7 +35,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpGet("all")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAll()
             => Ok(await _documents.GetAllDocumentsAsync());
 

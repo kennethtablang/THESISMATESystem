@@ -84,6 +84,17 @@ namespace THESISMATESystem.Server.Controllers
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
+        // The panel's own verdict on a submission, separate from the adviser-owned status.
+        [HttpPut("submissions/{id:int}/panel-review")]
+        [Authorize(Roles = "Faculty")]
+        public async Task<IActionResult> SetPanelReview(int id, SetChapterPanelReviewRequestDto dto)
+        {
+            var (userId, _) = Caller();
+            try { return Ok(await _chapters.SetPanelReviewAsync(id, userId, dto)); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
         [HttpGet("submissions/{id:int}/download")]
         public async Task<IActionResult> Download(int id)
         {

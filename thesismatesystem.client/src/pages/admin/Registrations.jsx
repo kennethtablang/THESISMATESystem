@@ -104,9 +104,10 @@ export default function Registrations() {
           style={{ background: 'rgba(201,168,76,0.07)', border: '1px solid rgba(201,168,76,0.22)' }}>
           <ListChecks size={18} className="shrink-0 mt-0.5" style={{ color: '#c9a84c' }} />
           <p className="text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            A student can be approved once they have verified their email and their Student ID is on the class list of the
-            section they chose. Add missing IDs on the <strong>Sections</strong> page. Registrations that are not approved
-            within 3 days are removed automatically.
+            Only registrations for the <strong>blocks assigned to you</strong> appear here — a student who picked another
+            block waits for that block&apos;s Admin. A student can be approved once they have verified their email and their
+            Student ID is on the class list of the block they chose. Add missing IDs on the <strong>Sections</strong> page.
+            Registrations that are not approved within 3 days are removed automatically.
           </p>
         </div>
 
@@ -119,7 +120,7 @@ export default function Registrations() {
 
         {items.length === 0 ? (
           <EmptyState icon={UserCheck} title="No pending registrations"
-            description="New student registrations will appear here for review." />
+            description="Registrations for the blocks assigned to you will appear here for review." />
         ) : (
           <>
             <div className="relative mb-3 max-w-xs">

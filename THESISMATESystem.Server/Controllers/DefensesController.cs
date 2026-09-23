@@ -34,7 +34,7 @@ namespace THESISMATESystem.Server.Controllers
             => (await _defenses.GetScheduleByIdAsync(scheduleId))?.CapstoneGroupId;
 
         [HttpGet]
-        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
+        [Authorize(Roles = "Admin,Faculty")]
         public async Task<IActionResult> GetAll()
         {
             var role = User.FindFirstValue(ClaimTypes.Role);
@@ -51,7 +51,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpGet("coverage")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetCoverage([FromQuery] string academicYear)
         {
             if (string.IsNullOrWhiteSpace(academicYear))
@@ -132,6 +132,17 @@ namespace THESISMATESystem.Server.Controllers
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
+        // "Schedule group 1 and the rest follow" — proposes the remaining groups back-to-back
+        // behind a defense that is already saved. Still a proposal; nothing is written yet.
+        [HttpPost("auto-schedule/chain")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> AutoScheduleChain(ChainScheduleRequestDto dto)
+        {
+            try { return Ok(await _autoScheduler.ProposeChainAsync(dto)); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         // POST /api/defenses/auto-schedule/confirm — saves the proposal the Admin reviewed
         [HttpPost("auto-schedule/confirm")]
         [Authorize(Roles = "Admin")]
@@ -152,7 +163,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpGet("{id:int}/ratings")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> GetRatings(int id)
         {
             var groupId = await GroupOfScheduleAsync(id);

@@ -14,9 +14,9 @@ namespace THESISMATESystem.Server.Controllers
 
         public MonitoringController(IMonitoringService monitoring) => _monitoring = monitoring;
 
-        // All groups summary — for Admin, SuperAdmin, Adviser, FacultyIC
+        // All groups summary — for Admin, Adviser, FacultyIC
         [HttpGet("groups")]
-        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
+        [Authorize(Roles = "Admin,Faculty")]
         public async Task<IActionResult> GetSummary()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -24,9 +24,9 @@ namespace THESISMATESystem.Server.Controllers
             return Ok(await _monitoring.GetSummaryAsync(userId, role));
         }
 
-        // Single group detail — Admin, SuperAdmin, Adviser (own groups only), FacultyIC
+        // Single group detail — Admin, Adviser/panelist (own groups only), FacultyIC
         [HttpGet("groups/{id:int}")]
-        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
+        [Authorize(Roles = "Admin,Faculty")]
         public async Task<IActionResult> GetGroupHealth(int id)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

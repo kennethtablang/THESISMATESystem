@@ -9,18 +9,13 @@ import {
 // offers the same pages, so the two cannot disagree about where a role may go.
 // { divider: true, label: 'Section' } entries render as labeled section breaks
 export const navByRole = {
-  // The SuperAdmin manages accounts. Everything academic is the Admin's job, so the
-  // SuperAdmin only keeps read-only oversight pages; the actions on them are hidden.
+  // The SuperAdmin's whole job is staffing: create the Admin/subject teacher and Faculty
+  // accounts, nothing else. Everything academic — classrooms, groups, defenses, reports — is
+  // the Admin's, so those pages are not listed here and the API refuses them for this role.
   SuperAdmin: [
     { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
     { divider: true, label: 'Accounts' },
     { label: 'User Management',  icon: ShieldCheck,     to: '/users' },
-    { divider: true, label: 'Oversight (read-only)' },
-    { label: 'Classrooms',       icon: Building2,       to: '/classrooms' },
-    { label: 'Groups',           icon: Users,           to: '/groups' },
-    { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
-    { label: 'Defense Schedules', icon: Calendar,       to: '/defenses' },
-    { label: 'Reports',          icon: BarChart3,       to: '/reports' },
   ],
   Admin: [
     { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },

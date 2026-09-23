@@ -89,7 +89,7 @@ namespace THESISMATESystem.Server.Controllers
         }
 
         [HttpGet("{id:int}/requests")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> GetRequests(int id)
             => Ok(await _schedules.GetRequestsByScheduleAsync(id));
 

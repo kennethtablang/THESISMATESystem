@@ -18,7 +18,7 @@ namespace THESISMATESystem.Server.Controllers
         // ── Sections ──────────────────────────────────────────
 
         [HttpGet("group/{groupId:int}")]
-        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
+        [Authorize(Roles = "Admin,Faculty")]
         public async Task<IActionResult> GetByGroup(int groupId)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -85,7 +85,7 @@ namespace THESISMATESystem.Server.Controllers
         // ── Comments ──────────────────────────────────────────
 
         [HttpGet("group/{groupId:int}/comments")]
-        [Authorize(Roles = "Admin,SuperAdmin,Faculty,Student")]
+        [Authorize(Roles = "Admin,Faculty,Student")]
         public async Task<IActionResult> GetComments(int groupId, [FromQuery] string? sectionKey, [FromQuery] int? revision)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -121,7 +121,7 @@ namespace THESISMATESystem.Server.Controllers
         // ── Revision summary ──────────────────────────────────
 
         [HttpGet("group/{groupId:int}/revision-summary")]
-        [Authorize(Roles = "Admin,SuperAdmin,Faculty")]
+        [Authorize(Roles = "Admin,Faculty")]
         public async Task<IActionResult> GetRevisionSummary(int groupId)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

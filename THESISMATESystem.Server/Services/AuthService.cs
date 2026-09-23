@@ -541,6 +541,8 @@ namespace THESISMATESystem.Server.Services
             // registrations page instead.
             var users = await _db.Users
                 .Include(u => u.Section)
+                .Include(u => u.HandledSections).ThenInclude(a => a.Section)
+                .AsSplitQuery()
                 .Where(u => u.RegistrationStatus == RegistrationStatus.Approved)
                 .OrderBy(u => u.LastName)
                 .ToListAsync();
@@ -568,8 +570,30 @@ namespace THESISMATESystem.Server.Services
             if (!ValidRoles.Contains(dto.Role))
                 throw new ArgumentException($"'{dto.Role}' is not a valid role.");
 
+            // The SuperAdmin's only job is staffing: Admin/subject teacher and Faculty accounts.
+            // Students self-register and are approved by their block's Admin; another SuperAdmin
+            // is not something this screen may mint.
+            if (dto.Role is not ("Admin" or "Faculty"))
+                throw new ArgumentException("The SuperAdmin can only create Admin/subject teacher and Faculty accounts.");
+
             string? studentId = null;
             int? sectionId = null;
+            var handledSectionIds = new List<int>();
+            if (dto.Role == "Admin")
+            {
+                handledSectionIds = dto.SectionIds.Distinct().ToList();
+                var anySection = await _db.Sections.AnyAsync(s => s.IsActive);
+                if (handledSectionIds.Count == 0 && anySection)
+                    throw new ArgumentException("Pick at least one block for the Admin/subject teacher to handle.");
+
+                var valid = await _db.Sections
+                    .Where(s => handledSectionIds.Contains(s.Id) && s.IsActive)
+                    .Select(s => s.Id)
+                    .ToListAsync();
+                var missing = handledSectionIds.Except(valid).ToList();
+                if (missing.Count > 0)
+                    throw new ArgumentException("One of the selected blocks does not exist or is inactive.");
+            }
             if (dto.Role == "Student")
             {
                 studentId = dto.StudentId?.Trim();
@@ -610,12 +634,72 @@ namespace THESISMATESystem.Server.Services
                 throw new InvalidOperationException(string.Join("; ", result.Errors.Select(e => e.Description)));
 
             await _userManager.AddToRoleAsync(user, dto.Role);
+
+            if (handledSectionIds.Count > 0)
+            {
+                _db.SectionAdminAssignments.AddRange(handledSectionIds.Select(id =>
+                    new SectionAdminAssignment { SectionId = id, AdminId = user.Id }));
+                await _db.SaveChangesAsync();
+            }
+
             await WriteAuditAsync(createdById, "CreateAccount", "User", user.Id, success: true);
 
             await _db.Entry(user).Reference(u => u.Section).LoadAsync();
+            await _db.Entry(user).Collection(u => u.HandledSections).Query().Include(a => a.Section).LoadAsync();
             var userDto = _mapper.Map<UserResponseDto>(user);
             userDto.Role = dto.Role;
             return userDto;
+        }
+
+        /// <summary>
+        /// Replaces the blocks an Admin/subject teacher handles. Removing a block takes away that
+        /// Admin's right to approve registrations for it, so the SuperAdmin is the only caller.
+        /// </summary>
+        public async Task<UserResponseDto> SetAdminSectionsAsync(string userId, IEnumerable<int> sectionIds, string actorId)
+        {
+            var user = await _db.Users
+                .Include(u => u.Section)
+                .Include(u => u.HandledSections)
+                .FirstOrDefaultAsync(u => u.Id == userId)
+                ?? throw new KeyNotFoundException("User not found.");
+
+            var roles = await _userManager.GetRolesAsync(user);
+            var role = roles.FirstOrDefault() ?? string.Empty;
+            if (role != "Admin")
+                throw new InvalidOperationException("Only Admin/subject teacher accounts handle blocks.");
+
+            var wanted = sectionIds.Distinct().ToList();
+            var valid = await _db.Sections
+                .Where(s => wanted.Contains(s.Id) && s.IsActive)
+                .Select(s => s.Id)
+                .ToListAsync();
+            if (wanted.Except(valid).Any())
+                throw new InvalidOperationException("One of the selected blocks does not exist or is inactive.");
+
+            _db.SectionAdminAssignments.RemoveRange(
+                user.HandledSections.Where(a => !valid.Contains(a.SectionId)));
+            var existing = user.HandledSections.Select(a => a.SectionId).ToHashSet();
+            _db.SectionAdminAssignments.AddRange(valid
+                .Where(id => !existing.Contains(id))
+                .Select(id => new SectionAdminAssignment { SectionId = id, AdminId = user.Id }));
+            await _db.SaveChangesAsync();
+
+            await WriteAuditAsync(actorId, "SetAdminSections", "User", user.Id, success: true);
+
+            // Re-read rather than trusting the tracked collection: the rows just removed may or
+            // may not have been fixed up out of it, and the response has to be exact.
+            var dto = _mapper.Map<UserResponseDto>(user);
+            dto.Role = role;
+            dto.HandledSections = await _db.SectionAdminAssignments
+                .Where(a => a.AdminId == user.Id)
+                .Select(a => new SectionOptionDto
+                {
+                    Id = a.Section.Id,
+                    Name = a.Section.Name,
+                    AcademicYear = a.Section.AcademicYear,
+                })
+                .ToListAsync();
+            return dto;
         }
 
         public async Task AdminForceSetPasswordAsync(string userId, string newPassword)

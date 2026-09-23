@@ -60,6 +60,8 @@ namespace THESISMATESystem.Server.Enums
         SystemFeatureStatusUpdated,
         PanelAssigned,
         RatingOpened,
+        // A panel member endorsed, or declined to endorse, a chapter submission.
+        ChapterPanelReviewed,
     }
 
     public enum DefensePhase

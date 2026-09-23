@@ -16,6 +16,7 @@ namespace THESISMATESystem.Server.Data
             var db          = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
             await SeedRolesAsync(roleManager);
+            await FixAdminAccountsAsync(userManager);
             await SeedUsersAsync(userManager);
             await SeedClassroomAsync(db, userManager);
             await SeedGroupsAsync(db, userManager);
@@ -45,17 +46,46 @@ namespace THESISMATESystem.Server.Data
             }
         }
 
+        // ── Admin account corrections ─────────────────────────────────────────
+        // Older databases have the SuperAdmin at superadmin@thesismate.edu and admin@psu.edu.ph
+        // holding the SuperAdmin role, which left no Admin account once the two roles were
+        // separated. Each step only acts when it finds that old state, so it is safe to rerun.
+
+        private static async Task FixAdminAccountsAsync(UserManager<ApplicationUser> userManager)
+        {
+            var legacySuper = await userManager.FindByEmailAsync("superadmin@thesismate.edu");
+            if (legacySuper is not null && await userManager.FindByEmailAsync("superadmin@psu.edu.ph") is null)
+            {
+                await userManager.SetEmailAsync(legacySuper, "superadmin@psu.edu.ph");
+                legacySuper.EmailConfirmed = true; // SetEmailAsync clears it
+                await userManager.UpdateAsync(legacySuper);
+                Console.WriteLine("[Seeder] Moved SuperAdmin to superadmin@psu.edu.ph");
+            }
+
+            var admin = await userManager.FindByEmailAsync("admin@psu.edu.ph");
+            if (admin is not null && await userManager.IsInRoleAsync(admin, "SuperAdmin"))
+            {
+                await userManager.RemoveFromRoleAsync(admin, "SuperAdmin");
+                await userManager.AddToRoleAsync(admin, "Admin");
+                admin.FirstName = "System";
+                admin.MiddleName = null;
+                admin.LastName = "Admin";
+                await userManager.UpdateAsync(admin);
+                Console.WriteLine("[Seeder] admin@psu.edu.ph is now the Admin (System Admin)");
+            }
+        }
+
         // ── Users ──────────────────────────────────────────────────────────────
 
         private static async Task SeedUsersAsync(UserManager<ApplicationUser> userManager)
         {
             // SuperAdmin
-            await CreateUser(userManager, "superadmin@thesismate.edu", "superadmin",
+            await CreateUser(userManager, "superadmin@psu.edu.ph", "superadmin",
                 "Super", "Admin", "SuperAdmin@1", "SuperAdmin");
 
             // Admin
             await CreateUser(userManager, "admin@psu.edu.ph", "admin",
-                "Maria", "Santos", "Admin@12345", "Admin");
+                "System", "Admin", "Admin@12345", "Admin");
 
             // Faculty — faculty1 acts as FIC, faculty2-4 as advisers, faculty5 as panelist
             await CreateUser(userManager, "faculty1@psu.edu.ph", "faculty1",
@@ -141,7 +171,13 @@ namespace THESISMATESystem.Server.Data
 
         private static async Task SeedSectionAsync(AppDbContext db, UserManager<ApplicationUser> userManager)
         {
-            if (await db.Sections.AnyAsync()) return;
+            if (await db.Sections.AnyAsync())
+            {
+                // Databases seeded before blocks had an Admin still need the assignment.
+                var existing = await db.Sections.OrderBy(s => s.Id).FirstAsync();
+                await SeedSectionAdminAsync(db, userManager, existing.Id);
+                return;
+            }
 
             var section = new Section { Name = "BSIT 4A", AcademicYear = "2025-2026" };
             db.Sections.Add(section);
@@ -157,6 +193,19 @@ namespace THESISMATESystem.Server.Data
             var classroom = await db.Classrooms.FirstOrDefaultAsync(c => c.JoinCode == "PSU001" && c.SectionId == null);
             if (classroom is not null) classroom.SectionId = section.Id;
 
+            await db.SaveChangesAsync();
+            await SeedSectionAdminAsync(db, userManager, section.Id);
+        }
+
+        // An Admin only reviews registrations for the blocks assigned to them, so the seeded
+        // Admin has to own the seeded block or the registrations page comes up empty.
+        private static async Task SeedSectionAdminAsync(AppDbContext db, UserManager<ApplicationUser> userManager, int sectionId)
+        {
+            var admin = await userManager.FindByEmailAsync("admin@psu.edu.ph");
+            if (admin is null) return;
+            if (await db.SectionAdminAssignments.AnyAsync(a => a.AdminId == admin.Id && a.SectionId == sectionId)) return;
+
+            db.SectionAdminAssignments.Add(new SectionAdminAssignment { SectionId = sectionId, AdminId = admin.Id });
             await db.SaveChangesAsync();
         }
 

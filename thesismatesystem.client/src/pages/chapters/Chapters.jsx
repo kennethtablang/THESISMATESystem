@@ -6,7 +6,7 @@ import Badge, { statusLabel, statusVariant } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
 import { PageLoader } from '../../components/ui/Spinner'
-import { FileText, Upload, Eye, MessageSquare, CheckCircle, Download, History, FileUp } from 'lucide-react'
+import { FileText, Upload, Eye, MessageSquare, CheckCircle, Download, History, FileUp, Check, X } from 'lucide-react'
 import { toast } from '../../utils/toast'
 
 const CHAPTER_LABELS = [
@@ -32,6 +32,8 @@ export default function Chapters() {
   const [reviewError, setReviewError] = useState('')
   const [chapterHistory, setChapterHistory] = useState([])
   const [finalizingChapter, setFinalizingChapter] = useState(null)
+  const [panelComment, setPanelComment] = useState('')
+  const [panelSaving, setPanelSaving] = useState(false)
   const fileRef = useRef()
 
   const isAdviser = user?.role === 'Faculty'
@@ -53,12 +55,15 @@ export default function Chapters() {
       groupService.list()
         .then(async (groups) => {
           const results = await Promise.all(
-            groups.map(g =>
-              chapterService.listByGroup(g.id)
-                // Faculty also see groups they panel or teach, but only the adviser may review.
-                .then(chs => chs.map(c => ({ ...c, groupName: g.groupName, isMyAdvisee: g.adviser?.id === user?.id })))
+            groups.map(g => {
+              // The adviser owns the chapter's status; a panelist gets their own endorsement
+              // and can leave notes, so both relationships are carried on the row.
+              const isMyAdvisee = g.adviser?.id === user?.id
+              const isMyPanel = (g.panelMembers ?? []).some(pm => pm.id === user?.id)
+              return chapterService.listByGroup(g.id)
+                .then(chs => chs.map(c => ({ ...c, groupName: g.groupName, isMyAdvisee, isMyPanel })))
                 .catch(() => [])
-            )
+            })
           )
           return results.flat()
         })
@@ -117,7 +122,10 @@ export default function Chapters() {
         await chapterService.addRevisionNote(groupId, selected.id, { notes: reviewForm.note.trim() })
       }
       const refreshed = await chapterService.listByGroup(groupId)
-        .then(chs => chs.map(c => ({ ...c, groupName: selected.groupName, isMyAdvisee: selected.isMyAdvisee })))
+        .then(chs => chs.map(c => ({
+          ...c, groupName: selected.groupName,
+          isMyAdvisee: selected.isMyAdvisee, isMyPanel: selected.isMyPanel,
+        })))
       setChapters(prev => {
         const others = prev.filter(c => c.capstoneGroupId !== groupId)
         return [...others, ...refreshed].sort((a, b) => {
@@ -137,8 +145,33 @@ export default function Chapters() {
     }
   }
 
+  // A panel member's standing verdict on the submission being viewed, if they have given one.
+  const myPanelReview = selected?.panelReviews?.find(r => r.panelist?.id === user?.id)
+
+  async function handlePanelReview(approved) {
+    if (!selected || panelSaving) return
+    setPanelSaving(true)
+    try {
+      const groupId = selected.capstoneGroupId
+      const updated = await chapterService.setPanelReview(groupId, selected.id, {
+        approved,
+        comment: panelComment.trim() || null,
+      })
+      const merged = { ...updated, groupName: selected.groupName, isMyAdvisee: selected.isMyAdvisee, isMyPanel: selected.isMyPanel }
+      setSelected(merged)
+      setChapters(prev => prev.map(c => (c.id === merged.id ? merged : c)))
+      setPanelComment('')
+      toast.success(approved ? 'Marked as approved by you.' : 'Marked as not approved by you.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to save your panel decision.')
+    } finally {
+      setPanelSaving(false)
+    }
+  }
+
   async function openView(c) {
     setSelected(c)
+    setPanelComment('')
     setChapterHistory([])
     try {
       const gid = c.capstoneGroupId ?? group?.id
@@ -236,6 +269,11 @@ export default function Chapters() {
                         {isAdviser && c.isMyAdvisee && c.status === 'PendingReview' && (
                           <button className="btn-primary text-xs px-3 py-1.5" onClick={() => { openView(c); setShowReview(true) }}>
                             Review
+                          </button>
+                        )}
+                        {isAdviser && !c.isMyAdvisee && c.isMyPanel && (
+                          <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openView(c)}>
+                            Endorse
                           </button>
                         )}
                       </div>
@@ -432,6 +470,66 @@ export default function Chapters() {
                 </div>
               </div>
             )}
+            {(selected.panelReviews?.length > 0 || selected.isMyPanel) && (
+              <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-light)' }}>
+                <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Panel Endorsement</p>
+
+                {selected.panelReviews?.length > 0 ? (
+                  <div className="space-y-2 mb-3">
+                    {selected.panelReviews.map(pr => (
+                      <div key={pr.id} className="px-3 py-2.5 rounded-xl text-sm"
+                        style={{
+                          background: pr.approved ? 'rgba(34,197,94,0.08)' : 'rgba(220,38,38,0.06)',
+                          border: `1px solid ${pr.approved ? 'rgba(34,197,94,0.25)' : 'rgba(220,38,38,0.2)'}`,
+                        }}>
+                        <p className="text-xs font-semibold mb-0.5 flex items-center gap-1"
+                          style={{ color: pr.approved ? '#16a34a' : '#dc2626' }}>
+                          {pr.approved ? <Check size={12} /> : <X size={12} />}
+                          {pr.panelist?.fullName} — {pr.approved ? 'Approved' : 'Not approved'}
+                          <span className="font-normal" style={{ color: 'var(--text-muted)' }}>
+                            • {new Date(pr.decidedAt).toLocaleDateString()}
+                          </span>
+                        </p>
+                        {pr.comment && <p style={{ color: 'var(--text-primary)' }}>{pr.comment}</p>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                    No panel member has given a verdict on this submission yet.
+                  </p>
+                )}
+
+                {selected.isMyPanel && (
+                  <div className="rounded-xl px-3 py-3" style={{ background: 'var(--bg-subtle)' }}>
+                    <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                      {myPanelReview
+                        ? `Your verdict: ${myPanelReview.approved ? 'Approved' : 'Not approved'}. Choosing again replaces it.`
+                        : 'Do you approve what this group submitted?'}
+                    </p>
+                    <textarea
+                      className="form-input text-sm mb-2"
+                      rows={2}
+                      placeholder="Comment for the group (optional)"
+                      value={panelComment}
+                      onChange={e => setPanelComment(e.target.value)}
+                      disabled={panelSaving}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button className="btn-primary text-xs px-3 py-1.5"
+                        onClick={() => handlePanelReview(true)} disabled={panelSaving}>
+                        <Check size={13} /> Approve
+                      </button>
+                      <button className="btn-secondary text-xs px-3 py-1.5"
+                        onClick={() => handlePanelReview(false)} disabled={panelSaving}>
+                        <X size={13} /> Not approved
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {selected.revisionNotes?.length > 0 && (
               <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-light)' }}>
                 <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Revision Notes</p>

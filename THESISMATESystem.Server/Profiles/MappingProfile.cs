@@ -10,7 +10,17 @@ namespace THESISMATESystem.Server.Profiles
         {
             CreateMap<ApplicationUser, UserResponseDto>()
                 .ForMember(d => d.Role, o => o.Ignore())
-                .ForMember(d => d.SectionName, o => o.MapFrom(s => s.Section != null ? s.Section.Name : null));
+                .ForMember(d => d.SectionName, o => o.MapFrom(s => s.Section != null ? s.Section.Name : null))
+                // Only populated when the caller loaded HandledSections; an unloaded collection
+                // maps to an empty list, which is what non-Admin accounts should show anyway.
+                .ForMember(d => d.HandledSections, o => o.MapFrom(s => s.HandledSections
+                    .Where(a => a.Section != null)
+                    .Select(a => new SectionOptionDto
+                    {
+                        Id = a.Section.Id,
+                        Name = a.Section.Name,
+                        AcademicYear = a.Section.AcademicYear,
+                    })));
 
             CreateMap<ApplicationUser, UserSummaryDto>()
                 .ForMember(d => d.FullName, o => o.MapFrom(s =>
@@ -35,6 +45,7 @@ namespace THESISMATESystem.Server.Profiles
             CreateMap<ChapterSubmission, ChapterSubmissionResponseDto>();
 
             CreateMap<RevisionNote, RevisionNoteResponseDto>();
+            CreateMap<ChapterPanelReview, ChapterPanelReviewDto>();
 
             CreateMap<ConsultationLog, ConsultationLogResponseDto>()
                 .ForMember(d => d.GroupName, o => o.MapFrom(s => s.CapstoneGroup.GroupName));

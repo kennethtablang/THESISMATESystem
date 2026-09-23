@@ -211,6 +211,191 @@ namespace THESISMATESystem.Server.Services
             return result;
         }
 
+        /// <summary>
+        /// Lines the remaining groups up behind one already-saved defense. The Admin schedules
+        /// the first group by hand; this fills in the rest back-to-back in the same venue, so the
+        /// whole phase falls out of that single decision instead of being dated one group at a time.
+        /// </summary>
+        public async Task<AutoScheduleProposalDto> ProposeChainAsync(ChainScheduleRequestDto dto)
+        {
+            var anchor = await _db.DefenseSchedules
+                .Include(s => s.CapstoneGroup)
+                .FirstOrDefaultAsync(s => s.Id == dto.AnchorScheduleId)
+                ?? throw new KeyNotFoundException("The defense to chain from was not found.");
+            if (anchor.Status == DefenseStatus.Cancelled)
+                throw new InvalidOperationException("That defense is cancelled, so nothing can follow it.");
+
+            if (!TimeOnly.TryParseExact(dto.DayEnd, ["HH:mm", "H:mm", "HH:mm:ss"],
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out var dayEnd))
+                throw new InvalidOperationException("Day end must be a time such as 17:00.");
+            if (dayEnd > new TimeOnly(19, 0))
+                throw new InvalidOperationException("Defenses cannot extend past 7:00 PM.");
+
+            var duration = anchor.DurationMinutes;
+            var venue = anchor.Venue.Trim();
+            var phase = anchor.Phase;
+            var anchorPht = anchor.ScheduledDateTime.AddHours(8);
+            var chainStartTime = TimeOnly.FromDateTime(anchorPht);
+            if (chainStartTime.AddMinutes(duration) > dayEnd)
+                throw new InvalidOperationException(
+                    $"The anchor defense starts at {chainStartTime:HH\\:mm}, which leaves no room before {dayEnd:HH\\:mm}. Move the end of the day later.");
+
+            var result = new AutoScheduleProposalDto();
+
+            // Candidate groups, in name order so the chain reads 1, 2, 3...
+            var groupQuery = _db.CapstoneGroups
+                .Include(g => g.Adviser)
+                .Include(g => g.PanelMembers).ThenInclude(p => p.Panelist)
+                .Include(g => g.ChapterSubmissions)
+                .AsSplitQuery()
+                .Where(g => g.Status == GroupStatus.Active && g.Id != anchor.CapstoneGroupId);
+            if (dto.GroupIds.Count > 0)
+                groupQuery = groupQuery.Where(g => dto.GroupIds.Contains(g.Id));
+            var groups = await groupQuery.ToListAsync();
+
+            var alreadyScheduledSet = (await _db.DefenseSchedules
+                .Where(s => s.Phase == phase && s.Status != DefenseStatus.Cancelled)
+                .Select(s => s.CapstoneGroupId)
+                .ToListAsync()).ToHashSet();
+
+            var candidates = new List<(Models.CapstoneGroup Group, List<string> People)>();
+            foreach (var g in groups.OrderBy(g => g.GroupName, StringComparer.OrdinalIgnoreCase))
+            {
+                if (alreadyScheduledSet.Contains(g.Id))
+                {
+                    if (dto.GroupIds.Count > 0)
+                        result.Unscheduled.Add(Skip(g, $"Already has a {PhaseLabel(phase)} scheduled."));
+                    continue;
+                }
+                if (g.PanelMembers.Count == 0)
+                {
+                    result.Unscheduled.Add(Skip(g, "No panel members assigned to this group."));
+                    continue;
+                }
+                if (dto.RequireReadiness && ReadinessProblem(g, phase) is { } problem)
+                {
+                    result.Unscheduled.Add(Skip(g, problem));
+                    continue;
+                }
+                candidates.Add((g, g.PanelMembers.Select(p => p.PanelistId).Append(g.AdviserId).Distinct().ToList()));
+            }
+
+            if (candidates.Count == 0) return result;
+
+            // Back-to-back slots after the anchor.
+            var slots = new List<Interval>();
+            var firstDay = DateOnly.FromDateTime(anchorPht);
+            var step = duration + dto.BreakMinutes;
+            var endMinute = dayEnd.Hour * 60 + dayEnd.Minute;
+            var chainStartMinute = chainStartTime.Hour * 60 + chainStartTime.Minute;
+            for (var dayOffset = 0; dayOffset < dto.MaxDays; dayOffset++)
+            {
+                var day = firstDay.AddDays(dayOffset);
+                if (dto.SkipWeekends && day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) continue;
+
+                // Day 0 picks up where the anchor ends; later days restart at the same hour.
+                var startMinute = dayOffset == 0 ? chainStartMinute + step : chainStartMinute;
+                for (var m = startMinute; m + duration <= endMinute; m += step)
+                {
+                    var startUtc = PhilippineTime.ToUtc(day.ToDateTime(new TimeOnly(m / 60, m % 60)));
+                    slots.Add(new Interval(startUtc, startUtc.AddMinutes(duration)));
+                }
+            }
+            result.SlotsConsidered = slots.Count;
+            if (slots.Count == 0)
+            {
+                result.Unscheduled.AddRange(candidates.Select(c =>
+                    Skip(c.Group, "No room after the anchor defense. Move the end of the day later or allow more days.")));
+                return result;
+            }
+
+            // Existing commitments, so the chain never double-books a person or the venue.
+            var windowEnd = slots[^1].End.AddDays(1);
+            var existing = await _db.DefenseSchedules
+                .Where(s => s.Status != DefenseStatus.Cancelled
+                         && s.ScheduledDateTime < windowEnd
+                         && s.ScheduledDateTime >= slots[0].Start.AddHours(-24))
+                .Select(s => new
+                {
+                    s.ScheduledDateTime,
+                    s.DurationMinutes,
+                    s.Venue,
+                    AdviserId = s.CapstoneGroup.AdviserId,
+                    Panelists = s.PanelAssignments.Select(pa => pa.PanelistId).ToList(),
+                })
+                .ToListAsync();
+
+            var personBusy = new Dictionary<string, List<Interval>>();
+            var venueBusy = new Dictionary<string, List<Interval>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in existing)
+            {
+                var interval = new Interval(e.ScheduledDateTime, e.ScheduledDateTime.AddMinutes(e.DurationMinutes));
+                foreach (var person in e.Panelists.Append(e.AdviserId).Distinct())
+                    Add(personBusy, person, interval);
+                Add(venueBusy, e.Venue.Trim(), interval);
+            }
+
+            // Fill the chain in group order. Unlike ProposeAsync this deliberately does not sort
+            // by how constrained each group is: the point of a chain is that it runs in sequence,
+            // so a group only ever moves later when its own people or the venue are taken.
+            var usedDays = new HashSet<DateOnly>();
+            var nextSlot = 0;
+            foreach (var (group, people) in candidates)
+            {
+                Interval? chosen = null;
+                var blockedByDailyCap = false;
+
+                for (var i = nextSlot; i < slots.Count; i++)
+                {
+                    var slot = slots[i];
+                    if (venueBusy.TryGetValue(venue, out var vBusy) && vBusy.Any(slot.Overlaps)) continue;
+                    if (people.Any(p => personBusy.TryGetValue(p, out var busy) && busy.Any(slot.Overlaps))) continue;
+
+                    var phtDay = DateOnly.FromDateTime(slot.Start.AddHours(8));
+                    if (people.Any(p => CountOnDay(personBusy, p, phtDay) >= dto.MaxDefensesPerFacultyPerDay))
+                    {
+                        blockedByDailyCap = true;
+                        continue;
+                    }
+
+                    chosen = slot;
+                    nextSlot = i + 1;
+                    break;
+                }
+
+                if (chosen is null)
+                {
+                    result.Unscheduled.Add(Skip(group, blockedByDailyCap
+                        ? "Its panel or adviser already reached the daily defense limit on every remaining day. Allow more days or raise the limit."
+                        : "No free slot left in the chain. Allow more days, move the end of the day later, or shorten the break."));
+                    continue;
+                }
+
+                foreach (var p in people) Add(personBusy, p, chosen);
+                Add(venueBusy, venue, chosen);
+                usedDays.Add(DateOnly.FromDateTime(chosen.Start.AddHours(8)));
+
+                var panel = group.PanelMembers.OrderByDescending(p => p.IsChair).ToList();
+                result.Proposals.Add(new ProposedDefenseDto
+                {
+                    GroupId = group.Id,
+                    GroupName = group.GroupName,
+                    ProjectTitle = group.ProjectTitle,
+                    ScheduledDateTime = DateTime.SpecifyKind(chosen.Start, DateTimeKind.Utc),
+                    DurationMinutes = duration,
+                    Venue = venue,
+                    Phase = phase,
+                    PanelistIds = panel.Select(p => p.PanelistId).ToList(),
+                    PanelistNames = panel.Select(p => $"{p.Panelist.FirstName} {p.Panelist.LastName}".Trim() + (p.IsChair ? " (Chair)" : "")).ToList(),
+                    AdviserName = $"{group.Adviser.FirstName} {group.Adviser.LastName}".Trim(),
+                });
+            }
+
+            result.Proposals = result.Proposals.OrderBy(p => p.ScheduledDateTime).ToList();
+            result.DaysUsed = usedDays.Count;
+            return result;
+        }
+
         public async Task<AutoScheduleConfirmResultDto> ConfirmAsync(ConfirmAutoScheduleRequestDto dto)
         {
             var result = new AutoScheduleConfirmResultDto();

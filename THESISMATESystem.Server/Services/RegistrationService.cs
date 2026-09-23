@@ -34,12 +34,16 @@ namespace THESISMATESystem.Server.Services
             _logger = logger;
         }
 
-        public async Task<IEnumerable<PendingRegistrationDto>> GetPendingAsync()
+        public async Task<IEnumerable<PendingRegistrationDto>> GetPendingAsync(string adminId)
         {
             var now = PhilippineTime.Now;
+            var handled = await HandledSectionIdsAsync(adminId);
             var pending = await _db.Users
                 .Where(u => u.RegistrationStatus == RegistrationStatus.PendingApproval
-                         && (u.RegistrationExpiresAt == null || u.RegistrationExpiresAt > now))
+                         && (u.RegistrationExpiresAt == null || u.RegistrationExpiresAt > now)
+                         // Only the blocks this Admin takes. A student who picked another block
+                         // waits for that block's Admin, not this one.
+                         && u.SectionId != null && handled.Contains(u.SectionId.Value))
                 .OrderBy(u => u.CreatedAt)
                 .Select(u => new
                 {
@@ -80,6 +84,7 @@ namespace THESISMATESystem.Server.Services
         public async Task ApproveAsync(string userId, string adminId)
         {
             var user = await LoadPendingAsync(userId);
+            await EnsureHandlesSectionAsync(adminId, user);
 
             if (!user.EmailConfirmed)
                 throw new InvalidOperationException("The student has not verified their email address yet.");
@@ -108,6 +113,7 @@ namespace THESISMATESystem.Server.Services
         public async Task RejectAsync(string userId, string adminId, string? reason)
         {
             var user = await LoadPendingAsync(userId);
+            await EnsureHandlesSectionAsync(adminId, user);
             var email = user.Email!;
             var firstName = user.FirstName;
 
@@ -147,6 +153,29 @@ namespace THESISMATESystem.Server.Services
                 }
             }
             return removed;
+        }
+
+        private async Task<List<int>> HandledSectionIdsAsync(string adminId) =>
+            await _db.SectionAdminAssignments
+                .Where(a => a.AdminId == adminId)
+                .Select(a => a.SectionId)
+                .ToListAsync();
+
+        /// <summary>
+        /// A registration belongs to the block the student picked, so only an Admin assigned to
+        /// that block may decide it. Without this an Admin could approve a student from a block
+        /// they have no class list for.
+        /// </summary>
+        private async Task EnsureHandlesSectionAsync(string adminId, ApplicationUser user)
+        {
+            if (user.SectionId is null)
+                throw new InvalidOperationException("The registration has no block/section.");
+
+            var handles = await _db.SectionAdminAssignments
+                .AnyAsync(a => a.AdminId == adminId && a.SectionId == user.SectionId);
+            if (!handles)
+                throw new UnauthorizedAccessException(
+                    $"You do not handle {user.Section?.Name ?? "this block"}. Its assigned Admin reviews this registration.");
         }
 
         private async Task<ApplicationUser> LoadPendingAsync(string userId)

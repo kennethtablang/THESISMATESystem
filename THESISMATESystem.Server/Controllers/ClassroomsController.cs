@@ -86,7 +86,7 @@ namespace THESISMATESystem.Server.Controllers
 
         // GET /api/classrooms/{id}/enrollments — Faculty gets enrolled student list
         [HttpGet("{id:int}/enrollments")]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> GetEnrollments(int id)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -159,9 +159,9 @@ namespace THESISMATESystem.Server.Controllers
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
-        // GET /api/classrooms/all — Admin/SuperAdmin sees every classroom
+        // GET /api/classrooms/all — the Admin sees every classroom
         [HttpGet("all")]
-        [Authorize(Roles = "Admin,SuperAdmin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAll() => Ok(await _classrooms.GetAllClassroomsAsync());
 
         // POST /api/classrooms/{id}/invite — Admin invites students of the class's section

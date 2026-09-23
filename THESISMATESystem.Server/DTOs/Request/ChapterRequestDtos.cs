@@ -18,4 +18,11 @@ namespace THESISMATESystem.Server.DTOs.Request
     {
         [Required] public string Notes { get; set; } = string.Empty;
     }
+
+    // A panel member's verdict on what the group submitted.
+    public class SetChapterPanelReviewRequestDto
+    {
+        [Required] public bool Approved { get; set; }
+        [MaxLength(2000)] public string? Comment { get; set; }
+    }
 }

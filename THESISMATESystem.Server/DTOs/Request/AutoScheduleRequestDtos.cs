@@ -32,6 +32,31 @@ namespace THESISMATESystem.Server.DTOs.Request
         public bool RequireReadiness { get; set; } = true;
     }
 
+    /// <summary>
+    /// "Schedule group 1, the rest follow." Takes one saved defense as the anchor and lines the
+    /// remaining groups of the same phase up back-to-back after it — same venue, same length —
+    /// rolling into the next day when the daily window runs out.
+    /// </summary>
+    public class ChainScheduleRequestDto
+    {
+        [Required] public int AnchorScheduleId { get; set; }
+
+        // Groups to line up. Empty means every active group still without a defense this phase.
+        public List<int> GroupIds { get; set; } = [];
+
+        // Gap between one defense and the next.
+        [Range(0, 120)] public int BreakMinutes { get; set; } = 15;
+
+        // How late the chain may run each day, Philippine time, "HH:mm". The chain restarts at
+        // the anchor's time of day on following days.
+        [Required] public string DayEnd { get; set; } = "17:00";
+
+        public bool SkipWeekends { get; set; } = true;
+        [Range(1, 12)] public int MaxDefensesPerFacultyPerDay { get; set; } = 4;
+        [Range(1, 60)] public int MaxDays { get; set; } = 14;
+        public bool RequireReadiness { get; set; } = true;
+    }
+
     public class ConfirmAutoScheduleItemDto
     {
         [Required] public int GroupId { get; set; }

@@ -20,5 +20,6 @@ namespace THESISMATESystem.Server.Models
         public ApplicationUser SubmittedBy { get; set; } = null!;
 
         public ICollection<RevisionNote> RevisionNotes { get; set; } = [];
+        public ICollection<ChapterPanelReview> PanelReviews { get; set; } = [];
     }
 }

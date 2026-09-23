@@ -113,6 +113,8 @@ export const authService = {
   twoFactorLogin: (userId, code) => api.post('/auth/2fa/login', { userId, code }),
   allUsers: () => api.get('/auth/users'),
   createUser: (data) => api.post('/auth/users', data),
+  // Blocks an Admin/subject teacher handles — what decides whose registrations they may approve.
+  setAdminSections: (userId, sectionIds) => api.put(`/auth/users/${userId}/sections`, { sectionIds }),
   updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
   deactivate: (id) => api.patch(`/auth/users/${id}/deactivate`),
   adminResetPassword: (id, newPassword) => api.post(`/auth/users/${id}/reset-password`, { newPassword }),
@@ -132,6 +134,8 @@ export const defenseService = {
   setRatingStatus: (id, isOpen) => api.patch(`/defenses/${id}/rating-status`, isOpen),
   complete: (id) => api.patch(`/defenses/${id}/complete`),
   autoSchedulePreview: (data) => api.post('/defenses/auto-schedule/preview', data),
+  // Schedule one group by hand, then line the rest up back-to-back behind it.
+  autoScheduleChain: (data) => api.post('/defenses/auto-schedule/chain', data),
   autoScheduleConfirm: (items) => api.post('/defenses/auto-schedule/confirm', { items }),
   submitRating: (data) => api.post('/defenses/ratings', data),
   getRatings: (id) => api.get(`/defenses/${id}/ratings`),
@@ -221,6 +225,9 @@ export const chapterService = {
   updateStatus: (groupId, id, data) => api.patch(`/groups/${groupId}/chapters/submissions/${id}/status`, data),
   addRevisionNote: (groupId, chapterId, data) =>
     api.post(`/groups/${groupId}/chapters/submissions/${chapterId}/revision-notes`, data),
+  // A panel member's own verdict on a submission, separate from the adviser-owned status.
+  setPanelReview: (groupId, chapterId, data) =>
+    api.put(`/groups/${groupId}/chapters/submissions/${chapterId}/panel-review`, data),
   download: (id) => `${BASE_URL}/groups/0/chapters/submissions/${id}/download`,
   downloadFile: (id, filename) => downloadBlobAuth(`/groups/0/chapters/submissions/${id}/download`, filename || `chapter_${id}`),
   history: (groupId, chapterNumber) => api.get(`/groups/${groupId}/chapters/${chapterNumber}/history`),

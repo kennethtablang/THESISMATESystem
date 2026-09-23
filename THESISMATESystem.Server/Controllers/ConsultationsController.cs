@@ -27,7 +27,7 @@ namespace THESISMATESystem.Server.Controllers
                 groupId);
 
         [HttpGet]
-        [Authorize(Roles = "Faculty,Admin,SuperAdmin")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> GetAll()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

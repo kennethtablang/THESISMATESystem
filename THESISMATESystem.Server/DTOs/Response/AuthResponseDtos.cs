@@ -35,6 +35,8 @@ namespace THESISMATESystem.Server.DTOs.Response
         public int? SectionId { get; set; }
         public string? SectionName { get; set; }
         public string RegistrationStatus { get; set; } = "Approved";
+        // Blocks this account handles as an Admin/subject teacher. Empty for other roles.
+        public List<SectionOptionDto> HandledSections { get; set; } = [];
     }
 
     public class PendingRegistrationDto

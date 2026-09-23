@@ -8,13 +8,13 @@ import {
   BarChart3, GraduationCap, MessageSquare, Upload, Cpu,
   CalendarClock, ShieldCheck, CheckCircle2, Star, BookOpen,
   TrendingUp, ChevronRight, School, ClipboardList,
-  Shield, LayoutDashboard, Bell, CheckCheck, PenLine,
+  Shield, LayoutDashboard, Bell, CheckCheck, PenLine, UserCircle,
 } from 'lucide-react'
 import {
   groupService, chapterService, consultationService,
   defenseService, consultationScheduleService, authService,
   monitoringService, classroomService, notificationService,
-  documentService, registrationService,
+  documentService, registrationService, sectionService,
 } from '../../services/api'
 import { toast } from '../../utils/toast'
 
@@ -1528,58 +1528,46 @@ function AdminDashboard({ user }) {
 }
 
 // ─── SuperAdmin Dashboard ─────────────────────────────────────────────────────
+// Accounts only. The SuperAdmin staffs the system — it creates the Admin/subject teacher and
+// Faculty accounts — and the academic side (groups, classrooms, defenses, reports) belongs to
+// the Admin, so none of it is surfaced or fetched here.
 
 function SuperAdminDashboard({ user }) {
   const navigate = useNavigate()
-  const [groups,     setGroups]     = useState([])
-  const [users,      setUsers]      = useState([])
-  const [defenses,   setDefenses]   = useState([])
-  const [classrooms, setClassrooms] = useState([])
-  const [monitoring, setMonitoring] = useState(null)
-  const [loading,    setLoading]    = useState(true)
+  const [users,    setUsers]    = useState([])
+  const [sections, setSections] = useState([])
+  const [loading,  setLoading]  = useState(true)
 
   useEffect(() => {
     Promise.all([
-      groupService.list().catch(() => []),
       authService.allUsers().catch(() => []),
-      defenseService.list().catch(() => []),
-      monitoringService.summary().catch(() => null),
-      classroomService.allClassrooms().catch(() => []),
-    ]).then(([gs, us, de, mon, cl]) => {
-      setGroups(gs)
+      sectionService.list().catch(() => []),
+    ]).then(([us, secs]) => {
       setUsers(Array.isArray(us) ? us : [])
-      setDefenses(de)
-      setMonitoring(mon)
-      setClassrooms(Array.isArray(cl) ? cl : [])
+      setSections(Array.isArray(secs) ? secs : [])
     }).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <DashboardLoader />
 
-  const activeUsers    = users.filter(u => u.isActive)
-  const inactiveUsers  = users.filter(u => !u.isActive)
-  const twoFaUsers     = users.filter(u => u.twoFactorEnabled)
-  const activeGroups   = groups.filter(g => g.status === 'Active')
-  const archivedGroups = groups.filter(g => g.status === 'Archived')
-  const activeClassrooms = classrooms.filter(c => c.isActive)
+  const staff         = users.filter(u => u.role === 'Admin' || u.role === 'Faculty')
+  const admins        = users.filter(u => u.role === 'Admin')
+  const faculty       = users.filter(u => u.role === 'Faculty')
+  const students      = users.filter(u => u.role === 'Student')
+  const activeUsers   = users.filter(u => u.isActive)
+  const inactiveUsers = users.filter(u => !u.isActive)
+  const twoFaUsers    = users.filter(u => u.twoFactorEnabled)
+  const twoFaPct      = users.length > 0 ? Math.round((twoFaUsers.length / users.length) * 100) : 0
 
-  const scheduledDefs  = defenses.filter(d => d.status === 'Scheduled' || d.status === 'Rescheduled')
-  const completedDefs  = defenses.filter(d => d.status === 'Completed')
-  const cancelledDefs  = defenses.filter(d => d.status === 'Cancelled')
-
-  const now     = new Date()
-  const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
-  const soonDefenses = scheduledDefs
-    .filter(d => d.scheduledDateTime && new Date(d.scheduledDateTime) >= now && new Date(d.scheduledDateTime) <= in7Days)
-    .sort((a, b) => new Date(a.scheduledDateTime) - new Date(b.scheduledDateTime))
-
-  const monGroups    = monitoring?.groups ?? []
-  const atRiskGroups = monGroups.filter(g => (g.consultationScore ?? 0) < 50)
-  const twoFaPct     = users.length > 0 ? Math.round((twoFaUsers.length / users.length) * 100) : 0
+  // A block with no Admin has nobody to approve its registrations, which is the one piece of
+  // academic state the SuperAdmin is responsible for creating.
+  const coveredSectionIds = new Set(admins.flatMap(a => (a.handledSections ?? []).map(s => s.id)))
+  const uncoveredSections = sections.filter(s => s.isActive !== false && !coveredSectionIds.has(s.id))
+  const adminsWithoutBlock = admins.filter(a => (a.handledSections ?? []).length === 0)
 
   const recentUsers = [...users]
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 5)
+    .slice(0, 6)
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
@@ -1589,121 +1577,41 @@ function SuperAdminDashboard({ user }) {
         badgeColor="148,163,184"
         name={user?.fullName ?? 'SuperAdmin'}
         sub={
-          atRiskGroups.length > 0
-            ? `${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} below consultation threshold · ${users.length} users · full system access`
-            : `${users.length} users · ${activeGroups.length} active groups · ${activeClassrooms.length} classrooms`
+          uncoveredSections.length > 0
+            ? `${uncoveredSections.length} block${uncoveredSections.length !== 1 ? 's' : ''} without an Admin · ${staff.length} staff accounts`
+            : `${staff.length} staff accounts · ${admins.length} admin${admins.length !== 1 ? 's' : ''} · ${faculty.length} faculty`
         }
       />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={Users} label="Total Users" value={users.length}
+        <StatCard icon={Users} label="Total Accounts" value={users.length}
           sub={`${activeUsers.length} active · ${inactiveUsers.length} inactive`}
           color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
           onClick={() => navigate('/users')} />
-        <StatCard icon={GraduationCap} label="Active Groups" value={activeGroups.length}
-          sub={archivedGroups.length > 0 ? `${archivedGroups.length} archived` : 'None archived'}
+        <StatCard icon={ShieldCheck} label="Admins" value={admins.length}
+          sub={adminsWithoutBlock.length > 0 ? `${adminsWithoutBlock.length} with no block` : 'All handle a block'}
+          color={{ bg: 'rgba(251,146,60,0.12)', icon: '#fb923c' }}
+          onClick={() => navigate('/users')} />
+        <StatCard icon={GraduationCap} label="Faculty" value={faculty.length}
+          sub={`${students.length} student account${students.length !== 1 ? 's' : ''}`}
           color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
-          onClick={() => navigate('/groups')} />
-        <StatCard icon={School} label="Classrooms" value={activeClassrooms.length}
-          sub={`${activeClassrooms.reduce((s, c) => s + (c.enrollmentCount ?? 0), 0)} total enrollments`}
-          color={{ bg: 'rgba(201,168,76,0.12)', icon: '#c9a84c' }}
-          onClick={() => navigate('/classrooms')} />
-        <StatCard icon={Calendar} label="Upcoming Defenses" value={scheduledDefs.length}
-          sub={`${completedDefs.length} completed · ${cancelledDefs.length} cancelled`}
+          onClick={() => navigate('/users')} />
+        <StatCard icon={Shield} label="2FA Enabled" value={`${twoFaPct}%`}
+          sub={`${twoFaUsers.length} of ${users.length} accounts`}
           color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
-          onClick={() => navigate('/defenses')} />
-      </div>
-
-      {/* Overview row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {/* Defense pipeline by phase */}
-        <Card>
-          <CardHeader title="Defense Pipeline" action={
-            <button className="btn-ghost text-xs" onClick={() => navigate('/defenses')}>Scheduler</button>
-          } />
-          <div className="px-5 py-4">
-            {defenses.length === 0
-              ? <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>No defenses recorded</p>
-              : <PhaseBarChart defenses={defenses} />
-            }
-          </div>
-        </Card>
-
-        {/* User distribution */}
-        <Card>
-          <CardHeader title="User Distribution" />
-          <div className="px-5 py-4">
-            {users.length === 0
-              ? <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>No user data</p>
-              : (
-                <>
-                  <RoleBreakdownBar users={users} />
-                  <div className="mt-4 pt-3 border-t space-y-2" style={{ borderColor: 'var(--border-light)' }}>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Active accounts</span>
-                      <span className="text-xs font-bold" style={{ color: 'var(--text-heading)' }}>
-                        {activeUsers.length} / {users.length}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>2FA enabled</span>
-                      <span className="text-xs font-bold" style={{ color: twoFaPct >= 50 ? '#16a34a' : '#f59e0b' }}>
-                        {twoFaUsers.length} ({twoFaPct}%)
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
-          </div>
-        </Card>
-
-        {/* Group + classroom health */}
-        <Card>
-          <CardHeader title="System Health" />
-          <div className="px-5 py-4 space-y-4">
-            <MiniBarChart rows={[
-              { label: 'Active Groups',      count: activeGroups.length,    color: '#16a34a' },
-              { label: 'Archived Groups',    count: archivedGroups.length,  color: '#6b7280' },
-              { label: 'Active Classrooms',  count: activeClassrooms.length, color: '#c9a84c' },
-            ]} />
-            {monGroups.length > 0 && (
-              <div className="pt-3 border-t space-y-1.5" style={{ borderColor: 'var(--border-light)' }}>
-                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Consultation Health</p>
-                {[
-                  { label: 'On track (≥75%)',   count: monGroups.filter(g => (g.consultationScore ?? 0) >= 75).length,                                  color: '#16a34a' },
-                  { label: 'Moderate (50–74%)', count: monGroups.filter(g => { const s = g.consultationScore ?? 0; return s >= 50 && s < 75 }).length,  color: '#c9a84c' },
-                  { label: 'At risk (<50%)',     count: atRiskGroups.length,                                                                             color: '#ef4444' },
-                ].map(({ label, count, color }) => (
-                  <div key={label} className="flex justify-between items-center">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</span>
-                    </div>
-                    <span className="text-xs font-semibold tabular-nums" style={{ color }}>{count}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </Card>
+          onClick={() => navigate('/users')} />
       </div>
 
       {/* Alert banners */}
-      {atRiskGroups.length > 0 && (
+      {uncoveredSections.length > 0 && (
         <AlertBanner
           icon={AlertCircle} color="#f59e0b"
-          title={`${atRiskGroups.length} group${atRiskGroups.length !== 1 ? 's' : ''} below consultation threshold`}
-          body={atRiskGroups.slice(0, 3).map(g => g.groupName ?? g.projectTitle).join(', ') + (atRiskGroups.length > 3 ? ` and ${atRiskGroups.length - 3} more` : '') + ' — score below 50%'}
-          action="View monitoring" onAction={() => navigate('/monitoring')}
-        />
-      )}
-      {soonDefenses.length > 0 && (
-        <AlertBanner
-          icon={Calendar} color="#7c3aed"
-          title={`${soonDefenses.length} defense${soonDefenses.length !== 1 ? 's' : ''} scheduled in the next 7 days`}
-          body={`Next: ${soonDefenses[0]?.groupName} (${phaseLabel(soonDefenses[0]?.phase)}) on ${new Date(soonDefenses[0]?.scheduledDateTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
-          action="View all" onAction={() => navigate('/defenses')}
+          title={`${uncoveredSections.length} block${uncoveredSections.length !== 1 ? 's' : ''} without an assigned Admin`}
+          body={uncoveredSections.slice(0, 3).map(s => s.name).join(', ')
+            + (uncoveredSections.length > 3 ? ` and ${uncoveredSections.length - 3} more` : '')
+            + ' — student registrations for these blocks have nobody to approve them.'}
+          action="Assign an Admin" onAction={() => navigate('/users')}
         />
       )}
       {inactiveUsers.length > 0 && (
@@ -1715,60 +1623,33 @@ function SuperAdminDashboard({ user }) {
         />
       )}
 
-      {/* Main content */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Block coverage */}
         <div className="xl:col-span-2">
           <SectionHeader
-            title="Group Consultation Monitoring"
-            action={<button className="btn-ghost text-xs" onClick={() => navigate('/monitoring')}>Full report</button>}
+            title="Block Coverage"
+            action={<button className="btn-ghost text-xs" onClick={() => navigate('/users')}>Manage admins</button>}
           />
           <Card>
-            {monGroups.length === 0
-              ? <EmptyCard icon={TrendingUp} message="No monitoring data yet" hint="Data appears once groups are active and logging consultations" />
+            {sections.length === 0
+              ? <EmptyCard icon={School} message="No blocks yet"
+                  hint="An Admin creates the blocks; you then assign each one to an Admin/subject teacher" />
               : (
                 <div>
-                  <div className="grid grid-cols-12 gap-2 px-5 py-2 text-xs font-semibold uppercase tracking-wide border-b"
-                    style={{ color: 'var(--text-muted)', borderColor: 'var(--border-light)' }}>
-                    <span className="col-span-5">Group / Project</span>
-                    <span className="col-span-2 text-center">Total</span>
-                    <span className="col-span-2 text-center">Last 30d</span>
-                    <span className="col-span-3 text-right">Score</span>
-                  </div>
-                  {monGroups.map((g, idx) => {
-                    const score      = g.consultationScore ?? 0
-                    const scoreColor = score >= 75 ? '#16a34a' : score >= 50 ? '#c9a84c' : '#ef4444'
-                    const scoreBg    = score >= 75 ? 'rgba(34,197,94,0.10)' : score >= 50 ? 'rgba(201,168,76,0.10)' : 'rgba(239,68,68,0.08)'
+                  {sections.map((s, idx) => {
+                    const owners = admins.filter(a => (a.handledSections ?? []).some(h => h.id === s.id))
+                    const color  = owners.length > 0 ? '#16a34a' : '#f59e0b'
                     return (
-                      <div key={g.groupId} className="transition-colors duration-100"
-                        style={{ borderBottom: idx < monGroups.length - 1 ? '1px solid var(--border-light)' : 'none' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-subtle)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                        <div className="grid grid-cols-12 gap-2 px-5 pt-3 pb-1 items-center">
-                          <div className="col-span-5 min-w-0">
-                            <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                              {g.projectTitle || g.groupName}
-                            </p>
-                            {g.projectTitle && (
-                              <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{g.groupName}</p>
-                            )}
-                          </div>
-                          <div className="col-span-2 text-center">
-                            <span className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>{g.totalConsultations ?? 0}</span>
-                          </div>
-                          <div className="col-span-2 text-center">
-                            <span className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>{g.consultationsLast30Days ?? 0}</span>
-                          </div>
-                          <div className="col-span-3 flex justify-end">
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-lg" style={{ background: scoreBg, color: scoreColor }}>
-                              {score}%
-                            </span>
-                          </div>
+                      <div key={s.id} className="flex items-center gap-3 px-5 py-3"
+                        style={{ borderBottom: idx < sections.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</p>
+                          <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{s.academicYear}</p>
                         </div>
-                        <div className="px-5 pb-3">
-                          <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-subtle)' }}>
-                            <div className="h-1.5 rounded-full transition-all duration-500" style={{ width: `${score}%`, background: scoreColor }} />
-                          </div>
-                        </div>
+                        <span className="text-xs shrink-0 text-right" style={{ color: owners.length > 0 ? 'var(--text-secondary)' : color }}>
+                          {owners.length > 0 ? owners.map(o => o.fullName).join(', ') : 'No Admin assigned'}
+                        </span>
                       </div>
                     )
                   })}
@@ -1778,10 +1659,40 @@ function SuperAdminDashboard({ user }) {
         </div>
 
         <div className="space-y-6">
+          {/* Role mix */}
+          <div>
+            <SectionHeader title="Account Distribution" />
+            <Card>
+              <div className="px-5 py-4">
+                {users.length === 0
+                  ? <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>No user data</p>
+                  : (
+                    <>
+                      <RoleBreakdownBar users={users} />
+                      <div className="mt-4 pt-3 border-t space-y-2" style={{ borderColor: 'var(--border-light)' }}>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Active accounts</span>
+                          <span className="text-xs font-bold" style={{ color: 'var(--text-heading)' }}>
+                            {activeUsers.length} / {users.length}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>2FA enabled</span>
+                          <span className="text-xs font-bold" style={{ color: twoFaPct >= 50 ? '#16a34a' : '#f59e0b' }}>
+                            {twoFaUsers.length} ({twoFaPct}%)
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+              </div>
+            </Card>
+          </div>
+
           {/* Recent users */}
           <div>
             <SectionHeader
-              title="Recent Users"
+              title="Recent Accounts"
               action={<button className="btn-ghost text-xs" onClick={() => navigate('/users')}>Manage all</button>}
             />
             <Card>
@@ -1818,61 +1729,12 @@ function SuperAdminDashboard({ user }) {
             </Card>
           </div>
 
-          {defenses.length > 0 && (
-            <div>
-              <SectionHeader title="Defense Completion" />
-              <Card>
-                <div className="px-5 py-4 space-y-4">
-                  {[
-                    { key: 'TitleDefense',    label: 'Title Defense',    color: '#7c3aed' },
-                    { key: 'ProposalDefense', label: 'Proposal Defense', color: '#c9a84c' },
-                    { key: 'FinalDefense',    label: 'Final Defense',    color: '#16a34a' },
-                  ].map(ph => {
-                    const phTotal     = defenses.filter(d => d.phase === ph.key).length
-                    const phCompleted = defenses.filter(d => d.phase === ph.key && d.status === 'Completed').length
-                    const pct         = phTotal > 0 ? Math.round((phCompleted / phTotal) * 100) : 0
-                    return (
-                      <div key={ph.key}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: ph.color }} />
-                            <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{ph.label}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                              {phCompleted}/{phTotal}
-                            </span>
-                            <span className="text-xs font-bold tabular-nums" style={{ color: ph.color, minWidth: 32, textAlign: 'right' }}>
-                              {pct}%
-                            </span>
-                          </div>
-                        </div>
-                        <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-subtle)' }}>
-                          <div className="h-2 rounded-full transition-all duration-700"
-                            style={{ width: `${pct}%`, background: ph.color, opacity: 0.85 }} />
-                        </div>
-                      </div>
-                    )
-                  })}
-                  <div className="pt-2 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-light)' }}>
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Overall completed</span>
-                    <span className="text-sm font-bold" style={{ color: 'var(--text-heading)' }}>
-                      {completedDefs.length} / {defenses.length}
-                    </span>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          )}
-
           <div>
             <SectionHeader title="Quick Actions" />
             <Card>
               <QuickActions items={[
-                { icon: Users,           label: 'Manage users',      desc: 'Roles, accounts, access',     to: '/users'             },
-                { icon: LayoutDashboard, label: 'Defense Scheduler', desc: 'Manage defense calendar',     to: '/defense-scheduler' },
-                { icon: ClipboardList,   label: 'Rubric Manager',    desc: 'Evaluation criteria by phase', to: '/rubric-manager'   },
-                { icon: BarChart3,       label: 'Generate report',   desc: 'Export system-wide data',     to: '/reports'           },
+                { icon: Users,       label: 'Manage accounts', desc: 'Admins, faculty, access', to: '/users'   },
+                { icon: UserCircle,  label: 'My profile',      desc: 'Password and 2FA',        to: '/profile' },
               ]} />
             </Card>
           </div>
@@ -1881,6 +1743,7 @@ function SuperAdminDashboard({ user }) {
     </div>
   )
 }
+
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 

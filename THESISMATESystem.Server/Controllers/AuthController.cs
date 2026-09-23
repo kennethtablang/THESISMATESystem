@@ -177,6 +177,18 @@ namespace THESISMATESystem.Server.Controllers
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
+        // The blocks an Admin/subject teacher handles, which decide whose student
+        // registrations they may approve.
+        [HttpPut("users/{userId}/sections")]
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> SetAdminSections(string userId, SetAdminSectionsRequestDto dto)
+        {
+            var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try { return Ok(await _auth.SetAdminSectionsAsync(userId, dto.SectionIds, callerId)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         [HttpPut("users/{userId}")]
         [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> UpdateUser(string userId, UpdateUserRequestDto dto)

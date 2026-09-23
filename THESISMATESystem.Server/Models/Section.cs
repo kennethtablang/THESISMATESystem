@@ -16,6 +16,8 @@ namespace THESISMATESystem.Server.Models
 
         public ICollection<ApplicationUser> Students { get; set; } = [];
         public ICollection<SectionRosterEntry> Roster { get; set; } = [];
+        // Admins/subject teachers who handle this block.
+        public ICollection<SectionAdminAssignment> AdminAssignments { get; set; } = [];
         public ICollection<Classroom> Classrooms { get; set; } = [];
     }
 }

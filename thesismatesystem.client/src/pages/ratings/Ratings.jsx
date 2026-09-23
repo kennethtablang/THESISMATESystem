@@ -12,6 +12,22 @@ import { useAuth } from '../../contexts/AuthContext'
 // Ratings are percentages: no score may exceed 100, and a criterion can set a lower cap.
 const maxFor = (criterion) => Math.min(Number(criterion.maxScore) || 100, 100)
 
+/**
+ * Keeps a typed score inside the criterion's cap instead of letting it through and warning
+ * afterwards: typing "120" into a /100 criterion now simply cannot land above 100. Returns the
+ * text the field should hold. Partial input ("", "9.") is passed through so the field stays
+ * editable while the panelist is still typing.
+ */
+function clampScoreInput(raw, criterion) {
+  const text = String(raw ?? '').replace(/[^\d.]/g, '')
+  if (text === '' || text === '.') return text
+  const n = Number(text)
+  if (Number.isNaN(n)) return ''
+  const max = maxFor(criterion)
+  // Trailing-dot input like "9." is still being typed; leave it alone until it parses higher.
+  return n > max ? String(max) : text
+}
+
 // Returns an error message for a score, or '' when it is valid. Empty is handled separately.
 function scoreError(value, criterion) {
   if (value === '' || value == null) return ''
@@ -308,7 +324,10 @@ export default function Ratings() {
                             aria-invalid={isOver}
                             value={score}
                             onKeyDown={e => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault() }}
-                            onChange={e => setRating(r => ({ ...r, scores: { ...r.scores, [criterion.id]: e.target.value } }))}
+                            onChange={e => setRating(r => ({
+                              ...r,
+                              scores: { ...r.scores, [criterion.id]: clampScoreInput(e.target.value, criterion) },
+                            }))}
                             disabled={!rating.defense.isRatingOpen || rating.submitting}
                           />
                         </div>

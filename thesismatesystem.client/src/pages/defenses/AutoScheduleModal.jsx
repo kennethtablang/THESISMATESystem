@@ -17,6 +17,11 @@ function isoDate(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+// The chain form is much smaller: venue, length and phase all come from the anchor defense.
+function chainDefaults() {
+  return { breakMinutes: 15, dayEnd: '17:00', skipWeekends: true, maxDefensesPerFacultyPerDay: 4, maxDays: 14, requireReadiness: true }
+}
+
 function defaults(phase) {
   const start = new Date(); start.setDate(start.getDate() + 1)
   const end = new Date(start); end.setDate(end.getDate() + 6)
@@ -34,8 +39,15 @@ const fmt = (iso) => new Date(iso).toLocaleString('en-PH', {
 /**
  * Generates a conflict-free defense schedule on the server, lets the Admin review and trim it,
  * then saves it. Nothing is written until "Confirm" — the proposal is only a suggestion.
+ *
+ * Two modes share the review-and-confirm half:
+ *   "range" — pick a date range and venues, and let the scheduler place everyone.
+ *   "chain" — `anchor` is a defense that is already saved, and the rest of the groups line up
+ *             back-to-back behind it in the same venue. This is the "schedule group 1 and the
+ *             others follow automatically" flow.
  */
-export default function AutoScheduleModal({ open, onClose, phase, candidateGroups, onSaved }) {
+export default function AutoScheduleModal({ open, onClose, phase, candidateGroups, onSaved, anchor = null }) {
+  const isChain = Boolean(anchor)
   const [form, setForm] = useState(defaults(phase))
   const [groupIds, setGroupIds] = useState([])
   const [proposal, setProposal] = useState(null)
@@ -46,16 +58,40 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
   // so depending on it would wipe the form while the Admin is filling it in.
   useEffect(() => {
     if (!open) return
-    setForm(defaults(phase))
+    setForm(isChain ? chainDefaults() : defaults(phase))
     setGroupIds(candidateGroups.map(g => g.id))
     setProposal(null)
     setError('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, isChain])
 
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
 
+  async function generateChain() {
+    setError('')
+    if (groupIds.length === 0) { setError('Select at least one group to follow.'); return }
+    setBusy(true)
+    try {
+      const result = await defenseService.autoScheduleChain({
+        anchorScheduleId: anchor.id,
+        groupIds,
+        breakMinutes: Number(form.breakMinutes),
+        dayEnd: form.dayEnd,
+        skipWeekends: form.skipWeekends,
+        maxDefensesPerFacultyPerDay: Number(form.maxDefensesPerFacultyPerDay),
+        maxDays: Number(form.maxDays),
+        requireReadiness: form.requireReadiness,
+      })
+      setProposal(result)
+    } catch (err) {
+      setError(err.message || 'Could not line the remaining groups up.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function generate() {
+    if (isChain) return generateChain()
     setError('')
     const venues = form.venues.split(/[\n,]/).map(v => v.trim()).filter(Boolean)
     if (venues.length === 0) { setError('Add at least one venue.'); return }
@@ -113,7 +149,9 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
 
   return (
     <Modal open={open} onClose={onClose} size="xl"
-      title={`Auto-generate ${PHASE_LABELS[phase] ?? ''} schedule`}
+      title={isChain
+        ? `Schedule the remaining ${PHASE_LABELS[phase] ?? ''} groups after ${anchor.groupName ?? 'this defense'}`
+        : `Auto-generate ${PHASE_LABELS[phase] ?? ''} schedule`}
       footer={proposal ? (
         <>
           <button className="btn-secondary mr-auto" onClick={() => setProposal(null)} disabled={busy}>Back</button>
@@ -126,7 +164,7 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
         <>
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn-primary" onClick={generate} disabled={busy}>
-            <Sparkles size={14} /> {busy ? 'Generating…' : 'Generate proposal'}
+            <Sparkles size={14} /> {busy ? 'Generating…' : isChain ? 'Line the rest up' : 'Generate proposal'}
           </button>
         </>
       )}>
@@ -140,6 +178,31 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
       {!proposal ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-3">
+            {isChain ? (
+              <>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  The groups below are placed one after another starting right after{' '}
+                  <strong>{anchor.groupName}</strong> at {fmt(anchor.scheduledDateTime)}, in the same venue
+                  (<strong>{anchor.venue}</strong>) and for the same {anchor.durationMinutes} minutes. A group only moves
+                  later when its own panel, its adviser or the venue is already taken, and the chain rolls into the next
+                  day when the day runs out. Nothing is saved until you confirm.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>{label('Break between (min)')}<input type="number" min="0" max="120" className="form-input" value={form.breakMinutes} onChange={e => set('breakMinutes', e.target.value)} /></div>
+                  <div>{label('Day ends')}<input type="time" className="form-input" min="06:00" max="19:00" value={form.dayEnd} onChange={e => set('dayEnd', e.target.value)} /></div>
+                  <div>{label('Max defenses per faculty per day')}<input type="number" min="1" max="12" className="form-input" value={form.maxDefensesPerFacultyPerDay} onChange={e => set('maxDefensesPerFacultyPerDay', e.target.value)} /></div>
+                  <div>{label('Days to spread over')}<input type="number" min="1" max="60" className="form-input" value={form.maxDays} onChange={e => set('maxDays', e.target.value)} /></div>
+                </div>
+                <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+                  <input type="checkbox" checked={form.skipWeekends} onChange={e => set('skipWeekends', e.target.checked)} /> Skip weekends
+                </label>
+                <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+                  <input type="checkbox" checked={form.requireReadiness} onChange={e => set('requireReadiness', e.target.checked)} />
+                  Only groups that are ready (3 approved chapters for Proposal, 5 for Final)
+                </label>
+              </>
+            ) : (
+            <>
             <p className="text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               The scheduler places each group in the earliest slot where its whole panel, its adviser and a venue are all free,
               starting with the groups whose people are busiest. Nothing is saved until you confirm.
@@ -167,11 +230,13 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
               <input type="checkbox" checked={form.requireReadiness} onChange={e => set('requireReadiness', e.target.checked)} />
               Only groups that are ready (3 approved chapters for Proposal, 5 for Final)
             </label>
+            </>
+            )}
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              {label(`Groups to schedule (${groupIds.length}/${candidateGroups.length})`)}
+              {label(`${isChain ? 'Groups to follow' : 'Groups to schedule'} (${groupIds.length}/${candidateGroups.length})`)}
               <button className="text-xs font-semibold" style={{ color: '#c9a84c' }}
                 onClick={() => setGroupIds(groupIds.length === candidateGroups.length ? [] : candidateGroups.map(g => g.id))}>
                 {groupIds.length === candidateGroups.length ? 'Clear' : 'Select all'}
@@ -201,7 +266,8 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
         <div className="space-y-5">
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
             {proposal.proposals.length} defense{proposal.proposals.length !== 1 ? 's' : ''} across {proposal.daysUsed} day{proposal.daysUsed !== 1 ? 's' : ''},
-            with no panelist, adviser or venue double-booked. Remove any you do not want, then confirm.
+            with no panelist, adviser or venue double-booked
+            {isChain ? `, running on from ${anchor.groupName}` : ''}. Remove any you do not want, then confirm.
           </p>
 
           {proposal.proposals.length > 0 && (

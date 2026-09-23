@@ -378,6 +378,41 @@ namespace THESISMATESystem.Server.Migrations
                     b.ToTable("CapstoneGroups");
                 });
 
+            modelBuilder.Entity("THESISMATESystem.Server.Models.ChapterPanelReview", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Approved")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ChapterSubmissionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PanelistId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PanelistId");
+
+                    b.HasIndex("ChapterSubmissionId", "PanelistId")
+                        .IsUnique();
+
+                    b.ToTable("ChapterPanelReviews");
+                });
+
             modelBuilder.Entity("THESISMATESystem.Server.Models.ChapterSubmission", b =>
                 {
                     b.Property<int>("Id")
@@ -1273,6 +1308,34 @@ namespace THESISMATESystem.Server.Migrations
                     b.ToTable("Sections");
                 });
 
+            modelBuilder.Entity("THESISMATESystem.Server.Models.SectionAdminAssignment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AdminId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("SectionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminId");
+
+                    b.HasIndex("SectionId", "AdminId")
+                        .IsUnique();
+
+                    b.ToTable("SectionAdminAssignments");
+                });
+
             modelBuilder.Entity("THESISMATESystem.Server.Models.SectionRosterEntry", b =>
                 {
                     b.Property<int>("Id")
@@ -1510,6 +1573,25 @@ namespace THESISMATESystem.Server.Migrations
                         .IsRequired();
 
                     b.Navigation("Adviser");
+                });
+
+            modelBuilder.Entity("THESISMATESystem.Server.Models.ChapterPanelReview", b =>
+                {
+                    b.HasOne("THESISMATESystem.Server.Models.ChapterSubmission", "ChapterSubmission")
+                        .WithMany("PanelReviews")
+                        .HasForeignKey("ChapterSubmissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("THESISMATESystem.Server.Models.ApplicationUser", "Panelist")
+                        .WithMany()
+                        .HasForeignKey("PanelistId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ChapterSubmission");
+
+                    b.Navigation("Panelist");
                 });
 
             modelBuilder.Entity("THESISMATESystem.Server.Models.ChapterSubmission", b =>
@@ -1914,6 +1996,25 @@ namespace THESISMATESystem.Server.Migrations
                     b.Navigation("CreatedBy");
                 });
 
+            modelBuilder.Entity("THESISMATESystem.Server.Models.SectionAdminAssignment", b =>
+                {
+                    b.HasOne("THESISMATESystem.Server.Models.ApplicationUser", "Admin")
+                        .WithMany("HandledSections")
+                        .HasForeignKey("AdminId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("THESISMATESystem.Server.Models.Section", "Section")
+                        .WithMany("AdminAssignments")
+                        .HasForeignKey("SectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Admin");
+
+                    b.Navigation("Section");
+                });
+
             modelBuilder.Entity("THESISMATESystem.Server.Models.SectionRosterEntry", b =>
                 {
                     b.HasOne("THESISMATESystem.Server.Models.Section", "Section")
@@ -1986,6 +2087,8 @@ namespace THESISMATESystem.Server.Migrations
 
                     b.Navigation("GroupMemberships");
 
+                    b.Navigation("HandledSections");
+
                     b.Navigation("Notifications");
 
                     b.Navigation("PanelAssignments");
@@ -2008,6 +2111,8 @@ namespace THESISMATESystem.Server.Migrations
 
             modelBuilder.Entity("THESISMATESystem.Server.Models.ChapterSubmission", b =>
                 {
+                    b.Navigation("PanelReviews");
+
                     b.Navigation("RevisionNotes");
                 });
 
@@ -2042,6 +2147,8 @@ namespace THESISMATESystem.Server.Migrations
 
             modelBuilder.Entity("THESISMATESystem.Server.Models.Section", b =>
                 {
+                    b.Navigation("AdminAssignments");
+
                     b.Navigation("Classrooms");
 
                     b.Navigation("Roster");

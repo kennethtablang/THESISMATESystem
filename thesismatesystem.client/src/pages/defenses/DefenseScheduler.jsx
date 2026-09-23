@@ -193,6 +193,9 @@ export default function DefenseScheduler() {
   // Only the Admin schedules defenses.
   const canModify   = user?.role === 'Admin'
   const [showAuto,  setShowAuto]  = useState(false)
+  // The saved defense the remaining groups should line up behind ("schedule group 1, the rest
+  // follow"). Set right after a defense is saved, or from the defense detail panel.
+  const [chainAnchor, setChainAnchor] = useState(null)
 
   // ── Load ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -406,7 +409,15 @@ export default function DefenseScheduler() {
       })
       setDefenses(prev => [...prev, created])
       setDropInfo(null)
-      toast.success('Defense scheduled.')
+      // With this group placed, the rest of the phase can simply run on behind it rather than
+      // being dragged onto the calendar one at a time.
+      const remaining = unscheduledGroups.filter(g => Number(g.id) !== Number(dropInfo.groupId))
+      if (remaining.length > 0) {
+        setChainAnchor(created)
+        toast.success(`Defense scheduled. Lining up the other ${remaining.length} group${remaining.length !== 1 ? 's' : ''}…`)
+      } else {
+        toast.success('Defense scheduled.')
+      }
     } catch (err) {
       setSaveError(err.message || 'Failed to save defense schedule.')
       toast.error(err.message || 'Failed to save defense schedule.')
@@ -568,6 +579,17 @@ export default function DefenseScheduler() {
           phase={activePhase}
           candidateGroups={unscheduledGroups}
           onSaved={() => setLoadKey(k => k + 1)}
+        />
+      )}
+
+      {canModify && chainAnchor && (
+        <AutoScheduleModal
+          open
+          anchor={chainAnchor}
+          onClose={() => setChainAnchor(null)}
+          phase={chainAnchor.phase}
+          candidateGroups={unscheduledGroups}
+          onSaved={() => { setChainAnchor(null); setLoadKey(k => k + 1) }}
         />
       )}
 
@@ -989,6 +1011,13 @@ export default function DefenseScheduler() {
                 </button>
               )}
               <button className="btn-secondary" onClick={() => setClickedDef(null)}>Close</button>
+              {canModify && isActive && unscheduledGroups.length > 0 && (
+                <button className="btn-secondary flex items-center gap-1.5"
+                  title="Line the remaining groups up back-to-back after this defense"
+                  onClick={() => { const anchor = clickedDef; setClickedDef(null); setChainAnchor(anchor) }}>
+                  <Sparkles size={13} /> Schedule the rest after this
+                </button>
+              )}
               {canModify && isActive && (
                 <button className="btn-primary flex items-center gap-1.5" onClick={() => openEditMode(clickedDef)}>
                   <Pencil size={13} /> Edit

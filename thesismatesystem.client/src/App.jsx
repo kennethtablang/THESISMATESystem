@@ -115,6 +115,13 @@ function RoleGuard({ roles, children }) {
   return children
 }
 
+// Everything academic. The SuperAdmin only staffs the system, so it is kept out of these pages
+// the same way the API keeps it out of the endpoints behind them.
+const ACADEMIC_ROLES = ['Admin', 'Faculty', 'Student']
+function StaffOrStudent({ children }) {
+  return <RoleGuard roles={ACADEMIC_ROLES}>{children}</RoleGuard>
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -140,9 +147,9 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
 
           {/* New role-specific features */}
-          <Route path="documents" element={<DocumentsPage />} />
-          <Route path="documents/review/:id" element={<DocumentReview />} />
-          <Route path="system-features" element={<SystemFeaturesPage />} />
+          <Route path="documents" element={<StaffOrStudent><DocumentsPage /></StaffOrStudent>} />
+          <Route path="documents/review/:id" element={<StaffOrStudent><DocumentReview /></StaffOrStudent>} />
+          <Route path="system-features" element={<StaffOrStudent><SystemFeaturesPage /></StaffOrStudent>} />
           <Route path="my-class" element={
             <RoleGuard roles={['Student']}>
               <JoinClass />
@@ -169,21 +176,21 @@ export default function App() {
             </RoleGuard>
           } />
           <Route path="classrooms" element={
-            <RoleGuard roles={['Admin', 'SuperAdmin']}>
+            <RoleGuard roles={['Admin']}>
               <ClassroomAdmin />
             </RoleGuard>
           } />
 
-          <Route path="manuscript" element={<ManuscriptPage />} />
+          <Route path="manuscript" element={<StaffOrStudent><ManuscriptPage /></StaffOrStudent>} />
 
-          <Route path="monitoring" element={<MonitoringDashboard />} />
+          <Route path="monitoring" element={<StaffOrStudent><MonitoringDashboard /></StaffOrStudent>} />
 
           {/* Shared routes */}
-          <Route path="groups" element={<GroupsLayout />}>
+          <Route path="groups" element={<StaffOrStudent><GroupsLayout /></StaffOrStudent>}>
             <Route path=":id" element={<GroupDetail />} />
           </Route>
-          <Route path="chapters" element={<Chapters />} />
-          <Route path="defenses" element={<Defenses />} />
+          <Route path="chapters" element={<StaffOrStudent><Chapters /></StaffOrStudent>} />
+          <Route path="defenses" element={<StaffOrStudent><Defenses /></StaffOrStudent>} />
           <Route path="defense-scheduler" element={
             <RoleGuard roles={['Admin', 'Faculty']}>
               <DefenseScheduler />
@@ -201,7 +208,7 @@ export default function App() {
           } />
           <Route path="notifications" element={<Notifications />} />
           <Route path="reports" element={
-            <RoleGuard roles={['Admin', 'SuperAdmin', 'Faculty']}>
+            <RoleGuard roles={['Admin', 'Faculty']}>
               <Reports />
             </RoleGuard>
           } />
