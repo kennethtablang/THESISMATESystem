@@ -35,15 +35,23 @@ namespace THESISMATESystem.Server.DTOs.Request
         // SuperAdmin UI no longer offers the Student role.
         [MaxLength(50)] public string? StudentId { get; set; }
         public int? SectionId { get; set; }
-        // Blocks an Admin/subject teacher takes. Required (at least one) when Role is Admin
-        // and any block exists, because it decides whose registrations they may approve.
-        public List<int> SectionIds { get; set; } = [];
+        // The block an Admin/subject teacher handles, typed by the SuperAdmin (e.g. "BSIT 4A").
+        // Required when Role is Admin. The block is created if it does not exist yet, and it is
+        // what students pick on the registration form. One Admin per block.
+        [MaxLength(100)] public string? BlockName { get; set; }
+        [MaxLength(20)] public string? BlockAcademicYear { get; set; }
     }
 
-    // SuperAdmin-only. Replaces the blocks an Admin/subject teacher handles.
-    public class SetAdminSectionsRequestDto
+    // SuperAdmin-only. Moves an Admin/subject teacher to another (typed) block.
+    public class SetAdminBlockRequestDto
     {
-        public List<int> SectionIds { get; set; } = [];
+        [Required, MaxLength(100)] public string BlockName { get; set; } = string.Empty;
+        [Required, MaxLength(20)] public string AcademicYear { get; set; } = string.Empty;
+    }
+
+    public class ResendVerificationRequestDto
+    {
+        [Required, EmailAddress] public string Email { get; set; } = string.Empty;
     }
 
     public class RejectRegistrationRequestDto

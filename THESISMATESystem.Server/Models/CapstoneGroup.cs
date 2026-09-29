@@ -28,6 +28,11 @@ namespace THESISMATESystem.Server.Models
         public string AdviserId { get; set; } = string.Empty;
         public ApplicationUser Adviser { get; set; } = null!;
 
+        // The block the group was formed in. It decides which Admin/subject teacher sees the group;
+        // older groups created before this existed are matched through their members' block instead.
+        public int? SectionId { get; set; }
+        public Section? Section { get; set; }
+
         public ICollection<GroupMember> Members { get; set; } = [];
         public ICollection<GroupPanelMember> PanelMembers { get; set; } = [];
         public ICollection<ChapterSubmission> ChapterSubmissions { get; set; } = [];

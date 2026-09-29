@@ -19,54 +19,28 @@ namespace THESISMATESystem.Server.Services
         private readonly IMapper _mapper;
         private readonly INotificationService _notifications;
         private readonly IWebHostEnvironment _env;
+        private readonly IGroupAccessChecker _groupAccess;
 
         private static readonly HashSet<string> ValidKeys =
         [
             "chapter1", "chapter2", "chapter3", "chapter4", "chapter5", "references"
         ];
 
-        public ManuscriptService(AppDbContext db, IMapper mapper, INotificationService notifications, IWebHostEnvironment env)
+        public ManuscriptService(AppDbContext db, IMapper mapper, INotificationService notifications, IWebHostEnvironment env,
+            IGroupAccessChecker groupAccess)
         {
+            _groupAccess = groupAccess;
             _db = db;
             _mapper = mapper;
             _notifications = notifications;
             _env = env;
         }
 
+        // Staff only: students reach their own manuscript through their membership instead.
+        // Same rule as every other group-scoped endpoint, including the Admin's block scope.
         public async Task<bool> IsAuthorizedForGroupAsync(string userId, string role, int groupId)
-        {
-            if (role is "Admin" or "SuperAdmin") return true;
-
-            if (role == "Faculty")
-            {
-                // Adviser assignment
-                if (await _db.CapstoneGroups
-                    .AnyAsync(g => g.Id == groupId && g.AdviserId == userId))
-                    return true;
-
-                // Standing group panel, or panel assignment via defense schedule
-                if (await _db.GroupPanelMembers
-                    .AnyAsync(p => p.PanelistId == userId && p.CapstoneGroupId == groupId))
-                    return true;
-
-                if (await _db.PanelAssignments
-                    .AnyAsync(pa => pa.PanelistId == userId &&
-                        pa.DefenseSchedule.CapstoneGroupId == groupId))
-                    return true;
-
-                // FacultyIC assignment via classroom enrollment
-                var memberIds = await _db.GroupMembers
-                    .Where(gm => gm.CapstoneGroupId == groupId)
-                    .Select(gm => gm.UserId)
-                    .ToListAsync();
-
-                return await _db.ClassroomEnrollments
-                    .AnyAsync(ce => memberIds.Contains(ce.StudentId) &&
-                        ce.Classroom.FacultyICId == userId);
-            }
-
-            return false;
-        }
+            => role is "Admin" or "Faculty" or "SuperAdmin"
+               && await _groupAccess.CanAccessGroupAsync(userId, role, groupId);
 
         public async Task<IEnumerable<ManuscriptSectionResponseDto>?> GetSectionsByStudentAsync(string studentId)
         {

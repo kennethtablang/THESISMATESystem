@@ -120,15 +120,14 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
 
         if (isDocx(mimeType, fileName)) {
           const arrayBuffer = await blob.arrayBuffer()
-          if (containerRef.current) {
-            containerRef.current.replaceChildren()
-            await renderAsync(arrayBuffer, containerRef.current, null, {
-              className: 'docx-render',
-              inWrapper: false,
-              ignoreWidth: true,
-              ignoreHeight: true,
-            })
-          }
+          if (cancelled || !containerRef.current) return
+          containerRef.current.replaceChildren()
+          await renderAsync(arrayBuffer, containerRef.current, null, {
+            className: 'docx-render',
+            inWrapper: false,
+            ignoreWidth: true,
+            ignoreHeight: true,
+          })
         } else if (isPdf(mimeType, fileName)) {
           const url = URL.createObjectURL(blob)
           revokeUrl = url
@@ -189,21 +188,22 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
           <embed src={pdfUrl} type="application/pdf" className="w-full h-full" style={{ minHeight: '500px' }} />
         )}
 
-        {!loading && !error && !pdfUrl && (
-          <div
-            ref={containerRef}
-            className="docx-preview-wrapper"
-            style={{
-              minHeight: '400px',
-              padding: '24px',
-              colorScheme: 'light',
-              background: '#f0f0f0',
-              color: '#1a1a1a',
-              fontSize: '13px',
-              lineHeight: 1.6,
-            }}
-          />
-        )}
+        {/* Always mounted: renderAsync runs while the loader is still showing, and a container
+            that only appeared after loading left the ref null, so the preview stayed blank. */}
+        <div
+          ref={containerRef}
+          className="docx-preview-wrapper"
+          style={{
+            display: !error && !pdfUrl ? 'block' : 'none',
+            minHeight: '400px',
+            padding: '24px',
+            colorScheme: 'light',
+            background: '#f0f0f0',
+            color: '#1a1a1a',
+            fontSize: '13px',
+            lineHeight: 1.6,
+          }}
+        />
       </div>
     </div>
   )

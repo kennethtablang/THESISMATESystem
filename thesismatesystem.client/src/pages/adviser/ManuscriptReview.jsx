@@ -134,12 +134,11 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
         if (cancelled) return
         if (isDocx(mimeType, fileName)) {
           const arrayBuffer = await blob.arrayBuffer()
-          if (containerRef.current) {
-            containerRef.current.replaceChildren()
-            await renderAsync(arrayBuffer, containerRef.current, null, {
-              className: 'docx-render', inWrapper: false, ignoreWidth: true, ignoreHeight: true,
-            })
-          }
+          if (cancelled || !containerRef.current) return
+          containerRef.current.replaceChildren()
+          await renderAsync(arrayBuffer, containerRef.current, null, {
+            className: 'docx-render', inWrapper: false, ignoreWidth: true, ignoreHeight: true,
+          })
         } else if (isPdf(mimeType, fileName)) {
           const url = URL.createObjectURL(blob)
           revokeUrl = url; setPdfUrl(url)
@@ -181,9 +180,10 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
         {!loading && !error && pdfUrl && (
           <embed src={pdfUrl} type="application/pdf" className="w-full h-full" style={{ minHeight: 500 }} />
         )}
-        {!loading && !error && !pdfUrl && (
-          <div ref={containerRef} style={{ minHeight: 400, padding: 24, colorScheme: 'light', background: '#f0f0f0', color: '#1a1a1a', fontSize: 13, lineHeight: 1.6 }} />
-        )}
+        {/* Always mounted: renderAsync runs while the loader is still showing, and a container
+            that only appeared after loading left the ref null, so the preview stayed blank. */}
+        <div ref={containerRef}
+          style={{ display: !error && !pdfUrl ? 'block' : 'none', minHeight: 400, padding: 24, colorScheme: 'light', background: '#f0f0f0', color: '#1a1a1a', fontSize: 13, lineHeight: 1.6 }} />
       </div>
     </div>
   )

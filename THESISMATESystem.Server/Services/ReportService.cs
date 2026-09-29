@@ -12,10 +12,12 @@ namespace THESISMATESystem.Server.Services
     public class ReportService : IReportService
     {
         private readonly AppDbContext _db;
+        private readonly IGroupAccessChecker _groupAccess;
 
-        public ReportService(AppDbContext db)
+        public ReportService(AppDbContext db, IGroupAccessChecker groupAccess)
         {
             _db = db;
+            _groupAccess = groupAccess;
         }
 
         // ── Group Progress Report ────────────────────────────────────────────
@@ -122,9 +124,9 @@ namespace THESISMATESystem.Server.Services
 
         // ── Milestone Completion Report ──────────────────────────────────────
 
-        public async Task<byte[]> GenerateMilestoneCompletionReportAsync(string academicYear)
+        public async Task<byte[]> GenerateMilestoneCompletionReportAsync(string academicYear, string adminId)
         {
-            var groups = await _db.CapstoneGroups
+            var groups = await _groupAccess.FilterAccessible(_db.CapstoneGroups, adminId, "Admin")
                 .Include(g => g.Adviser)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)
@@ -307,9 +309,9 @@ namespace THESISMATESystem.Server.Services
 
         // ── All Groups Summary Report ────────────────────────────────────────
 
-        public async Task<byte[]> GenerateAllGroupsReportAsync(string? adviserId, string? academicYear, DateTime? from, DateTime? to)
+        public async Task<byte[]> GenerateAllGroupsReportAsync(string adminId, string? adviserId, string? academicYear, DateTime? from, DateTime? to)
         {
-            var query = _db.CapstoneGroups
+            var query = _groupAccess.FilterAccessible(_db.CapstoneGroups, adminId, "Admin")
                 .Include(g => g.Adviser)
                 .Include(g => g.ChapterSubmissions)
                 .Include(g => g.DefenseSchedules)

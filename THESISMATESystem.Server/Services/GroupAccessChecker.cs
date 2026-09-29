@@ -14,7 +14,7 @@ namespace THESISMATESystem.Server.Services
 
         public async Task<bool> CanAccessGroupAsync(string userId, string role, int groupId)
         {
-            if (role is "Admin" or "SuperAdmin") return true;
+            if (role is "SuperAdmin") return true;
 
             return await _db.CapstoneGroups
                 .Where(g => g.Id == groupId)
@@ -23,17 +23,35 @@ namespace THESISMATESystem.Server.Services
 
         public IQueryable<CapstoneGroup> FilterAccessible(
             IQueryable<CapstoneGroup> groups, string userId, string role)
-            => role is "Admin" or "SuperAdmin"
+            => role is "SuperAdmin"
                 ? groups
                 : groups.Where(AccessPredicate(userId, role));
 
+        public Task<List<int>> HandledSectionIdsAsync(string adminId) =>
+            _db.SectionAdminAssignments
+                .Where(a => a.AdminId == adminId)
+                .Select(a => a.SectionId)
+                .ToListAsync();
+
         /// <summary>
         /// The single definition of "may see this group", shared by the per-group check and the
-        /// list filter so the two can never drift apart. Admin/SuperAdmin are handled by the
-        /// callers above and never reach here.
+        /// list filter so the two can never drift apart. The SuperAdmin is handled by the callers
+        /// above and never reaches here.
         /// </summary>
         private Expression<Func<CapstoneGroup, bool>> AccessPredicate(string userId, string role)
         {
+            if (role == "Admin")
+            {
+                // An Admin/subject teacher only sees the groups of the block(s) they handle. A group
+                // made before groups carried a block is matched through its members' block.
+                return g =>
+                    g.SectionId != null
+                        ? _db.SectionAdminAssignments.Any(a => a.AdminId == userId && a.SectionId == g.SectionId)
+                        : _db.GroupMembers.Any(gm =>
+                            gm.CapstoneGroupId == g.Id &&
+                            _db.SectionAdminAssignments.Any(a => a.AdminId == userId && a.SectionId == gm.User.SectionId));
+            }
+
             if (role == "Faculty")
             {
                 return g =>

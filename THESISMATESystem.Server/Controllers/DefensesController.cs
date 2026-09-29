@@ -29,6 +29,11 @@ namespace THESISMATESystem.Server.Controllers
                 User.FindFirstValue(ClaimTypes.Role)!,
                 groupId);
 
+        // An Admin may only change the defenses of their own block's groups. A schedule outside
+        // it is reported as missing rather than forbidden, like the per-group reads.
+        private async Task<bool> CanManageScheduleAsync(int scheduleId)
+            => await GroupOfScheduleAsync(scheduleId) is int groupId && await CanAccessGroupAsync(groupId);
+
         // Resolves the group behind a defense schedule, or null when the schedule is missing.
         private async Task<int?> GroupOfScheduleAsync(int scheduleId)
             => (await _defenses.GetScheduleByIdAsync(scheduleId))?.CapstoneGroupId;
@@ -38,8 +43,10 @@ namespace THESISMATESystem.Server.Controllers
         public async Task<IActionResult> GetAll()
         {
             var role = User.FindFirstValue(ClaimTypes.Role);
-            var facultyId = role == "Faculty" ? User.FindFirstValue(ClaimTypes.NameIdentifier) : null;
-            return Ok(await _defenses.GetAllSchedulesAsync(facultyId));
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return Ok(await _defenses.GetAllSchedulesAsync(
+                facultyId: role == "Faculty" ? userId : null,
+                adminId: role == "Admin" ? userId : null));
         }
 
         [HttpGet("my-schedules")]
@@ -56,7 +63,7 @@ namespace THESISMATESystem.Server.Controllers
         {
             if (string.IsNullOrWhiteSpace(academicYear))
                 return BadRequest(new { message = "academicYear is required." });
-            return Ok(await _defenses.GetCoverageAsync(academicYear));
+            return Ok(await _defenses.GetCoverageAsync(academicYear, User.FindFirstValue(ClaimTypes.NameIdentifier)!));
         }
 
         [HttpGet("group/{groupId:int}")]
@@ -79,6 +86,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create(CreateDefenseScheduleRequestDto dto)
         {
+            if (!await CanAccessGroupAsync(dto.CapstoneGroupId)) return Forbid();
             try { var result = await _defenses.CreateScheduleAsync(dto); return CreatedAtAction(nameof(GetById), new { id = result.Id }, result); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
@@ -87,6 +95,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(int id, UpdateDefenseScheduleRequestDto dto)
         {
+            if (!await CanManageScheduleAsync(id)) return NotFound();
             try { return Ok(await _defenses.UpdateScheduleAsync(id, dto)); }
             catch (KeyNotFoundException)          { return NotFound(); }
             catch (InvalidOperationException ex)  { return BadRequest(new { message = ex.Message }); }
@@ -96,6 +105,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Cancel(int id)
         {
+            if (!await CanManageScheduleAsync(id)) return NotFound();
             var success = await _defenses.CancelScheduleAsync(id);
             return success ? Ok() : NotFound();
         }
@@ -104,6 +114,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> SetRatingStatus(int id, [FromBody] bool isOpen)
         {
+            if (!await CanManageScheduleAsync(id)) return NotFound();
             try
             {
                 var success = await _defenses.SetRatingOpenAsync(id, isOpen);
@@ -118,6 +129,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Complete(int id)
         {
+            if (!await CanManageScheduleAsync(id)) return NotFound();
             try { return Ok(await _defenses.CompleteDefenseAsync(id)); }
             catch (KeyNotFoundException) { return NotFound(); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
@@ -128,7 +140,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> AutoSchedulePreview(AutoScheduleRequestDto dto)
         {
-            try { return Ok(await _autoScheduler.ProposeAsync(dto)); }
+            try { return Ok(await _autoScheduler.ProposeAsync(dto, User.FindFirstValue(ClaimTypes.NameIdentifier)!)); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
@@ -138,7 +150,8 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> AutoScheduleChain(ChainScheduleRequestDto dto)
         {
-            try { return Ok(await _autoScheduler.ProposeChainAsync(dto)); }
+            if (!await CanManageScheduleAsync(dto.AnchorScheduleId)) return NotFound(new { message = "Anchor defense not found." });
+            try { return Ok(await _autoScheduler.ProposeChainAsync(dto, User.FindFirstValue(ClaimTypes.NameIdentifier)!)); }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
@@ -148,6 +161,8 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> AutoScheduleConfirm(ConfirmAutoScheduleRequestDto dto)
         {
+            foreach (var groupId in dto.Items.Select(i => i.GroupId).Distinct())
+                if (!await CanAccessGroupAsync(groupId)) return Forbid();
             try { return Ok(await _autoScheduler.ConfirmAsync(dto)); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }

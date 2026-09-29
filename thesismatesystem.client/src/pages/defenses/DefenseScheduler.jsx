@@ -169,7 +169,7 @@ export default function DefenseScheduler() {
 
   // Drop → confirm modal
   const [dropInfo,   setDropInfo]   = useState(null)
-  const [form,       setForm]       = useState({ venue: '', panelistIds: [], durationMinutes: 60 })
+  const [form,       setForm]       = useState({ venue: '', durationMinutes: 60 })
   const [saving,     setSaving]     = useState(false)
   const [saveError,  setSaveError]  = useState('')
 
@@ -388,7 +388,7 @@ export default function DefenseScheduler() {
     if (timeErr) { toast.error(timeErr); return }
     const { groupId, groupName, projectTitle, phase } = info.event.extendedProps
     setDropInfo({ groupId, groupName, projectTitle, phase, start: info.event.start })
-    setForm({ venue: '', panelistIds: [], durationMinutes: 60 })
+    setForm({ venue: '', durationMinutes: 60 })
     setSaveError('')
   }, [])
 
@@ -405,7 +405,9 @@ export default function DefenseScheduler() {
         durationMinutes:   form.durationMinutes,
         venue:             form.venue.trim(),
         phase:             dropInfo.phase,
-        panelistIds:       form.panelistIds,
+        // Empty on purpose: the server seats the group's standing panel, chosen when the group
+        // was created, so nobody re-picks it for every defense.
+        panelistIds:       [],
       })
       setDefenses(prev => [...prev, created])
       setDropInfo(null)
@@ -922,50 +924,37 @@ export default function DefenseScheduler() {
                 </div>
               </div>
 
-              {/* Panelists */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
-                  Panelists
-                  {form.panelistIds.length > 0 && (
-                    <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded-md"
-                      style={{ background: ph.bg, color: ph.color }}>
-                      {form.panelistIds.length} selected
-                    </span>
-                  )}
-                </label>
-                <div className="rounded-xl overflow-hidden"
-                  style={{ border: '1px solid var(--border-light)', maxHeight: 180, overflowY: 'auto' }}>
-                  {faculty.length === 0 ? (
-                    <p className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>No faculty found.</p>
-                  ) : faculty.map((f, idx) => {
-                    const checked = form.panelistIds.includes(f.id)
-                    return (
-                      <label key={f.id}
-                        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer"
-                        style={{
-                          borderBottom: idx < faculty.length - 1 ? '1px solid var(--border-light)' : 'none',
-                          background: checked ? ph.bg : 'transparent',
-                          transition: 'background 0.1s',
-                        }}>
-                        <input type="checkbox" checked={checked} onChange={() =>
-                          setForm(prev => ({
-                            ...prev,
-                            panelistIds: checked
-                              ? prev.panelistIds.filter(id => id !== f.id)
-                              : [...prev.panelistIds, f.id],
-                          }))
-                        } />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                            {f.fullName}
-                          </p>
-                          <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{f.email}</p>
+              {/* Panel — the group's standing panel, set when the group was created */}
+              {(() => {
+                const panel = groups.find(g => Number(g.id) === Number(dropInfo.groupId))?.panelMembers ?? []
+                return (
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                      Panel
+                      <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-muted)' }}>from the group</span>
+                    </label>
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-light)' }}>
+                      {panel.length === 0 ? (
+                        <p className="px-4 py-3 text-sm" style={{ color: '#d97706' }}>
+                          This group has no panel yet. Set it from Manage Groups before scheduling.
+                        </p>
+                      ) : panel.map((p, idx) => (
+                        <div key={p.id} className="flex items-center gap-3 px-4 py-2.5"
+                          style={{ borderBottom: idx < panel.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{p.fullName}</p>
+                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{p.email}</p>
+                          </div>
+                          {p.isChair && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+                              style={{ background: ph.bg, color: ph.color }}>Chair</span>
+                          )}
                         </div>
-                      </label>
-                    )
-                  })}
-                </div>
-              </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )
         })()}

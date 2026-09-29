@@ -136,6 +136,12 @@ namespace THESISMATESystem.Server.Data
                 .OnDelete(DeleteBehavior.Restrict);
 
             builder.Entity<CapstoneGroup>()
+                .HasOne(g => g.Section)
+                .WithMany()
+                .HasForeignKey(g => g.SectionId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            builder.Entity<CapstoneGroup>()
                 .HasOne(g => g.Adviser)
                 .WithMany(u => u.AdvisedGroups)
                 .HasForeignKey(g => g.AdviserId)

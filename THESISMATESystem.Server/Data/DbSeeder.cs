@@ -203,7 +203,9 @@ namespace THESISMATESystem.Server.Data
         {
             var admin = await userManager.FindByEmailAsync("admin@psu.edu.ph");
             if (admin is null) return;
-            if (await db.SectionAdminAssignments.AnyAsync(a => a.AdminId == admin.Id && a.SectionId == sectionId)) return;
+            // One Admin per block and one block per Admin: leave it alone once either is taken,
+            // or a block the SuperAdmin reassigned would snap back on every restart.
+            if (await db.SectionAdminAssignments.AnyAsync(a => a.AdminId == admin.Id || a.SectionId == sectionId)) return;
 
             db.SectionAdminAssignments.Add(new SectionAdminAssignment { SectionId = sectionId, AdminId = admin.Id });
             await db.SaveChangesAsync();

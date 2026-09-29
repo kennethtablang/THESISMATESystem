@@ -6,9 +6,9 @@ namespace THESISMATESystem.Server.Interfaces
     public interface IDefenseAutoScheduler
     {
         // Builds a conflict-free proposal. Nothing is saved.
-        Task<AutoScheduleProposalDto> ProposeAsync(AutoScheduleRequestDto dto);
+        Task<AutoScheduleProposalDto> ProposeAsync(AutoScheduleRequestDto dto, string adminId);
         // Same, but as a chain behind one saved defense: schedule the first group, the rest follow.
-        Task<AutoScheduleProposalDto> ProposeChainAsync(ChainScheduleRequestDto dto);
+        Task<AutoScheduleProposalDto> ProposeChainAsync(ChainScheduleRequestDto dto, string adminId);
         // Saves the (possibly edited) proposal, re-checking every conflict against the database.
         Task<AutoScheduleConfirmResultDto> ConfirmAsync(ConfirmAutoScheduleRequestDto dto);
     }

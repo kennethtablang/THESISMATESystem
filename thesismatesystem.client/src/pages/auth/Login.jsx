@@ -263,7 +263,14 @@ export default function Login() {
                 style={{ background: 'rgba(220,38,38,0.07)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}
               >
                 <AlertCircle size={15} className="shrink-0" />
-                <span>{error}</span>
+                <span>
+                  {error}
+                  {/* An unverified student gets a way to ask for the link again. */}
+                  {/verify your email/i.test(error) && form.email.trim() && (
+                    <> <Link to={`/check-email?email=${encodeURIComponent(form.email.trim())}`}
+                      className="font-semibold underline">Resend the verification email</Link></>
+                  )}
+                </span>
               </div>
             )}
 

@@ -8,15 +8,16 @@ namespace THESISMATESystem.Server.Interfaces
         Task<AuthResponseDto> LoginAsync(LoginRequestDto dto);
         Task<RegisterResponseDto> RegisterAsync(RegisterRequestDto dto);
         Task<bool> VerifyEmailAsync(string userId, string token);
+        Task ResendVerificationAsync(string email);
         Task<bool> ChangePasswordAsync(string userId, ChangePasswordRequestDto dto);
         Task<bool> ForgotPasswordAsync(string email);
         Task<bool> ResetPasswordAsync(ResetPasswordRequestDto dto);
         Task<UserResponseDto?> GetProfileAsync(string userId);
         Task<UserResponseDto> UpdateUserAsync(string userId, UpdateUserRequestDto dto, string callerRole);
         Task<bool> DeactivateUserAsync(string userId, string performedByUserId);
-        Task<IEnumerable<UserResponseDto>> GetAllUsersAsync();
+        Task<IEnumerable<UserResponseDto>> GetAllUsersAsync(string callerId, string callerRole);
         Task<UserResponseDto> CreateUserAsync(CreateUserRequestDto dto, string createdById);
-        Task<UserResponseDto> SetAdminSectionsAsync(string userId, IEnumerable<int> sectionIds, string actorId);
+        Task<UserResponseDto> SetAdminBlockAsync(string userId, string blockName, string academicYear, string actorId);
         Task AdminForceSetPasswordAsync(string userId, string newPassword);
         Task<UserResponseDto> AdminSetEmailAsync(string userId, string newEmail);
         Task AdminDisableTwoFactorAsync(string userId);

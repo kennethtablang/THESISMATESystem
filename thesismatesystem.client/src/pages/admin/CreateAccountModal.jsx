@@ -4,14 +4,16 @@ import Modal from '../../components/ui/Modal'
 import { authService, sectionService } from '../../services/api'
 import { passwordError } from '../../utils/passwordPolicy'
 import { toast } from '../../utils/toast'
+import { currentAcademicYear } from '../../utils/academicYear'
 
 const EMPTY = {
   firstName: '', middleName: '', lastName: '', email: '',
-  password: '', role: 'Faculty', sectionIds: [],
+  password: '', role: 'Faculty', blockName: '', blockAcademicYear: '',
 }
 
 // SuperAdmin-only, and staff-only: the SuperAdmin creates Admin/subject teacher and Faculty
 // accounts and nothing else. Students self-register and are approved by their block's Admin.
+// An Admin's block is typed here and created on the fly, one Admin per block.
 // Accounts made here skip email verification because the SuperAdmin is vouching for them;
 // share the temporary password with the person directly.
 export default function CreateAccountModal({ open, onClose, onCreated }) {
@@ -23,31 +25,32 @@ export default function CreateAccountModal({ open, onClose, onCreated }) {
 
   useEffect(() => {
     if (!open) return
-    setForm(EMPTY)
+    setForm({ ...EMPTY, blockAcademicYear: currentAcademicYear() })
     setError('')
-    sectionService.options().then(list => setSections(Array.isArray(list) ? list : [])).catch(() => setSections([]))
+    // Existing blocks feed the name suggestions (free ones) and the "already taken" warning.
+    sectionService.list().then(list => setSections(Array.isArray(list) ? list : [])).catch(() => setSections([]))
   }, [open])
 
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
   const isAdmin = form.role === 'Admin'
 
-  function toggleSection(id) {
-    setForm(f => ({
-      ...f,
-      sectionIds: f.sectionIds.includes(id) ? f.sectionIds.filter(x => x !== id) : [...f.sectionIds, id],
-    }))
-  }
+  // A block holds one Admin/subject teacher; warn before the server refuses it.
+  const takenBy = isAdmin
+    ? sections.find(s => s.adminName
+        && s.name.trim().toLowerCase() === form.blockName.trim().replace(/\s+/g, ' ').toLowerCase()
+        && s.academicYear.trim().toLowerCase() === form.blockAcademicYear.trim().toLowerCase())?.adminName
+    : null
 
   async function submit() {
     setError('')
     if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) { setError('Name and email are required.'); return }
     const pw = passwordError(form.password)
     if (pw) { setError(pw); return }
-    // Without a block the Admin has no registrations to review, so it is required whenever
-    // blocks exist at all.
-    if (isAdmin && sections.length > 0 && form.sectionIds.length === 0) {
-      setError('Pick at least one block for this Admin/subject teacher to handle.'); return
+    // The block is what students pick when they register, so an Admin always has one.
+    if (isAdmin && (!form.blockName.trim() || !form.blockAcademicYear.trim())) {
+      setError('Type the block this Admin/subject teacher handles and its academic year.'); return
     }
+    if (takenBy) { setError(`That block already has an Admin/subject teacher: ${takenBy}.`); return }
 
     setSaving(true)
     try {
@@ -58,7 +61,8 @@ export default function CreateAccountModal({ open, onClose, onCreated }) {
         email: form.email.trim(),
         password: form.password,
         role: form.role,
-        sectionIds: isAdmin ? form.sectionIds : [],
+        blockName: isAdmin ? form.blockName.trim() : null,
+        blockAcademicYear: isAdmin ? form.blockAcademicYear.trim() : null,
       })
       toast.success(`Account created for ${created.fullName}.`)
       onCreated?.(created)
@@ -105,33 +109,30 @@ export default function CreateAccountModal({ open, onClose, onCreated }) {
         <div>{label('Email *')}<input type="email" className="form-input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
         {isAdmin && (
           <div>
-            {label('Blocks handled *')}
-            {sections.length === 0 ? (
-              <p className="text-sm px-3 py-2.5 rounded-xl"
-                style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
-                No blocks exist yet. Create the account now, then assign blocks from the user list
-                once an Admin has added them.
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                {label('Block handled *')}
+                <input className="form-input" placeholder="e.g. BSIT 4A" maxLength={100} list="existing-blocks"
+                  value={form.blockName} onChange={e => set('blockName', e.target.value)} />
+                <datalist id="existing-blocks">
+                  {sections.filter(s => !s.adminName).map(s => <option key={s.id} value={s.name} />)}
+                </datalist>
+              </div>
+              <div>
+                {label('Academic year *')}
+                <input className="form-input" placeholder="2025-2026" maxLength={20}
+                  value={form.blockAcademicYear} onChange={e => set('blockAcademicYear', e.target.value)} />
+              </div>
+            </div>
+            {takenBy ? (
+              <p className="text-xs mt-1.5" style={{ color: '#dc2626' }}>
+                This block already has an Admin/subject teacher ({takenBy}). A block can only have one.
               </p>
             ) : (
-              <>
-                <div className="rounded-xl overflow-hidden"
-                  style={{ border: '1px solid var(--border-light)', maxHeight: 180, overflowY: 'auto' }}>
-                  {sections.map((s, idx) => (
-                    <div key={s.id} className="flex items-center gap-3 px-3 py-2"
-                      style={{ borderBottom: idx < sections.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-                      <input type="checkbox" id={`block-${s.id}`}
-                        checked={form.sectionIds.includes(s.id)} onChange={() => toggleSection(s.id)} />
-                      <label htmlFor={`block-${s.id}`} className="flex-1 min-w-0 text-sm truncate cursor-pointer"
-                        style={{ color: 'var(--text-primary)' }}>
-                        {s.name} · {s.academicYear}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                  This Admin reviews the student registrations for the blocks ticked here.
-                </p>
-              </>
+              <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                One block per Admin/subject teacher. The block appears on the student registration form,
+                and this Admin approves its registrations and sees only its students, groups and documents.
+              </p>
             )}
           </div>
         )}

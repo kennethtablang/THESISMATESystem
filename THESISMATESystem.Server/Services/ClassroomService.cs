@@ -65,6 +65,59 @@ namespace THESISMATESystem.Server.Services
             return MapClassroomToDto(classroom);
         }
 
+        // A block always has a classroom so its students get a My Class page. Created with the
+        // block's Admin/subject teacher as its teacher; an existing classroom is left as it is.
+        public async Task EnsureBlockClassroomAsync(int sectionId, string teacherId)
+        {
+            if (await _db.Classrooms.AnyAsync(c => c.SectionId == sectionId && c.IsActive)) return;
+
+            var section = await _db.Sections.FindAsync(sectionId)
+                ?? throw new KeyNotFoundException("Block not found.");
+            var classroom = new Classroom
+            {
+                ClassName = $"{section.Name} Capstone",
+                AcademicYear = section.AcademicYear,
+                JoinCode = await GenerateUniqueJoinCodeAsync(),
+                FacultyICId = teacherId,
+                SectionId = sectionId,
+            };
+            _db.Classrooms.Add(classroom);
+            await _db.SaveChangesAsync();
+
+            // Students approved before the classroom existed are enrolled now.
+            var studentIds = await _db.Users
+                .Where(u => u.SectionId == sectionId && u.RegistrationStatus == RegistrationStatus.Approved && u.IsActive)
+                .Select(u => u.Id)
+                .ToListAsync();
+            foreach (var id in studentIds)
+                await EnrollInBlockClassroomAsync(id, sectionId, save: false);
+            await _db.SaveChangesAsync();
+        }
+
+        // Approved students land in their block's classroom without a join code.
+        public async Task EnrollInBlockClassroomAsync(string studentId, int sectionId, bool save = true)
+        {
+            var classroomIds = await _db.Classrooms
+                .Where(c => c.SectionId == sectionId && c.IsActive)
+                .Select(c => c.Id)
+                .ToListAsync();
+            foreach (var classroomId in classroomIds)
+            {
+                var existing = await _db.ClassroomEnrollments
+                    .FirstOrDefaultAsync(e => e.ClassroomId == classroomId && e.StudentId == studentId);
+                if (existing is null)
+                    _db.ClassroomEnrollments.Add(new ClassroomEnrollment
+                    {
+                        ClassroomId = classroomId,
+                        StudentId = studentId,
+                        Status = EnrollmentStatus.Active,
+                    });
+                else
+                    existing.Status = EnrollmentStatus.Active;
+            }
+            if (save) await _db.SaveChangesAsync();
+        }
+
         // ── Faculty reads ────────────────────────────────────────────────────
 
         public async Task<ClassroomResponseDto?> GetMyClassroomAsync(string facultyICId)
@@ -256,6 +309,13 @@ namespace THESISMATESystem.Server.Services
                 if (!ownsClassroom)
                     throw new UnauthorizedAccessException("You do not own this classroom.");
             }
+            else if (callerRole == "Admin")
+            {
+                var handlesBlock = await _db.Classrooms.AnyAsync(c => c.Id == classroomId
+                    && _db.SectionAdminAssignments.Any(a => a.AdminId == callerId && a.SectionId == c.SectionId));
+                if (!handlesBlock)
+                    throw new UnauthorizedAccessException("This classroom is not in your block.");
+            }
 
             var enrollments = await _db.ClassroomEnrollments
                 .Include(e => e.Student)
@@ -414,6 +474,9 @@ namespace THESISMATESystem.Server.Services
             var targetGroup = await _db.CapstoneGroups.FindAsync(dto.GroupId)
                 ?? throw new KeyNotFoundException("Group not found.");
 
+            if (callerRole == "Admin" && !await _groups.CanAccessGroupAsync(callerId, callerRole, dto.GroupId))
+                throw new UnauthorizedAccessException("You can only manage the groups of your own block.");
+
             // Faculty may only move students who are enrolled in one of their own classrooms
             if (callerRole == "Faculty")
             {
@@ -460,7 +523,7 @@ namespace THESISMATESystem.Server.Services
 
         // ── Create group within classroom ────────────────────────────────────
 
-        public async Task<CapstoneGroupResponseDto> CreateGroupInClassroomAsync(int classroomId, CreateGroupInClassroomRequestDto dto)
+        public async Task<CapstoneGroupResponseDto> CreateGroupInClassroomAsync(int classroomId, CreateGroupInClassroomRequestDto dto, string adminId)
         {
             var classroom = await _db.Classrooms.FindAsync(classroomId)
                 ?? throw new KeyNotFoundException("Classroom not found.");
@@ -488,17 +551,19 @@ namespace THESISMATESystem.Server.Services
                 MemberIds = memberIds,
                 PanelistIds = dto.PanelistIds,
                 PanelChairId = dto.PanelChairId,
-            });
+            }, adminId);
         }
 
         // ── Admin: all classrooms ────────────────────────────────────────────
 
-        public async Task<IEnumerable<ClassroomResponseDto>> GetAllClassroomsAsync()
+        public async Task<IEnumerable<ClassroomResponseDto>> GetAllClassroomsAsync(string adminId)
         {
             var classrooms = await _db.Classrooms
                 .Include(c => c.FacultyIC)
                 .Include(c => c.Section)
                 .Include(c => c.Enrollments)
+                .Where(c => c.SectionId != null
+                    && _db.SectionAdminAssignments.Any(a => a.AdminId == adminId && a.SectionId == c.SectionId))
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
             return classrooms.Select(MapClassroomToDto);
@@ -586,17 +651,34 @@ namespace THESISMATESystem.Server.Services
 
         // ── Active enrolled students (for Add-to-Group filtering) ────────────
 
-        public async Task<IEnumerable<UserSummaryDto>> GetActiveEnrolledStudentsAsync()
+        public async Task<IEnumerable<UserSummaryDto>> GetActiveEnrolledStudentsAsync(string callerId, string callerRole)
         {
-            var students = await _db.ClassroomEnrollments
-                .Include(e => e.Student)
-                .Include(e => e.Classroom)
-                .Where(e => e.Status == EnrollmentStatus.Active
-                         && e.Classroom.IsActive
-                         && e.Student.IsActive)
-                .Select(e => e.Student)
-                .Distinct()
-                .ToListAsync();
+            // An Admin/subject teacher forms groups from the approved students of their own block,
+            // whether or not those students have opened My Class yet. Faculty keep the classroom
+            // enrollment view.
+            List<ApplicationUser> students;
+            if (callerRole == "Admin")
+            {
+                students = await _db.Users
+                    .Where(u => u.IsActive
+                             && u.RegistrationStatus == RegistrationStatus.Approved
+                             && u.SectionId != null
+                             && _db.SectionAdminAssignments.Any(a => a.AdminId == callerId && a.SectionId == u.SectionId))
+                    .OrderBy(u => u.LastName).ThenBy(u => u.FirstName)
+                    .ToListAsync();
+            }
+            else
+            {
+                students = await _db.ClassroomEnrollments
+                    .Include(e => e.Student)
+                    .Include(e => e.Classroom)
+                    .Where(e => e.Status == EnrollmentStatus.Active
+                             && e.Classroom.IsActive
+                             && e.Student.IsActive)
+                    .Select(e => e.Student)
+                    .Distinct()
+                    .ToListAsync();
+            }
 
             // A student belongs to at most one active group, so the group picker can grey out
             // the ones already taken instead of offering an "Add" the server will reject.

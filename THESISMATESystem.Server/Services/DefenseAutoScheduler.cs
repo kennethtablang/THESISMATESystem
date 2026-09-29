@@ -25,11 +25,13 @@ namespace THESISMATESystem.Server.Services
 
         private readonly AppDbContext _db;
         private readonly IDefenseService _defenses;
+        private readonly IGroupAccessChecker _groupAccess;
 
-        public DefenseAutoScheduler(AppDbContext db, IDefenseService defenses)
+        public DefenseAutoScheduler(AppDbContext db, IDefenseService defenses, IGroupAccessChecker groupAccess)
         {
             _db = db;
             _defenses = defenses;
+            _groupAccess = groupAccess;
         }
 
         private sealed record Interval(DateTime Start, DateTime End)
@@ -37,7 +39,7 @@ namespace THESISMATESystem.Server.Services
             public bool Overlaps(Interval other) => Start < other.End && other.Start < End;
         }
 
-        public async Task<AutoScheduleProposalDto> ProposeAsync(AutoScheduleRequestDto dto)
+        public async Task<AutoScheduleProposalDto> ProposeAsync(AutoScheduleRequestDto dto, string adminId)
         {
             var (dayStart, dayEnd) = ParseWindow(dto.DayStart, dto.DayEnd, dto.DurationMinutes);
             if (dto.EndDate < dto.StartDate)
@@ -53,7 +55,7 @@ namespace THESISMATESystem.Server.Services
             var result = new AutoScheduleProposalDto();
 
             // ── Candidate groups ────────────────────────────────────────────
-            var groupQuery = _db.CapstoneGroups
+            var groupQuery = _groupAccess.FilterAccessible(_db.CapstoneGroups, adminId, "Admin")
                 .Include(g => g.Adviser)
                 .Include(g => g.PanelMembers).ThenInclude(p => p.Panelist)
                 .Include(g => g.ChapterSubmissions)
@@ -216,7 +218,7 @@ namespace THESISMATESystem.Server.Services
         /// the first group by hand; this fills in the rest back-to-back in the same venue, so the
         /// whole phase falls out of that single decision instead of being dated one group at a time.
         /// </summary>
-        public async Task<AutoScheduleProposalDto> ProposeChainAsync(ChainScheduleRequestDto dto)
+        public async Task<AutoScheduleProposalDto> ProposeChainAsync(ChainScheduleRequestDto dto, string adminId)
         {
             var anchor = await _db.DefenseSchedules
                 .Include(s => s.CapstoneGroup)
@@ -243,7 +245,7 @@ namespace THESISMATESystem.Server.Services
             var result = new AutoScheduleProposalDto();
 
             // Candidate groups, in name order so the chain reads 1, 2, 3...
-            var groupQuery = _db.CapstoneGroups
+            var groupQuery = _groupAccess.FilterAccessible(_db.CapstoneGroups, adminId, "Admin")
                 .Include(g => g.Adviser)
                 .Include(g => g.PanelMembers).ThenInclude(p => p.Panelist)
                 .Include(g => g.ChapterSubmissions)

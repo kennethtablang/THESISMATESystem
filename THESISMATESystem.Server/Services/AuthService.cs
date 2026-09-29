@@ -29,6 +29,7 @@ namespace THESISMATESystem.Server.Services
         private readonly ILogger<AuthService> _logger;
         private readonly ITimeLimitedDataProtector _twoFactorChallenge;
         private readonly IHostEnvironment _env;
+        private readonly ISectionService _sections;
 
         public AuthService(
             UserManager<ApplicationUser> userManager,
@@ -39,9 +40,11 @@ namespace THESISMATESystem.Server.Services
             IEmailService email,
             ILogger<AuthService> logger,
             IDataProtectionProvider dataProtection,
-            IHostEnvironment env)
+            IHostEnvironment env,
+            ISectionService sections)
         {
             _env = env;
+            _sections = sections;
             _twoFactorChallenge = dataProtection
                 .CreateProtector("ThesisMate.Auth.TwoFactorChallenge")
                 .ToTimeLimitedDataProtector();
@@ -168,21 +171,17 @@ namespace THESISMATESystem.Server.Services
             await _userManager.AddToRoleAsync(user, "Student");
             await WriteAuditAsync(user.Id, "Register", "User", user.Email, success: true);
 
-            var confirmToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            // Base64Url-encode so the token survives email links intact (no +/= chars that break URLs)
-            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(confirmToken));
-            var clientUrl = _config["ClientBaseUrl"] ?? "https://localhost:62535";
-            var verifyUrl = $"{clientUrl}/verify-email?userId={user.Id}&token={encodedToken}";
-
+            var emailSent = true;
             try
             {
-                await _email.SendEmailAsync(user.Email!, "Verify your ThesisMate account", BuildVerificationEmail(user.FirstName, verifyUrl));
+                await SendVerificationEmailAsync(user);
             }
             catch (Exception ex) when (_env.IsDevelopment())
             {
-                // Local dev without working SMTP: keep the account and log the link so registration can be tested
+                // Local dev without working SMTP: keep the account so registration can be tested,
+                // but tell the student instead of showing "check your inbox" for a mail that never left.
                 _logger.LogError(ex, "Failed to send verification email to {Email}", user.Email);
-                _logger.LogWarning("DEVELOPMENT ONLY - verification link for {Email}: {VerifyUrl}", user.Email, verifyUrl);
+                emailSent = false;
             }
             catch (Exception ex)
             {
@@ -195,8 +194,46 @@ namespace THESISMATESystem.Server.Services
             return new RegisterResponseDto
             {
                 Message = $"Registration submitted. Verify your email, then wait for the administrator to approve your account. Unapproved registrations are removed after {PendingRegistrationDays} days.",
-                Email = user.Email!
+                Email = user.Email!,
+                EmailSent = emailSent,
             };
+        }
+
+        // Builds a fresh confirmation link and mails it. Throws when the mail server refuses it,
+        // so callers decide whether that is fatal.
+        private async Task SendVerificationEmailAsync(ApplicationUser user)
+        {
+            var confirmToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            // Base64Url-encode so the token survives email links intact (no +/= chars that break URLs)
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(confirmToken));
+            var clientUrl = _config["ClientBaseUrl"] ?? "https://localhost:62535";
+            var verifyUrl = $"{clientUrl}/verify-email?userId={user.Id}&token={encodedToken}";
+
+            if (_env.IsDevelopment())
+                _logger.LogWarning("DEVELOPMENT ONLY - verification link for {Email}: {VerifyUrl}", user.Email, verifyUrl);
+
+            await _email.SendEmailAsync(user.Email!, "Verify your ThesisMate account", BuildVerificationEmail(user.FirstName, verifyUrl));
+        }
+
+        /// <summary>
+        /// Sends a new verification link to an unverified registration. Quietly does nothing for an
+        /// unknown or already-verified address so the endpoint does not reveal which emails exist.
+        /// Throws <see cref="InvalidOperationException"/> when the mail server rejects the message.
+        /// </summary>
+        public async Task ResendVerificationAsync(string email)
+        {
+            var user = await _userManager.FindByEmailAsync(email.Trim());
+            if (user is null || user.EmailConfirmed) return;
+
+            try
+            {
+                await SendVerificationEmailAsync(user);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to resend verification email to {Email}", user.Email);
+                throw new InvalidOperationException("The verification email could not be sent right now. Please try again later or contact your subject teacher.");
+            }
         }
 
         public async Task<bool> VerifyEmailAsync(string userId, string token)
@@ -535,7 +572,7 @@ namespace THESISMATESystem.Server.Services
             return true;
         }
 
-        public async Task<IEnumerable<UserResponseDto>> GetAllUsersAsync()
+        public async Task<IEnumerable<UserResponseDto>> GetAllUsersAsync(string callerId, string callerRole)
         {
             // Pending registrations are not accounts yet; they are listed on the Admin's
             // registrations page instead.
@@ -557,12 +594,24 @@ namespace THESISMATESystem.Server.Services
                 .GroupBy(x => x.UserId)
                 .ToDictionary(g => g.Key, g => g.Select(x => x.Name).First());
 
-            return users.Select(u =>
+            var result = users.Select(u =>
             {
                 var dto = _mapper.Map<UserResponseDto>(u);
                 dto.Role = roleByUser.GetValueOrDefault(u.Id) ?? string.Empty;
                 return dto;
-            }).ToList();
+            });
+
+            // An Admin/subject teacher sees the Faculty (to pick advisers and panels) and the
+            // students of their own block only — never another block's students or the other
+            // staff accounts, which are the SuperAdmin's business.
+            if (callerRole == "Admin")
+            {
+                var handled = await _sections.GetHandledByAsync(callerId);
+                var handledIds = handled.Select(s => s.Id).ToHashSet();
+                result = result.Where(u => u.Role == "Faculty"
+                    || (u.Role == "Student" && u.SectionId is int sid && handledIds.Contains(sid)));
+            }
+            return result.ToList();
         }
 
         public async Task<UserResponseDto> CreateUserAsync(CreateUserRequestDto dto, string createdById)
@@ -578,21 +627,14 @@ namespace THESISMATESystem.Server.Services
 
             string? studentId = null;
             int? sectionId = null;
-            var handledSectionIds = new List<int>();
             if (dto.Role == "Admin")
             {
-                handledSectionIds = dto.SectionIds.Distinct().ToList();
-                var anySection = await _db.Sections.AnyAsync(s => s.IsActive);
-                if (handledSectionIds.Count == 0 && anySection)
-                    throw new ArgumentException("Pick at least one block for the Admin/subject teacher to handle.");
-
-                var valid = await _db.Sections
-                    .Where(s => handledSectionIds.Contains(s.Id) && s.IsActive)
-                    .Select(s => s.Id)
-                    .ToListAsync();
-                var missing = handledSectionIds.Except(valid).ToList();
-                if (missing.Count > 0)
-                    throw new ArgumentException("One of the selected blocks does not exist or is inactive.");
+                if (string.IsNullOrWhiteSpace(dto.BlockName))
+                    throw new ArgumentException("Type the block this Admin/subject teacher handles (e.g. BSIT 4A).");
+                if (string.IsNullOrWhiteSpace(dto.BlockAcademicYear))
+                    throw new ArgumentException("The block's academic year is required (e.g. 2025-2026).");
+                // Checked before the account exists so a taken block leaves nothing behind.
+                await _sections.EnsureBlockAvailableAsync(dto.BlockName, dto.BlockAcademicYear, exceptAdminId: null);
             }
             if (dto.Role == "Student")
             {
@@ -635,12 +677,8 @@ namespace THESISMATESystem.Server.Services
 
             await _userManager.AddToRoleAsync(user, dto.Role);
 
-            if (handledSectionIds.Count > 0)
-            {
-                _db.SectionAdminAssignments.AddRange(handledSectionIds.Select(id =>
-                    new SectionAdminAssignment { SectionId = id, AdminId = user.Id }));
-                await _db.SaveChangesAsync();
-            }
+            if (dto.Role == "Admin")
+                await _sections.AssignAdminToBlockAsync(user.Id, dto.BlockName!, dto.BlockAcademicYear!);
 
             await WriteAuditAsync(createdById, "CreateAccount", "User", user.Id, success: true);
 
@@ -652,42 +690,26 @@ namespace THESISMATESystem.Server.Services
         }
 
         /// <summary>
-        /// Replaces the blocks an Admin/subject teacher handles. Removing a block takes away that
-        /// Admin's right to approve registrations for it, so the SuperAdmin is the only caller.
+        /// Moves an Admin/subject teacher to another block (typed by name). Their old block loses
+        /// its Admin, so its registrations wait for whoever takes it next. SuperAdmin only.
         /// </summary>
-        public async Task<UserResponseDto> SetAdminSectionsAsync(string userId, IEnumerable<int> sectionIds, string actorId)
+        public async Task<UserResponseDto> SetAdminBlockAsync(string userId, string blockName, string academicYear, string actorId)
         {
             var user = await _db.Users
                 .Include(u => u.Section)
-                .Include(u => u.HandledSections)
                 .FirstOrDefaultAsync(u => u.Id == userId)
                 ?? throw new KeyNotFoundException("User not found.");
 
             var roles = await _userManager.GetRolesAsync(user);
             var role = roles.FirstOrDefault() ?? string.Empty;
             if (role != "Admin")
-                throw new InvalidOperationException("Only Admin/subject teacher accounts handle blocks.");
+                throw new InvalidOperationException("Only Admin/subject teacher accounts handle a block.");
 
-            var wanted = sectionIds.Distinct().ToList();
-            var valid = await _db.Sections
-                .Where(s => wanted.Contains(s.Id) && s.IsActive)
-                .Select(s => s.Id)
-                .ToListAsync();
-            if (wanted.Except(valid).Any())
-                throw new InvalidOperationException("One of the selected blocks does not exist or is inactive.");
+            await _sections.EnsureBlockAvailableAsync(blockName, academicYear, exceptAdminId: user.Id);
+            await _sections.AssignAdminToBlockAsync(user.Id, blockName, academicYear);
 
-            _db.SectionAdminAssignments.RemoveRange(
-                user.HandledSections.Where(a => !valid.Contains(a.SectionId)));
-            var existing = user.HandledSections.Select(a => a.SectionId).ToHashSet();
-            _db.SectionAdminAssignments.AddRange(valid
-                .Where(id => !existing.Contains(id))
-                .Select(id => new SectionAdminAssignment { SectionId = id, AdminId = user.Id }));
-            await _db.SaveChangesAsync();
+            await WriteAuditAsync(actorId, "SetAdminBlock", "User", user.Id, success: true);
 
-            await WriteAuditAsync(actorId, "SetAdminSections", "User", user.Id, success: true);
-
-            // Re-read rather than trusting the tracked collection: the rows just removed may or
-            // may not have been fixed up out of it, and the response has to be exact.
             var dto = _mapper.Map<UserResponseDto>(user);
             dto.Role = role;
             dto.HandledSections = await _db.SectionAdminAssignments

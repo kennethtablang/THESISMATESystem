@@ -39,13 +39,22 @@ namespace THESISMATESystem.Server.Services
             _logger = logger;
         }
 
-        public async Task<CapstoneGroupResponseDto> CreateGroupAsync(CreateGroupRequestDto dto)
+        public async Task<CapstoneGroupResponseDto> CreateGroupAsync(CreateGroupRequestDto dto, string adminId)
         {
             // Everything is validated before anything is written, and the group, its members and
             // its panel are saved in one SaveChanges so a rejected request leaves nothing behind.
+            // A group is always formed inside the Admin's own block: that is where its members
+            // come from, and it is what keeps the group out of other Admins' lists.
+            var handled = await _groupAccess.HandledSectionIdsAsync(adminId);
+            if (handled.Count == 0)
+                throw new InvalidOperationException("You have no block assigned yet, so you cannot form groups. Ask the Super Admin to assign your block.");
+
             var memberIds = dto.MemberIds.Distinct().ToList();
             await EnsureNotInAnotherActiveGroupAsync(memberIds, excludingGroupId: -1);
-            await EnsureMembersShareSectionAsync(memberIds);
+            var memberSection = await EnsureMembersShareSectionAsync(memberIds);
+            var sectionId = memberSection ?? handled[0];
+            if (!handled.Contains(sectionId))
+                throw new InvalidOperationException("You can only form groups from the students of your own block.");
             await EnsureIsFacultyAsync([dto.AdviserId], "The adviser must be a Faculty member.");
             var panel = await BuildPanelAsync(dto.PanelistIds, dto.PanelChairId, dto.AdviserId);
 
@@ -54,6 +63,7 @@ namespace THESISMATESystem.Server.Services
                 GroupName = dto.GroupName.Trim(),
                 AdviserId = dto.AdviserId,
                 AcademicYear = dto.AcademicYear.Trim(),
+                SectionId = sectionId,
             };
             foreach (var uid in memberIds) group.Members.Add(new GroupMember { UserId = uid });
             foreach (var p in panel) group.PanelMembers.Add(p);
@@ -99,10 +109,11 @@ namespace THESISMATESystem.Server.Services
                 throw new InvalidOperationException(message);
         }
 
-        // A group is formed within one block/section, so its members must all belong to the same one.
-        private async Task EnsureMembersShareSectionAsync(IReadOnlyCollection<string> memberIds)
+        // A group is formed within one block/section, so its members must all belong to the same one
+        // (and to the group's own block once it has one). Returns that shared block.
+        private async Task<int?> EnsureMembersShareSectionAsync(IReadOnlyCollection<string> memberIds, int? groupSectionId = null)
         {
-            if (memberIds.Count == 0) return;
+            if (memberIds.Count == 0) return null;
 
             var sections = await _db.Users
                 .Where(u => memberIds.Contains(u.Id))
@@ -112,10 +123,15 @@ namespace THESISMATESystem.Server.Services
             var unassigned = sections.Where(m => m.SectionId == null).Select(m => $"{m.FirstName} {m.LastName}".Trim()).ToList();
             if (unassigned.Count > 0)
                 throw new InvalidOperationException(
-                    $"{string.Join(", ", unassigned)} {(unassigned.Count == 1 ? "has" : "have")} no block/section yet. Assign one on the Sections page first.");
+                    $"{string.Join(", ", unassigned)} {(unassigned.Count == 1 ? "has" : "have")} no block/section yet. Assign one from My Classroom first.");
 
             if (sections.Select(m => m.SectionId).Distinct().Count() > 1)
                 throw new InvalidOperationException("All members of a group must belong to the same block/section.");
+
+            var shared = sections[0].SectionId;
+            if (groupSectionId is not null && shared != groupSectionId)
+                throw new InvalidOperationException("Members must belong to this group's block/section.");
+            return shared;
         }
 
         private async Task NotifyPanelAsync(CapstoneGroup group, IEnumerable<string> panelistIds)
@@ -158,10 +174,9 @@ namespace THESISMATESystem.Server.Services
             return dto;
         }
 
-        public async Task<IEnumerable<CapstoneGroupResponseDto>> GetAllGroupsAsync(GroupStatus? status = null)
+        public async Task<IEnumerable<CapstoneGroupResponseDto>> GetAllGroupsAsync(string callerId, string callerRole, GroupStatus? status = null)
         {
-            var query = GroupQuery()
-                .AsQueryable();
+            var query = _groupAccess.FilterAccessible(GroupQuery(), callerId, callerRole);
 
             if (status.HasValue)
                 query = query.Where(g => g.Status == status.Value);
@@ -235,7 +250,7 @@ namespace THESISMATESystem.Server.Services
             {
                 var ids = dto.MemberIds.Distinct().ToList();
                 await EnsureNotInAnotherActiveGroupAsync(ids, id);
-                await EnsureMembersShareSectionAsync(ids);
+                group.SectionId ??= await EnsureMembersShareSectionAsync(ids, group.SectionId);
             }
 
             if (dto.GroupName is not null) group.GroupName = dto.GroupName;
@@ -346,7 +361,7 @@ namespace THESISMATESystem.Server.Services
                 .Select(gm => gm.UserId)
                 .ToListAsync();
             memberIds.Add(userId);
-            await EnsureMembersShareSectionAsync(memberIds);
+            group.SectionId ??= await EnsureMembersShareSectionAsync(memberIds, group.SectionId);
 
             _db.GroupMembers.Add(new GroupMember { CapstoneGroupId = groupId, UserId = userId });
             await _db.SaveChangesAsync();

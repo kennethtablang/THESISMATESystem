@@ -11,7 +11,7 @@ namespace THESISMATESystem.Server.Interfaces
         Task<IEnumerable<DefenseScheduleResponseDto>> GetSchedulesByGroupAsync(int groupId);
         Task<IEnumerable<DefenseScheduleResponseDto>> GetSchedulesByPanelistAsync(string panelistId);
         // facultyId limits the list to that Faculty member's advised/paneled groups; null returns all.
-        Task<IEnumerable<DefenseScheduleResponseDto>> GetAllSchedulesAsync(string? facultyId = null);
+        Task<IEnumerable<DefenseScheduleResponseDto>> GetAllSchedulesAsync(string? facultyId = null, string? adminId = null);
         Task<DefenseScheduleResponseDto> UpdateScheduleAsync(int id, UpdateDefenseScheduleRequestDto dto);
         Task<bool> CancelScheduleAsync(int id);
         Task<bool> SetRatingOpenAsync(int id, bool isOpen);
@@ -21,7 +21,7 @@ namespace THESISMATESystem.Server.Interfaces
         Task<int> CompleteEndedDefensesAsync(CancellationToken ct = default);
 
         // Which groups still have no defense scheduled, per phase, for the given academic year.
-        Task<DefenseCoverageDto> GetCoverageAsync(string academicYear);
+        Task<DefenseCoverageDto> GetCoverageAsync(string academicYear, string adminId);
 
         Task<DefenseRatingResponseDto> SubmitRatingAsync(string panelistId, SubmitRatingRequestDto dto);
         Task<IEnumerable<DefenseRatingResponseDto>> GetRatingsByScheduleAsync(int scheduleId);

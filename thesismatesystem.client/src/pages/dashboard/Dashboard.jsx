@@ -1272,8 +1272,8 @@ function AdminDashboard({ user }) {
           sub={archivedGroups.length > 0 ? `${archivedGroups.length} archived` : 'No archived groups'}
           color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
           onClick={() => navigate('/groups')} />
-        <StatCard icon={School} label="Classrooms" value={activeClassrooms.length}
-          sub={`${classrooms.length} total · ${activeClassrooms.reduce((s, c) => s + (c.enrollmentCount ?? 0), 0)} enrolled`}
+        <StatCard icon={School} label="My Classroom" value={activeClassrooms.reduce((s, c) => s + (c.enrollmentCount ?? 0), 0)}
+          sub={activeClassrooms.length > 0 ? `students in ${activeClassrooms.map(c => c.sectionName ?? c.className).join(', ')}` : 'No block assigned yet'}
           color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
           onClick={() => navigate('/classrooms')} />
         <StatCard icon={GraduationCap} label="Upcoming Defenses" value={scheduledDefs.length}

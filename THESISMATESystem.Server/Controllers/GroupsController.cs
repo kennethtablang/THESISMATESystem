@@ -18,6 +18,11 @@ namespace THESISMATESystem.Server.Controllers
 
         public GroupsController(IGroupService groups) => _groups = groups;
 
+        // Admin writes are limited to the groups of the caller's own block(s).
+        private Task<bool> CallerCanManageAsync(int groupId) =>
+            _groups.CanAccessGroupAsync(
+                User.FindFirstValue(ClaimTypes.NameIdentifier)!, User.FindFirstValue(ClaimTypes.Role)!, groupId);
+
         [HttpGet]
         [Authorize(Roles = "Admin,Faculty")]
         public async Task<IActionResult> GetAll([FromQuery] GroupStatus? status)
@@ -27,7 +32,7 @@ namespace THESISMATESystem.Server.Controllers
 
             var result = role == "Faculty"
                 ? await _groups.GetGroupsByAdviserAsync(userId)
-                : await _groups.GetAllGroupsAsync(status);
+                : await _groups.GetAllGroupsAsync(userId, role, status);
 
             return Ok(result);
         }
@@ -56,8 +61,9 @@ namespace THESISMATESystem.Server.Controllers
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var role   = User.FindFirstValue(ClaimTypes.Role)!;
 
-            // Students may only view their own group; Faculty/Admin need cross-group access
-            if (role == "Student" && !await _groups.CanAccessGroupAsync(userId, role, id))
+            // Students may only view their own group and an Admin only their block's groups;
+            // Faculty stay open for the panel/FIC flows.
+            if (role is "Student" or "Admin" && !await _groups.CanAccessGroupAsync(userId, role, id))
                 return Forbid();
 
             var group = await _groups.GetGroupByIdAsync(id);
@@ -70,7 +76,7 @@ namespace THESISMATESystem.Server.Controllers
         {
             try
             {
-                var group = await _groups.CreateGroupAsync(dto);
+                var group = await _groups.CreateGroupAsync(dto, User.FindFirstValue(ClaimTypes.NameIdentifier)!);
                 return CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
             }
             // A member who already belongs to an active group is a bad request, not a server fault.
@@ -81,6 +87,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(int id, UpdateGroupRequestDto dto)
         {
+            if (!await CallerCanManageAsync(id)) return Forbid();
             try { return Ok(await _groups.UpdateGroupAsync(id, dto)); }
             catch (KeyNotFoundException) { return NotFound(); }
             // Adviser/panel/member validation failures are the caller's input, not a server fault.
@@ -91,6 +98,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> AddMember(int id, [FromBody] AddMemberRequestDto dto)
         {
+            if (!await CallerCanManageAsync(id)) return Forbid();
             try { return Ok(await _groups.AddMemberAsync(id, dto.UserId)); }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
@@ -100,6 +108,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> RemoveMember(int id, string userId)
         {
+            if (!await CallerCanManageAsync(id)) return Forbid();
             try { return Ok(await _groups.RemoveMemberAsync(id, userId)); }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
         }
@@ -171,6 +180,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Archive(int id)
         {
+            if (!await CallerCanManageAsync(id)) return Forbid();
             var success = await _groups.ArchiveGroupAsync(id);
             return success ? Ok() : NotFound();
         }
@@ -214,6 +224,7 @@ namespace THESISMATESystem.Server.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> SetDefenseOutcome(int id, [FromBody] SetGroupDefenseOutcomeRequestDto dto)
         {
+            if (!await CallerCanManageAsync(id)) return Forbid();
             try { return Ok(await _groups.SetDefenseOutcomeAsync(id, dto)); }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
         }

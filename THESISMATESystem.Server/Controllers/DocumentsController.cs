@@ -26,18 +26,19 @@ namespace THESISMATESystem.Server.Controllers
             catch (UnauthorizedAccessException) { return Forbid(); }
         }
 
+        // Faculty: advised groups plus panel/classroom groups — same scope as opening a document.
         [HttpGet("my-advisees")]
         [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> GetForAdviser()
-        {
-            var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            return Ok(await _documents.GetDocumentsByAdviserAsync(adviserId));
-        }
+            => Ok(await _documents.GetAccessibleDocumentsAsync(
+                User.FindFirstValue(ClaimTypes.NameIdentifier)!, User.FindFirstValue(ClaimTypes.Role)!));
 
+        // Admin: the groups of the block(s) they handle.
         [HttpGet("all")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAll()
-            => Ok(await _documents.GetAllDocumentsAsync());
+            => Ok(await _documents.GetAccessibleDocumentsAsync(
+                User.FindFirstValue(ClaimTypes.NameIdentifier)!, User.FindFirstValue(ClaimTypes.Role)!));
 
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)

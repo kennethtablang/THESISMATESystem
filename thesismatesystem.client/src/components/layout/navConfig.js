@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, FileText, Calendar,
   Bell, BarChart3, UserCircle, Star, Upload, Cpu,
   ShieldCheck, BookOpen, Megaphone, PenLine, Activity,
-  GraduationCap, Building2, CalendarRange, ClipboardList, UserCheck, Layers,
+  GraduationCap, Building2, CalendarRange, ClipboardList, UserCheck,
 } from 'lucide-react'
 
 // Single source for per-role navigation. The sidebar renders it and the top bar's search
@@ -17,18 +17,19 @@ export const navByRole = {
     { divider: true, label: 'Accounts' },
     { label: 'User Management',  icon: ShieldCheck,     to: '/users' },
   ],
+  // The Admin/subject teacher works inside their own block only. Blocks are made by the
+  // SuperAdmin, so there is no Sections page; My Classroom is the block's class list and
+  // accepted students. Chapter submissions are reviewed from All Documents.
   Admin: [
     { label: 'Dashboard',        icon: LayoutDashboard, to: '/dashboard' },
     { divider: true, label: 'Students' },
     { label: 'Registrations',    icon: UserCheck,       to: '/registrations' },
-    { label: 'Sections',         icon: Layers,          to: '/sections' },
+    { label: 'My Classroom',     icon: Building2,       to: '/classrooms' },
     { divider: true, label: 'Management' },
-    { label: 'Classrooms',       icon: Building2,       to: '/classrooms' },
     { label: 'Advisers',         icon: GraduationCap,   to: '/advisers' },
     { label: 'Manage Groups',    icon: Users,           to: '/groups' },
     { label: 'All Documents',    icon: FileText,        to: '/documents' },
     { divider: true, label: 'Academic' },
-    { label: 'Chapters',         icon: FileText,        to: '/chapters' },
     { label: 'System Tracker',   icon: Cpu,             to: '/system-features' },
     { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
     { divider: true, label: 'Defenses' },

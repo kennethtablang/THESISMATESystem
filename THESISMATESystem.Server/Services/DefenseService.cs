@@ -17,14 +17,17 @@ namespace THESISMATESystem.Server.Services
         private readonly INotificationService _notifications;
         private readonly IEmailService _email;
         private readonly ILogger<DefenseService> _logger;
+        private readonly IGroupAccessChecker _groupAccess;
 
         public DefenseService(
             AppDbContext db,
             IMapper mapper,
             INotificationService notifications,
             IEmailService email,
-            ILogger<DefenseService> logger)
+            ILogger<DefenseService> logger,
+            IGroupAccessChecker groupAccess)
         {
+            _groupAccess = groupAccess;
             _db = db;
             _mapper = mapper;
             _notifications = notifications;
@@ -150,14 +153,14 @@ namespace THESISMATESystem.Server.Services
             return await MapSchedules(schedules);
         }
 
-        public async Task<DefenseCoverageDto> GetCoverageAsync(string academicYear)
+        public async Task<DefenseCoverageDto> GetCoverageAsync(string academicYear, string adminId)
         {
             var year = NormalizeYear(academicYear);
 
             // Academic year is free text, so compare on the normalized form. Groups with no
             // year recorded are counted against the requested year rather than dropped —
             // otherwise they are invisible everywhere and never get scheduled at all.
-            var groups = await _db.CapstoneGroups
+            var groups = await _groupAccess.FilterAccessible(_db.CapstoneGroups, adminId, "Admin")
                 .Where(g => g.Status == GroupStatus.Active)
                 .Select(g => new { g.Id, g.GroupName, g.ProjectTitle, g.AcademicYear })
                 .ToListAsync();
@@ -216,9 +219,16 @@ namespace THESISMATESystem.Server.Services
             return await MapSchedules(schedules);
         }
 
-        public async Task<IEnumerable<DefenseScheduleResponseDto>> GetAllSchedulesAsync(string? facultyId = null)
+        public async Task<IEnumerable<DefenseScheduleResponseDto>> GetAllSchedulesAsync(string? facultyId = null, string? adminId = null)
         {
             var query = LoadScheduleQuery();
+
+            // An Admin/subject teacher sees the defenses of their own block's groups only.
+            if (adminId is not null)
+            {
+                var groupIds = _groupAccess.FilterAccessible(_db.CapstoneGroups, adminId, "Admin").Select(g => g.Id);
+                query = query.Where(s => groupIds.Contains(s.CapstoneGroupId));
+            }
 
             // Faculty see only defenses for groups they advise or sit on a panel for; the list
             // otherwise exposed every group's schedule and consolidated scores to all Faculty.

@@ -45,7 +45,7 @@ namespace THESISMATESystem.Server.Controllers
         {
             try
             {
-                var bytes = await _reports.GenerateMilestoneCompletionReportAsync(academicYear);
+                var bytes = await _reports.GenerateMilestoneCompletionReportAsync(academicYear, Caller().UserId);
                 return File(bytes, "application/pdf", $"milestone_completion_{academicYear}.pdf");
             }
             catch (KeyNotFoundException) { return NotFound(); }
@@ -79,7 +79,7 @@ namespace THESISMATESystem.Server.Controllers
         {
             try
             {
-                var bytes = await _reports.GenerateAllGroupsReportAsync(adviserId, academicYear, from, to);
+                var bytes = await _reports.GenerateAllGroupsReportAsync(Caller().UserId, adviserId, academicYear, from, to);
                 return File(bytes, "application/pdf", "all_groups_report.pdf");
             }
             catch (KeyNotFoundException) { return NotFound(); }

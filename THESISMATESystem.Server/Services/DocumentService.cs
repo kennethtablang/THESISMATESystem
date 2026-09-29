@@ -164,24 +164,13 @@ namespace THESISMATESystem.Server.Services
             return BuildLatestPerChain(all);
         }
 
-        public async Task<IEnumerable<DocumentSubmissionResponseDto>> GetAllDocumentsAsync()
+        // The staff document list: every group the caller may open — for an Admin the groups of
+        // their own block(s), for Faculty the groups they advise, sit on the panel of, or teach.
+        // It used to be adviser-only for Faculty, so a panelist saw "No documents yet" for a
+        // group whose files they could open one by one.
+        public async Task<IEnumerable<DocumentSubmissionResponseDto>> GetAccessibleDocumentsAsync(string callerId, string callerRole)
         {
-            var all = await _db.DocumentSubmissions
-                .Include(d => d.SubmittedBy)
-                .Include(d => d.CapstoneGroup)
-                .Include(d => d.Comments)
-                .OrderByDescending(d => d.Version)
-                .ToListAsync();
-
-            return BuildLatestPerChain(all);
-        }
-
-        public async Task<IEnumerable<DocumentSubmissionResponseDto>> GetDocumentsByAdviserAsync(string adviserId)
-        {
-            var groupIds = await _db.CapstoneGroups
-                .Where(g => g.AdviserId == adviserId)
-                .Select(g => g.Id)
-                .ToListAsync();
+            var groupIds = _groupAccess.FilterAccessible(_db.CapstoneGroups, callerId, callerRole).Select(g => g.Id);
 
             var all = await _db.DocumentSubmissions
                 .Include(d => d.SubmittedBy)
@@ -298,7 +287,8 @@ namespace THESISMATESystem.Server.Services
         {
             var doc = await _db.DocumentSubmissions.FindAsync(id);
             if (doc is null) return false;
-            bool isPrivileged = callerRole is "Admin" or "SuperAdmin";
+            bool isPrivileged = callerRole is "Admin"
+                && await _groupAccess.CanAccessGroupAsync(userId, callerRole, doc.CapstoneGroupId);
             if (!isPrivileged && doc.SubmittedById != userId) return false;
 
             // Deleting a chain root would violate the OriginalDocumentId FK of its

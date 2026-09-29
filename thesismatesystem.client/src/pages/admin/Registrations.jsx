@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { registrationService } from '../../services/api'
+import { registrationService, authService } from '../../services/api'
 import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import EmptyState from '../../components/ui/EmptyState'
@@ -62,6 +62,19 @@ export default function Registrations() {
       r.studentId?.toLowerCase().includes(q) ||
       r.sectionName?.toLowerCase().includes(q))
   }, [items, search])
+
+  // Students whose verification mail never arrived can't be approved; the Admin can send it again.
+  async function resend(r) {
+    setBusyId(r.id)
+    try {
+      await authService.resendVerification(r.email)
+      toast.success(`A new verification link was sent to ${r.email}.`)
+    } catch (err) {
+      toast.error(err.message || 'The verification email could not be sent.')
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   async function approve(r) {
     setBusyId(r.id)
@@ -170,6 +183,13 @@ export default function Registrations() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {!r.emailVerified && (
+                        <button className="btn-secondary text-xs" disabled={busyId === r.id}
+                          title="Send the student a new verification link"
+                          onClick={() => resend(r)}>
+                          <MailWarning size={13} /> Resend link
+                        </button>
+                      )}
                       <button className="btn-secondary text-xs" disabled={busyId === r.id}
                         onClick={() => { setRejecting(r); setReason('') }}>
                         <XCircle size={13} /> Reject

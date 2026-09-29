@@ -4,6 +4,9 @@ namespace THESISMATESystem.Server.DTOs.Response
     {
         public string Message { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
+        // False when the verification mail could not be sent (development only; in production
+        // the registration is rolled back instead).
+        public bool EmailSent { get; set; } = true;
     }
 
     public class AuthResponseDto

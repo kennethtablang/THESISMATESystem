@@ -151,7 +151,7 @@ namespace THESISMATESystem.Server.Controllers
         {
             try
             {
-                var result = await _classrooms.CreateGroupInClassroomAsync(id, dto);
+                var result = await _classrooms.CreateGroupInClassroomAsync(id, dto, User.FindFirstValue(ClaimTypes.NameIdentifier)!);
                 return Ok(result);
             }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
@@ -159,10 +159,11 @@ namespace THESISMATESystem.Server.Controllers
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
-        // GET /api/classrooms/all — the Admin sees every classroom
+        // GET /api/classrooms/all — the Admin sees the classrooms of their own block(s)
         [HttpGet("all")]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> GetAll() => Ok(await _classrooms.GetAllClassroomsAsync());
+        public async Task<IActionResult> GetAll()
+            => Ok(await _classrooms.GetAllClassroomsAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)!));
 
         // POST /api/classrooms/{id}/invite — Admin invites students of the class's section
         [HttpPost("{id:int}/invite")]
@@ -198,7 +199,8 @@ namespace THESISMATESystem.Server.Controllers
         [HttpGet("active-students")]
         [Authorize(Roles = "Admin,Faculty")]
         public async Task<IActionResult> GetActiveStudents()
-            => Ok(await _classrooms.GetActiveEnrolledStudentsAsync());
+            => Ok(await _classrooms.GetActiveEnrolledStudentsAsync(
+                User.FindFirstValue(ClaimTypes.NameIdentifier)!, User.FindFirstValue(ClaimTypes.Role)!));
 
         // POST /api/classrooms/{id}/regenerate-code — Faculty gets a new join code
         [HttpPost("{id:int}/regenerate-code")]

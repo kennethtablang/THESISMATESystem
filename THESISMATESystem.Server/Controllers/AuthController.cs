@@ -34,6 +34,21 @@ namespace THESISMATESystem.Server.Controllers
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
+        // Same answer whether or not the address is registered; only a mail-server failure differs.
+        [HttpPost("resend-verification")]
+        public async Task<IActionResult> ResendVerification(ResendVerificationRequestDto dto)
+        {
+            try
+            {
+                await _auth.ResendVerificationAsync(dto.Email);
+                return Ok(new { message = "If that address has an unverified registration, a new verification link is on its way." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = ex.Message });
+            }
+        }
+
         [HttpPost("verify-email")]
         public async Task<IActionResult> VerifyEmail(VerifyEmailRequestDto dto)
         {
@@ -165,7 +180,9 @@ namespace THESISMATESystem.Server.Controllers
         // may create or change accounts.
         [HttpGet("users")]
         [Authorize(Roles = "Admin,SuperAdmin")]
-        public async Task<IActionResult> GetAllUsers() => Ok(await _auth.GetAllUsersAsync());
+        public async Task<IActionResult> GetAllUsers()
+            => Ok(await _auth.GetAllUsersAsync(
+                User.FindFirstValue(ClaimTypes.NameIdentifier)!, User.FindFirstValue(ClaimTypes.Role)!));
 
         [HttpPost("users")]
         [Authorize(Roles = "SuperAdmin")]
@@ -177,14 +194,14 @@ namespace THESISMATESystem.Server.Controllers
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
-        // The blocks an Admin/subject teacher handles, which decide whose student
-        // registrations they may approve.
-        [HttpPut("users/{userId}/sections")]
+        // The block an Admin/subject teacher handles, which decides whose student registrations
+        // they approve and which students, groups and documents they see.
+        [HttpPut("users/{userId}/block")]
         [Authorize(Roles = "SuperAdmin")]
-        public async Task<IActionResult> SetAdminSections(string userId, SetAdminSectionsRequestDto dto)
+        public async Task<IActionResult> SetAdminBlock(string userId, SetAdminBlockRequestDto dto)
         {
             var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            try { return Ok(await _auth.SetAdminSectionsAsync(userId, dto.SectionIds, callerId)); }
+            try { return Ok(await _auth.SetAdminBlockAsync(userId, dto.BlockName, dto.AcademicYear, callerId)); }
             catch (KeyNotFoundException) { return NotFound(); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }

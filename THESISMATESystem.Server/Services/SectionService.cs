@@ -12,11 +12,19 @@ namespace THESISMATESystem.Server.Services
     {
         private readonly AppDbContext _db;
 
-        public SectionService(AppDbContext db) => _db = db;
+        private readonly IClassroomService _classrooms;
 
+        public SectionService(AppDbContext db, IClassroomService classrooms)
+        {
+            _db = db;
+            _classrooms = classrooms;
+        }
+
+        // The registration form lists a block only once an active Admin/subject teacher handles
+        // it, so there are exactly as many blocks to pick from as there are Admins.
         public async Task<IEnumerable<SectionOptionDto>> GetActiveOptionsAsync()
             => await _db.Sections
-                .Where(s => s.IsActive)
+                .Where(s => s.IsActive && s.AdminAssignments.Any(a => a.Admin.IsActive))
                 .OrderBy(s => s.Name)
                 .Select(s => new SectionOptionDto { Id = s.Id, Name = s.Name, AcademicYear = s.AcademicYear })
                 .ToListAsync();
@@ -26,6 +34,71 @@ namespace THESISMATESystem.Server.Services
                 .OrderByDescending(s => s.IsActive)
                 .ThenBy(s => s.Name)
                 .ToListAsync();
+
+        public async Task<IEnumerable<SectionResponseDto>> GetHandledByAsync(string adminId)
+            => await ProjectSections(_db.Sections.Where(s => s.AdminAssignments.Any(a => a.AdminId == adminId)))
+                .OrderBy(s => s.Name)
+                .ToListAsync();
+
+        public Task<bool> HandlesAsync(string adminId, int sectionId)
+            => _db.SectionAdminAssignments.AnyAsync(a => a.AdminId == adminId && a.SectionId == sectionId);
+
+        private static string NormalizeBlockName(string name)
+            => string.Join(' ', name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        private Task<Section?> FindBlockAsync(string name, string academicYear)
+        {
+            var n = NormalizeBlockName(name).ToLower();
+            var ay = academicYear.Trim().ToLower();
+            return _db.Sections.FirstOrDefaultAsync(s => s.Name.ToLower() == n && s.AcademicYear.ToLower() == ay);
+        }
+
+        public async Task EnsureBlockAvailableAsync(string name, string academicYear, string? exceptAdminId)
+        {
+            var block = await FindBlockAsync(name, academicYear);
+            if (block is null) return;
+
+            var holder = await _db.SectionAdminAssignments
+                .Where(a => a.SectionId == block.Id && a.Admin.IsActive && a.AdminId != exceptAdminId)
+                .Select(a => a.Admin.FirstName + " " + a.Admin.LastName)
+                .FirstOrDefaultAsync();
+            if (holder is not null)
+                throw new InvalidOperationException(
+                    $"{block.Name} ({block.AcademicYear}) already has an Admin/subject teacher: {holder}. A block can only have one.");
+        }
+
+        /// <summary>
+        /// Makes the typed block the Admin's one block: creates it when new, reopens it when it
+        /// was closed, drops any earlier block assignment, and gives the block a classroom so its
+        /// students have a My Class page.
+        /// </summary>
+        public async Task<Section> AssignAdminToBlockAsync(string adminId, string name, string academicYear)
+        {
+            var block = await FindBlockAsync(name, academicYear);
+            if (block is null)
+            {
+                block = new Section { Name = NormalizeBlockName(name), AcademicYear = academicYear.Trim() };
+                _db.Sections.Add(block);
+            }
+            block.IsActive = true;
+
+            var previous = await _db.SectionAdminAssignments.Where(a => a.AdminId == adminId).ToListAsync();
+            _db.SectionAdminAssignments.RemoveRange(previous.Where(a => a.SectionId != block.Id));
+            // Assignments of deactivated Admins would otherwise keep a second name on the block.
+            if (block.Id != 0)
+                _db.SectionAdminAssignments.RemoveRange(await _db.SectionAdminAssignments
+                    .Where(a => a.SectionId == block.Id && a.AdminId != adminId).ToListAsync());
+            await _db.SaveChangesAsync();
+
+            if (!previous.Any(a => a.SectionId == block.Id))
+            {
+                _db.SectionAdminAssignments.Add(new SectionAdminAssignment { SectionId = block.Id, AdminId = adminId });
+                await _db.SaveChangesAsync();
+            }
+
+            await _classrooms.EnsureBlockClassroomAsync(block.Id, adminId);
+            return block;
+        }
 
         public async Task<SectionResponseDto> CreateAsync(SaveBlockSectionRequestDto dto)
         {
@@ -179,7 +252,11 @@ namespace THESISMATESystem.Server.Services
                     throw new InvalidOperationException("One or more students are enrolled in a class of their current section. Remove them from that class first.");
             }
 
-            foreach (var student in students) student.SectionId = sectionId;
+            foreach (var student in students)
+            {
+                student.SectionId = sectionId;
+                await _classrooms.EnrollInBlockClassroomAsync(student.Id, sectionId, save: false);
+            }
             await _db.SaveChangesAsync();
         }
 
@@ -196,6 +273,11 @@ namespace THESISMATESystem.Server.Services
                 StudentCount = s.Students.Count(u => u.RegistrationStatus == RegistrationStatus.Approved),
                 RosterCount = s.Roster.Count,
                 ClassroomCount = s.Classrooms.Count,
+                GroupCount = _db.CapstoneGroups.Count(g => g.SectionId == s.Id && g.Status == GroupStatus.Active),
+                AdminName = s.AdminAssignments
+                    .Where(a => a.Admin.IsActive)
+                    .Select(a => a.Admin.FirstName + " " + a.Admin.LastName)
+                    .FirstOrDefault(),
             });
 
         private IQueryable<UserResponseDto> ProjectStudents(IQueryable<ApplicationUser> query)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Outlet, useNavigate, useMatch } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { groupService, authService, classroomService, sectionService } from '../../services/api'
@@ -21,7 +21,7 @@ export default function GroupsLayout() {
   const [logoUploading, setLogoUploading] = useState(false)
 
   const [showModal, setShowModal] = useState(false)
-  const EMPTY_FORM = { groupName: '', adviserId: '', academicYear: '', sectionId: '', memberIds: [], panelistIds: [], panelChairId: '' }
+  const EMPTY_FORM = { groupName: '', adviserId: '', academicYear: '', memberIds: [], panelistIds: [], panelChairId: '' }
   const [form, setForm] = useState(EMPTY_FORM)
   const [advisers, setAdvisers] = useState([])
   const [sections, setSections] = useState([])
@@ -133,18 +133,20 @@ export default function GroupsLayout() {
     finally { setLogoUploading(false) }
   }
 
+  // A group is always formed in the Admin's own block, so there is no block to pick: the
+  // member list is already that block's accepted students.
   function openCreateModal() {
     setError(''); setForm(EMPTY_FORM); setShowModal(true)
     loadPickers()
-    if (sections.length === 0)
-      sectionService.list().then(list => setSections((list ?? []).filter(x => x.isActive))).catch(() => {})
+    sectionService.mine()
+      .then(list => {
+        const mine = Array.isArray(list) ? list : []
+        setSections(mine)
+        setForm(f => ({ ...f, academicYear: f.academicYear || mine[0]?.academicYear || '' }))
+      })
+      .catch(() => {})
     classroomService.activeStudents().then(list => setStudents(Array.isArray(list) ? list : [])).catch(() => {})
   }
-
-  // Members come from one section only; picking a section narrows the student list.
-  const sectionStudents = useMemo(
-    () => students.filter(st => form.sectionId && String(st.sectionId) === String(form.sectionId)),
-    [students, form.sectionId])
 
   async function handleCreate(e) {
     e.preventDefault()
@@ -432,28 +434,15 @@ export default function GroupsLayout() {
             </p>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Block / Section</label>
-            <select className="form-input" value={form.sectionId}
-              onChange={e => {
-                const sec = sections.find(x => String(x.id) === e.target.value)
-                setForm(f => ({ ...f, sectionId: e.target.value, memberIds: [], academicYear: f.academicYear || sec?.academicYear || '' }))
-              }}>
-              <option value="">Select a section to add members</option>
-              {sections.map(sec => <option key={sec.id} value={sec.id}>{sec.name} · {sec.academicYear}</option>)}
-            </select>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+              Members <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({form.memberIds.length} selected)</span>
+            </label>
+            <StudentPicker students={students} value={form.memberIds}
+              onChange={ids => setForm(f => ({ ...f, memberIds: ids }))} />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Students of {sections.length > 0 ? sections.map(sec => sec.name).join(', ') : 'your block'} are listed. Members can also be added later.
+            </p>
           </div>
-          {form.sectionId && (
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
-                Members <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({form.memberIds.length} selected)</span>
-              </label>
-              <StudentPicker students={sectionStudents} value={form.memberIds}
-                onChange={ids => setForm(f => ({ ...f, memberIds: ids }))} />
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                Only students enrolled in a class of this section are listed. Members can also be added later.
-              </p>
-            </div>
-          )}
         </div>
       </Modal>
     </div>

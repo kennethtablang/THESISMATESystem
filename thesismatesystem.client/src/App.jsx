@@ -42,9 +42,8 @@ const DocumentReview       = lazy(() => import('./pages/adviser/DocumentReview')
 // Admin pages
 const UserManagement = lazy(() => import('./pages/admin/UserManagement'))
 const Advisers       = lazy(() => import('./pages/admin/Advisers'))
-const ClassroomAdmin = lazy(() => import('./pages/admin/ClassroomAdmin'))
+const MyClassroom    = lazy(() => import('./pages/admin/MyClassroom'))
 const Registrations  = lazy(() => import('./pages/admin/Registrations'))
-const Sections       = lazy(() => import('./pages/admin/Sections'))
 
 // Monitoring
 const MonitoringDashboard = lazy(() => import('./pages/monitoring/MonitoringDashboard'))
@@ -59,6 +58,13 @@ function DocumentsPage() {
   if (role === 'Student') return <DocumentUpload />
   if (['Faculty', 'Admin', 'SuperAdmin'].includes(role)) return <ManuscriptReview />
   return <Navigate to="/dashboard" replace />
+}
+
+// The Admin reviews chapter submissions from All Documents, which covers the same files.
+function ChaptersPage() {
+  const { user } = useAuth()
+  if (user?.role === 'Admin') return <Navigate to="/documents" replace />
+  return <Chapters />
 }
 
 function ManuscriptPage() {
@@ -165,11 +171,8 @@ export default function App() {
               <Registrations />
             </RoleGuard>
           } />
-          <Route path="sections" element={
-            <RoleGuard roles={['Admin']}>
-              <Sections />
-            </RoleGuard>
-          } />
+          {/* Blocks are made by the SuperAdmin; the Admin's block lives in My Classroom */}
+          <Route path="sections" element={<Navigate to="/classrooms" replace />} />
           <Route path="advisers" element={
             <RoleGuard roles={['Admin']}>
               <Advisers />
@@ -177,7 +180,7 @@ export default function App() {
           } />
           <Route path="classrooms" element={
             <RoleGuard roles={['Admin']}>
-              <ClassroomAdmin />
+              <MyClassroom />
             </RoleGuard>
           } />
 
@@ -193,7 +196,7 @@ export default function App() {
           <Route path="groups" element={<StaffOrStudent><GroupsLayout /></StaffOrStudent>}>
             <Route path=":id" element={<GroupDetail />} />
           </Route>
-          <Route path="chapters" element={<StaffOrStudent><Chapters /></StaffOrStudent>} />
+          <Route path="chapters" element={<StaffOrStudent><ChaptersPage /></StaffOrStudent>} />
           <Route path="defenses" element={<StaffOrStudent><Defenses /></StaffOrStudent>} />
           <Route path="defense-scheduler" element={
             <RoleGuard roles={['Admin', 'Faculty']}>

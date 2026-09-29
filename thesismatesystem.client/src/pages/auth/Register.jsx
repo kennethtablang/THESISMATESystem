@@ -114,7 +114,7 @@ export default function Register() {
     if (pwProblem) { triggerError(pwProblem); return }
     setLoading(true)
     try {
-      await register({
+      const res = await register({
         firstName:  form.firstName.trim(),
         middleName: form.middleName.trim() || undefined,
         lastName:   form.lastName.trim(),
@@ -123,7 +123,10 @@ export default function Register() {
         password:   form.password,
         sectionId:  Number(form.sectionId),
       })
-      navigate(`/check-email?email=${encodeURIComponent(form.email.trim())}`)
+      // emailSent is false only when the mail server refused the message (development builds
+      // keep the account anyway), so the next page can say so instead of "check your inbox".
+      const notSent = res?.emailSent === false ? '&sent=0' : ''
+      navigate(`/check-email?email=${encodeURIComponent(form.email.trim())}${notSent}`)
     } catch (err) {
       const msg = err.message || ''
       if (msg.includes('DUPLICATE_STUDENT_ID')) {

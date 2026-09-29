@@ -7,6 +7,7 @@ import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
 import { PageLoader } from '../../components/ui/Spinner'
 import { authService, sectionService } from '../../services/api'
+import { currentAcademicYear } from '../../utils/academicYear'
 import { useSort, SortIcon } from '../../hooks/useSort.jsx'
 import { useAuth } from '../../contexts/AuthContext'
 import CreateAccountModal from './CreateAccountModal'
@@ -43,8 +44,8 @@ export default function UserManagement() {
   const [toggleError, setToggleError] = useState('')
 
   const [editTarget, setEditTarget] = useState(null)
-  const [editForm, setEditForm] = useState({ firstName: '', middleName: '', lastName: '', phoneNumber: '', email: '', role: '', sectionIds: [] })
-  // Blocks exist so the SuperAdmin can say which ones an Admin/subject teacher handles.
+  const [editForm, setEditForm] = useState({ firstName: '', middleName: '', lastName: '', phoneNumber: '', email: '', role: '', blockName: '', blockAcademicYear: '' })
+  // Existing blocks, to suggest names and to warn when a typed block already has an Admin.
   const [sections, setSections] = useState([])
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
@@ -101,12 +102,21 @@ export default function UserManagement() {
     }
   }
 
-  // True when the ticked blocks differ from what the account already handles.
-  function blocksChanged() {
-    const before = new Set((editTarget?.handledSections ?? []).map(sec => sec.id))
-    const after = new Set(editForm.sectionIds)
-    return before.size !== after.size || [...after].some(id => !before.has(id))
+  const norm = (v) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+
+  // True when the typed block differs from the one the account already handles.
+  function blockChanged() {
+    const current = editTarget?.handledSections?.[0]
+    return norm(editForm.blockName) !== norm(current?.name) || norm(editForm.blockAcademicYear) !== norm(current?.academicYear)
   }
+
+  // Name of another Admin already holding the typed block, if any.
+  const blockTakenBy = editForm.role === 'Admin'
+    ? sections.find(sec => sec.adminName
+        && norm(sec.name) === norm(editForm.blockName)
+        && norm(sec.academicYear) === norm(editForm.blockAcademicYear)
+        && !(editTarget?.handledSections ?? []).some(h => h.id === sec.id))?.adminName
+    : null
 
   function handleEditOpen(user) {
     setEditError('')
@@ -117,7 +127,8 @@ export default function UserManagement() {
       phoneNumber: user.phoneNumber ?? '',
       email:       user.email       ?? '',
       role:        user.role        ?? '',
-      sectionIds:  (user.handledSections ?? []).map(sec => sec.id),
+      blockName:         user.handledSections?.[0]?.name ?? '',
+      blockAcademicYear: user.handledSections?.[0]?.academicYear ?? currentAcademicYear(),
     })
     setPwForm({ newPassword: '', confirm: '' })
     setPwError('')
@@ -149,11 +160,13 @@ export default function UserManagement() {
         updated = await authService.adminSetEmail(editTarget.id, newEmail)
       }
 
-      // Blocks are their own endpoint because they only apply to Admin accounts, and the
+      // The block is its own endpoint because it only applies to Admin accounts, and the
       // role above may only just have become Admin on this same save.
       const roleNow = payload.role ?? editTarget.role
-      if (isSuperAdmin && roleNow === 'Admin' && blocksChanged()) {
-        updated = await authService.setAdminSections(editTarget.id, editForm.sectionIds)
+      if (isSuperAdmin && roleNow === 'Admin' && blockChanged()) {
+        if (!editForm.blockName.trim() || !editForm.blockAcademicYear.trim())
+          throw new Error('Type the block this Admin/subject teacher handles and its academic year.')
+        updated = await authService.setAdminBlock(editTarget.id, editForm.blockName.trim(), editForm.blockAcademicYear.trim())
       }
 
       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
@@ -614,45 +627,30 @@ export default function UserManagement() {
 
                 {editForm.role === 'Admin' && (
                   <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                      Blocks handled
-                    </label>
-                    {sections.length === 0 ? (
-                      <p className="text-xs px-3 py-2 rounded-xl"
-                        style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>
-                        No blocks exist yet. An Admin creates them under Sections.
-                      </p>
-                    ) : (
-                      <>
-                        <div className="rounded-xl overflow-hidden"
-                          style={{ border: '1px solid var(--border-light)', maxHeight: 160, overflowY: 'auto' }}>
-                          {sections.map((sec, idx) => (
-                            <div key={sec.id} className="flex items-center gap-3 px-3 py-2"
-                              style={{ borderBottom: idx < sections.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-                              <input
-                                type="checkbox"
-                                id={`edit-block-${sec.id}`}
-                                checked={editForm.sectionIds.includes(sec.id)}
-                                onChange={() => setEditForm(f => ({
-                                  ...f,
-                                  sectionIds: f.sectionIds.includes(sec.id)
-                                    ? f.sectionIds.filter(x => x !== sec.id)
-                                    : [...f.sectionIds, sec.id],
-                                }))}
-                              />
-                              <label htmlFor={`edit-block-${sec.id}`}
-                                className="flex-1 min-w-0 text-sm truncate cursor-pointer"
-                                style={{ color: 'var(--text-primary)' }}>
-                                {sec.name} · {sec.academicYear}
-                              </label>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                          This Admin reviews the student registrations for the blocks ticked here.
-                        </p>
-                      </>
-                    )}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                          Block handled
+                        </label>
+                        <input className="form-input text-sm" placeholder="e.g. BSIT 4A" maxLength={100} list="edit-existing-blocks"
+                          value={editForm.blockName} onChange={e => setEditForm(f => ({ ...f, blockName: e.target.value }))} />
+                        <datalist id="edit-existing-blocks">
+                          {sections.filter(sec => !sec.adminName).map(sec => <option key={sec.id} value={sec.name} />)}
+                        </datalist>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                          Academic year
+                        </label>
+                        <input className="form-input text-sm" placeholder="2025-2026" maxLength={20}
+                          value={editForm.blockAcademicYear} onChange={e => setEditForm(f => ({ ...f, blockAcademicYear: e.target.value }))} />
+                      </div>
+                    </div>
+                    <p className="text-[11px] mt-1.5" style={{ color: blockTakenBy ? '#dc2626' : 'var(--text-muted)' }}>
+                      {blockTakenBy
+                        ? `This block already has an Admin/subject teacher (${blockTakenBy}). A block can only have one.`
+                        : 'One block per Admin/subject teacher. Changing it moves this Admin to the typed block.'}
+                    </p>
                   </div>
                 )}
               </>

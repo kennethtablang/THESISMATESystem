@@ -56,7 +56,7 @@ export function StudentPicker({ students, value, onChange, currentGroupId }) {
     <Box>
       {students.length === 0 ? (
         <p className="px-4 py-4 text-sm text-center" style={{ color: 'var(--text-muted)' }}>
-          No enrolled students in this section.
+          No accepted students in your block yet.
         </p>
       ) : students.map((s, idx) => {
         const taken = s.activeGroupId && s.activeGroupId !== currentGroupId

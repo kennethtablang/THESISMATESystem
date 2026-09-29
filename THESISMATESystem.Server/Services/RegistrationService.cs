@@ -21,13 +21,16 @@ namespace THESISMATESystem.Server.Services
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IEmailService _email;
         private readonly ILogger<RegistrationService> _logger;
+        private readonly IClassroomService _classrooms;
 
         public RegistrationService(
             AppDbContext db,
             UserManager<ApplicationUser> userManager,
             IEmailService email,
-            ILogger<RegistrationService> logger)
+            ILogger<RegistrationService> logger,
+            IClassroomService classrooms)
         {
+            _classrooms = classrooms;
             _db = db;
             _userManager = userManager;
             _email = email;
@@ -104,6 +107,9 @@ namespace THESISMATESystem.Server.Services
             user.ReviewedById = adminId;
             user.ReviewedAt = PhilippineTime.Now;
             await _db.SaveChangesAsync();
+
+            // Accepted students appear in the Admin's My Classroom and get their My Class page.
+            await _classrooms.EnrollInBlockClassroomAsync(user.Id, user.SectionId.Value);
 
             await WriteAuditAsync(adminId, "ApproveRegistration", user.Id);
             await SendSafeAsync(user.Email!, "Your ThesisMate account is approved",

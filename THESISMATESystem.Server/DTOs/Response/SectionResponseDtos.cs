@@ -17,6 +17,9 @@ namespace THESISMATESystem.Server.DTOs.Response
         public int StudentCount { get; set; }
         public int RosterCount { get; set; }
         public int ClassroomCount { get; set; }
+        public int GroupCount { get; set; }
+        // The active Admin/subject teacher handling the block; null while nobody does.
+        public string? AdminName { get; set; }
     }
 
     public class RosterEntryResponseDto

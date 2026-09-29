@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Highlight } from '@tiptap/extension-highlight'
-import { Underline } from '@tiptap/extension-underline'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
 import DOMPurify from 'dompurify'
@@ -314,9 +313,9 @@ export default function DocumentReview() {
 
   const editor = useEditor({
     extensions: [
+      // StarterKit already includes Underline in TipTap v3; adding it again warned about a duplicate.
       StarterKit,
       Highlight.configure({ multicolor: false }),
-      Underline,
       TextStyle,
       Color,
     ],
@@ -338,7 +337,9 @@ export default function DocumentReview() {
     setVersions([])
     setComments([])
     setCompareModal(false)
-    editor?.commands.clearContent()
+    // Only once the comment editor has mounted: on first render it exists but has no command
+    // manager yet, and calling it threw — the whole Review page came up blank.
+    if (editor?.isInitialized && !editor.isDestroyed) editor.commands.clearContent()
 
     async function load() {
       try {

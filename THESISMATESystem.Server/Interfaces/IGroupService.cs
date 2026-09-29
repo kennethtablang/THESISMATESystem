@@ -7,9 +7,9 @@ namespace THESISMATESystem.Server.Interfaces
 {
     public interface IGroupService
     {
-        Task<CapstoneGroupResponseDto> CreateGroupAsync(CreateGroupRequestDto dto);
+        Task<CapstoneGroupResponseDto> CreateGroupAsync(CreateGroupRequestDto dto, string adminId);
         Task<CapstoneGroupResponseDto?> GetGroupByIdAsync(int id);
-        Task<IEnumerable<CapstoneGroupResponseDto>> GetAllGroupsAsync(GroupStatus? status = null);
+        Task<IEnumerable<CapstoneGroupResponseDto>> GetAllGroupsAsync(string callerId, string callerRole, GroupStatus? status = null);
         Task<IEnumerable<CapstoneGroupResponseDto>> GetGroupsByAdviserAsync(string adviserId);
         Task<CapstoneGroupResponseDto?> GetGroupByStudentAsync(string studentId);
         Task<CapstoneGroupResponseDto> UpdateGroupAsync(int id, UpdateGroupRequestDto dto);
