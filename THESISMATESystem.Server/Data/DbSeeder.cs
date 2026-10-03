@@ -447,6 +447,15 @@ namespace THESISMATESystem.Server.Data
                 ("Presentation & Defense",   "Clarity of delivery and quality of responses to panel questions.",         15),
             ]);
 
+            await SeedPhase(db, DefensePhase.PreFinalDefense,
+            [
+                ("System Functionality",     "Core modules are working and match the approved proposal's scope.",       30),
+                ("Results & Discussion",     "Chapter 4 presents and interprets the gathered data correctly.",          20),
+                ("Testing Progress",         "Test plan is in place and initial testing results are documented.",       20),
+                ("Manuscript Progress",      "Chapters 1–4 are complete, revised and properly formatted.",              15),
+                ("Presentation & Defense",   "Clarity of the demo and quality of responses to panel questions.",        15),
+            ]);
+
             await SeedPhase(db, DefensePhase.FinalDefense,
             [
                 ("System Completeness",      "All proposed functionalities are fully implemented and operational.",      30),

@@ -64,12 +64,15 @@ namespace THESISMATESystem.Server.Enums
         ChapterPanelReviewed,
     }
 
+    // Stored as int. PreFinalDefense was inserted in sequence order (migration
+    // AddPreFinalDefenseAndReDefenseOf shifts the old FinalDefense=2 / ReDefense=3 rows up by one).
     public enum DefensePhase
     {
-        TitleDefense,
-        ProposalDefense,
-        FinalDefense,
-        ReDefense
+        TitleDefense    = 0,
+        ProposalDefense = 1,
+        PreFinalDefense = 2,
+        FinalDefense    = 3,
+        ReDefense       = 4
     }
 
     public enum DefenseOutcome

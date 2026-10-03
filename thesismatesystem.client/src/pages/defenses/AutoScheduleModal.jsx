@@ -3,13 +3,7 @@ import { Sparkles, AlertTriangle, X, CalendarDays, MapPin, Users } from 'lucide-
 import Modal from '../../components/ui/Modal'
 import { defenseService } from '../../services/api'
 import { toast } from '../../utils/toast'
-
-const PHASE_LABELS = {
-  TitleDefense: 'Title Defense',
-  ProposalDefense: 'Proposal Defense',
-  FinalDefense: 'Final Defense',
-  ReDefense: 'Re-Defense',
-}
+import { defensePhaseLabel } from '../../utils/defensePhase'
 
 // yyyy-MM-dd in the browser's local calendar (the school runs on Philippine time).
 function isoDate(d) {
@@ -46,7 +40,7 @@ const fmt = (iso) => new Date(iso).toLocaleString('en-PH', {
  *             back-to-back behind it in the same venue. This is the "schedule group 1 and the
  *             others follow automatically" flow.
  */
-export default function AutoScheduleModal({ open, onClose, phase, candidateGroups, onSaved, anchor = null }) {
+export default function AutoScheduleModal({ open, onClose, phase, reDefenseOf = null, candidateGroups, onSaved, anchor = null }) {
   const isChain = Boolean(anchor)
   const [form, setForm] = useState(defaults(phase))
   const [groupIds, setGroupIds] = useState([])
@@ -102,6 +96,8 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
         ...form,
         venues,
         groupIds,
+        // A Re-Defense names the defense being re-taken; the server refuses one without it.
+        reDefenseOf: phase === 'ReDefense' ? reDefenseOf : undefined,
         durationMinutes: Number(form.durationMinutes),
         breakMinutes: Number(form.breakMinutes),
         maxDefensesPerFacultyPerDay: Number(form.maxDefensesPerFacultyPerDay),
@@ -124,6 +120,7 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
         durationMinutes: p.durationMinutes,
         venue: p.venue,
         phase: p.phase,
+        reDefenseOf: p.reDefenseOf ?? undefined,
         panelistIds: p.panelistIds,
       })))
       if (result.created.length) toast.success(`${result.created.length} defense${result.created.length !== 1 ? 's' : ''} scheduled. Groups and panels have been notified.`)
@@ -150,8 +147,8 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
   return (
     <Modal open={open} onClose={onClose} size="xl"
       title={isChain
-        ? `Schedule the remaining ${PHASE_LABELS[phase] ?? ''} groups after ${anchor.groupName ?? 'this defense'}`
-        : `Auto-generate ${PHASE_LABELS[phase] ?? ''} schedule`}
+        ? `Schedule the remaining ${defensePhaseLabel(phase, reDefenseOf)} groups after ${anchor.groupName ?? 'this defense'}`
+        : `Auto-generate ${defensePhaseLabel(phase, reDefenseOf)} schedule`}
       footer={proposal ? (
         <>
           <button className="btn-secondary mr-auto" onClick={() => setProposal(null)} disabled={busy}>Back</button>
@@ -198,7 +195,7 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
                 </label>
                 <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
                   <input type="checkbox" checked={form.requireReadiness} onChange={e => set('requireReadiness', e.target.checked)} />
-                  Only groups that are ready (3 approved chapters for Proposal, 5 for Final)
+                  Only groups that are ready (3 approved chapters for Proposal, 4 for Pre-Final, 5 for Final)
                 </label>
               </>
             ) : (
@@ -228,7 +225,7 @@ export default function AutoScheduleModal({ open, onClose, phase, candidateGroup
             </label>
             <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
               <input type="checkbox" checked={form.requireReadiness} onChange={e => set('requireReadiness', e.target.checked)} />
-              Only groups that are ready (3 approved chapters for Proposal, 5 for Final)
+              Only groups that are ready (3 approved chapters for Proposal, 4 for Pre-Final, 5 for Final)
             </label>
             </>
             )}

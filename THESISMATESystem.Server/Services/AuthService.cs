@@ -143,7 +143,9 @@ namespace THESISMATESystem.Server.Services
             var section = await _db.Sections.FirstOrDefaultAsync(s => s.Id == dto.SectionId && s.IsActive)
                 ?? throw new InvalidOperationException("Please select a valid block/section.");
 
-            var studentId = dto.StudentId.Trim();
+            var studentId = StudentIdFormat.Normalize(dto.StudentId);
+            if (!StudentIdFormat.IsValid(studentId))
+                throw new InvalidOperationException(StudentIdFormat.InvalidMessage);
             var duplicateId = await _userManager.Users
                 .AnyAsync(u => u.StudentId == studentId);
             if (duplicateId)
@@ -638,9 +640,11 @@ namespace THESISMATESystem.Server.Services
             }
             if (dto.Role == "Student")
             {
-                studentId = dto.StudentId?.Trim();
+                studentId = StudentIdFormat.Normalize(dto.StudentId);
                 if (string.IsNullOrEmpty(studentId))
                     throw new ArgumentException("Student ID is required for student accounts.");
+                if (!StudentIdFormat.IsValid(studentId))
+                    throw new ArgumentException(StudentIdFormat.InvalidMessage);
                 if (dto.SectionId is null)
                     throw new ArgumentException("Block/section is required for student accounts.");
                 if (!await _db.Sections.AnyAsync(s => s.Id == dto.SectionId && s.IsActive))

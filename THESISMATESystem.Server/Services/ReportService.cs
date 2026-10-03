@@ -205,7 +205,8 @@ namespace THESISMATESystem.Server.Services
         public async Task<byte[]> GenerateDefenseOutcomeReportAsync(int scheduleId)
         {
             var schedule = await _db.DefenseSchedules
-                .Include(s => s.CapstoneGroup)
+                .Include(s => s.CapstoneGroup).ThenInclude(g => g.Adviser)
+                .Include(s => s.CapstoneGroup).ThenInclude(g => g.Members).ThenInclude(m => m.User)
                 .Include(s => s.PanelAssignments).ThenInclude(pa => pa.Panelist)
                 .Include(s => s.DefenseRatings).ThenInclude(r => r.DefenseCriterion)
                 .Include(s => s.DefenseRatings).ThenInclude(r => r.Panelist)
@@ -221,6 +222,12 @@ namespace THESISMATESystem.Server.Services
             var totalWeighted = ratingsByCriterion
                 .Sum(g => g.Average(r => r.Score) * g.Key.Weight / 100);
 
+            var members = schedule.CapstoneGroup.Members
+                .Select(m => m.User)
+                .OrderBy(u => u.LastName).ThenBy(u => u.FirstName)
+                .ToList();
+            var adviser = schedule.CapstoneGroup.Adviser;
+
             return Document.Create(container =>
             {
                 container.Page(page =>
@@ -229,7 +236,7 @@ namespace THESISMATESystem.Server.Services
                     page.Margin(40);
                     page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Arial));
 
-                    page.Header().Element(Header("Defense Outcome Report"));
+                    page.Header().Element(Header("Defense Outcome Report", showLogo: true));
                     page.Footer().Element(Footer());
 
                     page.Content().Column(col =>
@@ -241,12 +248,53 @@ namespace THESISMATESystem.Server.Services
                             table.ColumnsDefinition(c => { c.RelativeColumn(); c.RelativeColumn(2); });
                             LabelValue(table, "Group", schedule.CapstoneGroup.GroupName);
                             LabelValue(table, "Project Title", schedule.CapstoneGroup.ProjectTitle ?? "—");
+                            LabelValue(table, "Defense", DefensePhases.Label(schedule.Phase, schedule.ReDefenseOf));
+                            LabelValue(table, "Adviser", adviser is null ? "—" : $"{adviser.FirstName} {adviser.LastName}".Trim());
                             LabelValue(table, "Date & Time", schedule.ScheduledDateTime.ToString("MMMM dd, yyyy h:mm tt"));
                             LabelValue(table, "Venue", schedule.Venue);
                             LabelValue(table, "Defense Status", schedule.Status.ToString());
                             LabelValue(table, "Panel Members",
                                 string.Join(", ", schedule.PanelAssignments.Select(pa => $"{pa.Panelist.FirstName} {pa.Panelist.LastName}")));
                         });
+
+                        col.Item().PaddingTop(10)
+                            .Text("Group Members")
+                            .Bold().FontSize(12).FontColor(NavyHex);
+
+                        if (members.Count == 0)
+                        {
+                            col.Item().Text("No members recorded for this group.").Italic().FontColor(GrayHex);
+                        }
+                        else
+                        {
+                            col.Item().Table(table =>
+                            {
+                                table.ColumnsDefinition(c =>
+                                {
+                                    c.ConstantColumn(30);
+                                    c.RelativeColumn(2);
+                                    c.RelativeColumn();
+                                });
+
+                                table.Header(h =>
+                                {
+                                    foreach (var txt in new[] { "#", "Name", "Student ID" })
+                                        h.Cell().Background(NavyHex).Padding(6)
+                                            .Text(txt).Bold().FontColor("#ffffff").FontSize(9);
+                                });
+
+                                var n = 0;
+                                foreach (var m in members)
+                                {
+                                    var row = n++ % 2 == 0 ? "#ffffff" : "#f8f7f4";
+                                    var name = string.Join(" ", new[] { m.FirstName, m.MiddleName, m.LastName }
+                                        .Where(part => !string.IsNullOrWhiteSpace(part)));
+                                    table.Cell().Background(row).Padding(6).AlignCenter().Text($"{n}").FontSize(9);
+                                    table.Cell().Background(row).Padding(6).Text(name).FontSize(9);
+                                    table.Cell().Background(row).Padding(6).Text(m.StudentId ?? "—").FontSize(9);
+                                }
+                            });
+                        }
 
                         col.Item().PaddingTop(10)
                             .Text("Evaluation Results by Criterion")
@@ -400,13 +448,24 @@ namespace THESISMATESystem.Server.Services
         private const string AmberHex = "#d97706";
         private const string GrayHex  = "#6b7280";
 
-        private static Action<IContainer> Header(string title) => container =>
+        // Official PSU seal, copied to the build output from Assets/. Loaded once; a missing file
+        // just drops the seal from the header rather than failing the report.
+        private static readonly Lazy<byte[]?> PsuLogo = new(() =>
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "Assets", "psu-logo.png");
+            return File.Exists(path) ? File.ReadAllBytes(path) : null;
+        });
+
+        private static Action<IContainer> Header(string title, bool showLogo = false) => container =>
         {
             container.Column(col =>
             {
                 col.Item().Row(row =>
                 {
-                    row.RelativeItem().Column(c =>
+                    if (showLogo && PsuLogo.Value is { } logo)
+                        row.ConstantItem(46).PaddingRight(8).AlignMiddle().Image(logo).FitArea();
+
+                    row.RelativeItem().AlignMiddle().Column(c =>
                     {
                         c.Item().Text("ThesisMate").Bold().FontSize(18).FontColor(NavyHex);
                         c.Item().Text("Pangasinan State University — Lingayen Campus")

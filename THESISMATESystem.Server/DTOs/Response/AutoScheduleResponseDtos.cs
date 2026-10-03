@@ -11,6 +11,7 @@ namespace THESISMATESystem.Server.DTOs.Response
         public int DurationMinutes { get; set; }
         public string Venue { get; set; } = string.Empty;
         public DefensePhase Phase { get; set; }
+        public DefensePhase? ReDefenseOf { get; set; }
         public List<string> PanelistIds { get; set; } = [];
         public List<string> PanelistNames { get; set; } = [];
         public string AdviserName { get; set; } = string.Empty;

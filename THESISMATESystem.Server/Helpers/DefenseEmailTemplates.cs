@@ -108,19 +108,15 @@ namespace THESISMATESystem.Server.Helpers
         }
 
 
-        public static string PhaseLabel(DefensePhase phase) => phase switch
-        {
-            DefensePhase.TitleDefense    => "Title Defense",
-            DefensePhase.ProposalDefense => "Proposal Defense",
-            DefensePhase.FinalDefense    => "Final Defense",
-            _                            => phase.ToString()
-        };
+        public static string PhaseLabel(DefensePhase phase) => DefensePhases.Label(phase);
 
         private static (string color, string bg, string border) PhaseStyle(DefensePhase phase) => phase switch
         {
             DefensePhase.TitleDefense    => ("#7c3aed", "#f5f3ff", "#ddd6fe"),
             DefensePhase.ProposalDefense => ("#b45309", "#fffbeb", "#fde68a"),
+            DefensePhase.PreFinalDefense => ("#0e7490", "#ecfeff", "#a5f3fc"),
             DefensePhase.FinalDefense    => ("#15803d", "#f0fdf4", "#bbf7d0"),
+            DefensePhase.ReDefense       => ("#b91c1c", "#fef2f2", "#fecaca"),
             _                            => ("#4b5563", "#f9fafb", "#e5e7eb")
         };
 
@@ -130,7 +126,8 @@ namespace THESISMATESystem.Server.Helpers
             DateTime scheduledAt,
             string venue,
             int durationMinutes,
-            IList<string> panelistNames)
+            IList<string> panelistNames,
+            DefensePhase? reDefenseOf = null)
         {
             var (color, bg, border) = PhaseStyle(phase);
             var encodedNames = panelistNames.Select(WebUtility.HtmlEncode);
@@ -144,7 +141,7 @@ namespace THESISMATESystem.Server.Helpers
                     Your capstone defense has been scheduled. Please review the details below and prepare accordingly.
                 </p>
                 {DetailRow("Group", groupName, "#0f2044")}
-                {DetailRow("Phase", PhaseLabel(phase), color)}
+                {DetailRow("Phase", DefensePhases.Label(phase, reDefenseOf), color)}
                 {DetailRow("Date &amp; Time", scheduledAt.ToString("dddd, MMMM dd, yyyy"), "#111827")}
                 {DetailRow("Time", scheduledAt.ToString("h:mm tt"), "#111827")}
                 {DetailRow("Venue", venue, "#111827")}
@@ -166,7 +163,8 @@ namespace THESISMATESystem.Server.Helpers
             string groupName,
             DefensePhase phase,
             DateTime newScheduledAt,
-            string venue)
+            string venue,
+            DefensePhase? reDefenseOf = null)
         {
             var body = $@"
                 <h1 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#0f2044'>Defense Rescheduled</h1>
@@ -174,7 +172,7 @@ namespace THESISMATESystem.Server.Helpers
                     Your capstone defense has been rescheduled. Please take note of the updated date and venue.
                 </p>
                 {DetailRow("Group", groupName, "#0f2044")}
-                {DetailRow("Phase", PhaseLabel(phase), PhaseStyle(phase).color)}
+                {DetailRow("Phase", DefensePhases.Label(phase, reDefenseOf), PhaseStyle(phase).color)}
                 {DetailRow("New Date", newScheduledAt.ToString("dddd, MMMM dd, yyyy"), "#111827")}
                 {DetailRow("New Time", newScheduledAt.ToString("h:mm tt"), "#111827")}
                 {DetailRow("Venue", venue, "#111827")}";
@@ -182,7 +180,7 @@ namespace THESISMATESystem.Server.Helpers
             return Wrap(phase, "🔄 Defense Rescheduled", body);
         }
 
-        public static string Cancelled(string groupName, DefensePhase phase)
+        public static string Cancelled(string groupName, DefensePhase phase, DefensePhase? reDefenseOf = null)
         {
             var body = $@"
                 <h1 style='margin:0 0 6px;font-size:22px;font-weight:700;color:#0f2044'>Defense Cancelled</h1>
@@ -190,7 +188,7 @@ namespace THESISMATESystem.Server.Helpers
                     Your scheduled capstone defense has been cancelled. Please contact your adviser or administrator for rescheduling details.
                 </p>
                 {DetailRow("Group", groupName, "#0f2044")}
-                {DetailRow("Phase", PhaseLabel(phase), PhaseStyle(phase).color)}
+                {DetailRow("Phase", DefensePhases.Label(phase, reDefenseOf), PhaseStyle(phase).color)}
                 <tr><td colspan='2' style='padding:12px 0'>
                     <div style='background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:14px 16px'>
                         <p style='margin:0;font-size:13px;color:#9a3412'>

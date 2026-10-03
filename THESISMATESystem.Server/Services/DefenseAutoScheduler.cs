@@ -52,6 +52,7 @@ namespace THESISMATESystem.Server.Services
             if (venues.Count == 0)
                 throw new InvalidOperationException("Add at least one venue.");
 
+            var reDefenseOf = DefensePhases.ValidateReDefenseOf(dto.Phase, dto.ReDefenseOf);
             var result = new AutoScheduleProposalDto();
 
             // ── Candidate groups ────────────────────────────────────────────
@@ -66,7 +67,7 @@ namespace THESISMATESystem.Server.Services
             var groups = await groupQuery.ToListAsync();
 
             var alreadyScheduled = await _db.DefenseSchedules
-                .Where(s => s.Phase == dto.Phase && s.Status != DefenseStatus.Cancelled)
+                .Where(s => s.Phase == dto.Phase && s.ReDefenseOf == reDefenseOf && s.Status != DefenseStatus.Cancelled)
                 .Select(s => s.CapstoneGroupId)
                 .ToListAsync();
             var alreadyScheduledSet = alreadyScheduled.ToHashSet();
@@ -78,7 +79,7 @@ namespace THESISMATESystem.Server.Services
                 {
                     // Only worth reporting when the Admin picked the group explicitly.
                     if (dto.GroupIds.Count > 0)
-                        result.Unscheduled.Add(Skip(g, $"Already has a {PhaseLabel(dto.Phase)} scheduled."));
+                        result.Unscheduled.Add(Skip(g, $"Already has a {DefensePhases.Label(dto.Phase, reDefenseOf)} scheduled."));
                     continue;
                 }
                 if (g.PanelMembers.Count == 0)
@@ -202,6 +203,7 @@ namespace THESISMATESystem.Server.Services
                     DurationMinutes = dto.DurationMinutes,
                     Venue = chosenVenue!,
                     Phase = dto.Phase,
+                    ReDefenseOf = reDefenseOf,
                     PanelistIds = panel.Select(p => p.PanelistId).ToList(),
                     PanelistNames = panel.Select(p => $"{p.Panelist.FirstName} {p.Panelist.LastName}".Trim() + (p.IsChair ? " (Chair)" : "")).ToList(),
                     AdviserName = $"{group.Adviser.FirstName} {group.Adviser.LastName}".Trim(),
@@ -236,6 +238,7 @@ namespace THESISMATESystem.Server.Services
             var duration = anchor.DurationMinutes;
             var venue = anchor.Venue.Trim();
             var phase = anchor.Phase;
+            var reDefenseOf = anchor.ReDefenseOf;
             var anchorPht = anchor.ScheduledDateTime.AddHours(8);
             var chainStartTime = TimeOnly.FromDateTime(anchorPht);
             if (chainStartTime.AddMinutes(duration) > dayEnd)
@@ -256,7 +259,7 @@ namespace THESISMATESystem.Server.Services
             var groups = await groupQuery.ToListAsync();
 
             var alreadyScheduledSet = (await _db.DefenseSchedules
-                .Where(s => s.Phase == phase && s.Status != DefenseStatus.Cancelled)
+                .Where(s => s.Phase == phase && s.ReDefenseOf == reDefenseOf && s.Status != DefenseStatus.Cancelled)
                 .Select(s => s.CapstoneGroupId)
                 .ToListAsync()).ToHashSet();
 
@@ -266,7 +269,7 @@ namespace THESISMATESystem.Server.Services
                 if (alreadyScheduledSet.Contains(g.Id))
                 {
                     if (dto.GroupIds.Count > 0)
-                        result.Unscheduled.Add(Skip(g, $"Already has a {PhaseLabel(phase)} scheduled."));
+                        result.Unscheduled.Add(Skip(g, $"Already has a {DefensePhases.Label(phase, reDefenseOf)} scheduled."));
                     continue;
                 }
                 if (g.PanelMembers.Count == 0)
@@ -387,6 +390,7 @@ namespace THESISMATESystem.Server.Services
                     DurationMinutes = duration,
                     Venue = venue,
                     Phase = phase,
+                    ReDefenseOf = reDefenseOf,
                     PanelistIds = panel.Select(p => p.PanelistId).ToList(),
                     PanelistNames = panel.Select(p => $"{p.Panelist.FirstName} {p.Panelist.LastName}".Trim() + (p.IsChair ? " (Chair)" : "")).ToList(),
                     AdviserName = $"{group.Adviser.FirstName} {group.Adviser.LastName}".Trim(),
@@ -438,6 +442,7 @@ namespace THESISMATESystem.Server.Services
                         DurationMinutes = item.DurationMinutes,
                         Venue = item.Venue.Trim(),
                         Phase = item.Phase,
+                        ReDefenseOf = item.ReDefenseOf,
                         PanelistIds = panelistIds,
                     }));
                 }
@@ -506,6 +511,8 @@ namespace THESISMATESystem.Server.Services
             {
                 DefensePhase.ProposalDefense when approved < 3
                     => $"Not ready: {approved} of the 3 chapters needed for Proposal Defense are approved.",
+                DefensePhase.PreFinalDefense when approved < 4
+                    => $"Not ready: {approved} of the 4 chapters needed for Pre-Final Defense are approved.",
                 DefensePhase.FinalDefense when approved < 5
                     => $"Not ready: {approved} of the 5 chapters needed for Final Defense are approved.",
                 DefensePhase.ReDefense when !g.RequiresReDefense
@@ -528,6 +535,5 @@ namespace THESISMATESystem.Server.Services
         private static UnscheduledGroupDto Skip(Models.CapstoneGroup g, string reason)
             => new() { GroupId = g.Id, GroupName = g.GroupName, Reason = reason };
 
-        private static string PhaseLabel(DefensePhase phase) => DefenseEmailTemplates.PhaseLabel(phase);
     }
 }

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import AutoScheduleModal from './AutoScheduleModal'
+import { REGULAR_PHASES, defensePhaseLabel } from '../../utils/defensePhase'
 
 // ── Phase config ──────────────────────────────────────────────────────────────
 const PHASES = [
@@ -39,6 +40,15 @@ const PHASES = [
     border: 'rgba(201,168,76,0.25)',
   },
   {
+    key:    'PreFinalDefense',
+    label:  'Pre-Final Defense',
+    short:  'PFD',
+    desc:   'Chapters 1–4 + working system demo',
+    color:  '#0891b2',
+    bg:     'rgba(8,145,178,0.10)',
+    border: 'rgba(8,145,178,0.25)',
+  },
+  {
     key:    'FinalDefense',
     label:  'Final Defense',
     short:  'FD',
@@ -51,7 +61,7 @@ const PHASES = [
     key:    'ReDefense',
     label:  'Re-Defense',
     short:  'RD',
-    desc:   'Re-evaluation after failed Final Defense',
+    desc:   'Re-take of a Title, Proposal, Pre-Final or Final Defense',
     color:  '#dc2626',
     bg:     'rgba(239,68,68,0.10)',
     border: 'rgba(239,68,68,0.25)',
@@ -59,6 +69,16 @@ const PHASES = [
 ]
 
 function phaseOf(key) { return PHASES.find(p => p.key === key) ?? PHASES[0] }
+
+// Every group owes the regular phases; a Re-Defense is only scheduled for the groups that need one.
+const REGULAR = PHASES.filter(p => REGULAR_PHASES.includes(p.key))
+
+// A re-defense is the same group re-taking one specific phase, so two re-defenses only clash
+// when they re-take the same one.
+function matchesTab(defense, phase, reDefenseOf) {
+  if (String(defense.phase) !== phase) return false
+  return phase !== 'ReDefense' || defense.reDefenseOf === reDefenseOf
+}
 
 // Academic year is free text on the server ("2025-2026", "SY 2025–2026", ""), so a raw
 // string compare dropped groups out of every year bucket — and a group that never appears
@@ -84,7 +104,7 @@ function getCurrentSchoolYear() {
 }
 
 // ── Draggable group chip (unscheduled) ────────────────────────────────────────
-function UnscheduledChip({ group, phase }) {
+function UnscheduledChip({ group, phase, reDefenseOf }) {
   const p = phaseOf(phase)
   return (
     <div
@@ -92,6 +112,7 @@ function UnscheduledChip({ group, phase }) {
       data-group-name={group.groupName}
       data-project-title={group.projectTitle ?? ''}
       data-phase={phase}
+      data-redefense-of={reDefenseOf ?? ''}
       className="flex items-center gap-2 px-3 py-2.5 rounded-xl cursor-grab select-none transition-all duration-150 active:cursor-grabbing"
       style={{ background: p.bg, border: `1px solid ${p.border}` }}
       onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 2px 8px ${p.border}`; e.currentTarget.style.transform = 'translateY(-1px)' }}
@@ -165,6 +186,8 @@ export default function DefenseScheduler() {
   const [loadError,    setLoadError]    = useState(null)
   const [loadKey,      setLoadKey]      = useState(0)
   const [activePhase,  setActivePhase]  = useState('TitleDefense')
+  // Re-Defense tab only: the defense being re-taken. Nothing can be scheduled there until it is chosen.
+  const [reDefenseTarget, setReDefenseTarget] = useState('')
   const [selectedYear, setSelectedYear] = useState(() => getCurrentSchoolYear())
 
   // Drop → confirm modal
@@ -246,6 +269,7 @@ export default function DefenseScheduler() {
             groupName:    el.dataset.groupName,
             projectTitle: el.dataset.projectTitle,
             phase:        el.dataset.phase,
+            reDefenseOf:  el.dataset.redefenseOf || null,
           },
         }
       },
@@ -302,7 +326,7 @@ export default function DefenseScheduler() {
   // ── Derived state ───────────────────────────────────────────────────────────
   const progressByPhase = useMemo(() => {
     const result = {}
-    PHASES.forEach(ph => {
+    REGULAR.forEach(ph => {
       const ids = new Set(
         yearDefenses
           .filter(d => String(d.phase) === ph.key && String(d.status) !== 'Cancelled')
@@ -310,6 +334,11 @@ export default function DefenseScheduler() {
       )
       result[ph.key] = { scheduled: ids.size, total: yearGroups.length }
     })
+    // Re-defenses have no "out of" total: only the groups that need one get one.
+    result.ReDefense = {
+      scheduled: yearDefenses.filter(d => String(d.phase) === 'ReDefense' && String(d.status) !== 'Cancelled').length,
+      total: null,
+    }
     return result
   }, [yearDefenses, yearGroups])
 
@@ -321,7 +350,7 @@ export default function DefenseScheduler() {
   // /defenses/coverage — the server is the authority on which groups exist, and a group the
   // client never loaded would otherwise be silently absent from the "unscheduled" list.
   const localCoverage = useMemo(() => {
-    return PHASES.map(ph => {
+    return REGULAR.map(ph => {
       const ids = new Set(
         yearDefenses
           .filter(d => String(d.phase) === ph.key && String(d.status) !== 'Cancelled')
@@ -350,16 +379,21 @@ export default function DefenseScheduler() {
 
   const incompletePhases = coverageByPhase.filter(c => c.missing.length > 0)
 
+  const isReDefenseTab = activePhase === 'ReDefense'
+  // In the Re-Defense tab nothing is listed (or draggable) until the re-taken defense is chosen.
+  const needsReDefenseTarget = isReDefenseTab && !reDefenseTarget
+  const tabReDefenseOf = isReDefenseTab ? reDefenseTarget : null
+
   const scheduledForPhase = useMemo(
-    () => yearDefenses.filter(d => String(d.phase) === activePhase && String(d.status) !== 'Cancelled'),
-    [yearDefenses, activePhase]
+    () => yearDefenses.filter(d => matchesTab(d, activePhase, tabReDefenseOf) && String(d.status) !== 'Cancelled'),
+    [yearDefenses, activePhase, tabReDefenseOf]
   )
   const scheduledGroupIds = useMemo(
     () => new Set(scheduledForPhase.map(d => Number(d.capstoneGroupId))),
     [scheduledForPhase]
   )
-  const unscheduledGroups = yearGroups.filter(g => !scheduledGroupIds.has(Number(g.id)))
-  const scheduledGroups   = yearGroups.filter(g =>  scheduledGroupIds.has(Number(g.id)))
+  const unscheduledGroups = needsReDefenseTarget ? [] : yearGroups.filter(g => !scheduledGroupIds.has(Number(g.id)))
+  const scheduledGroups   = needsReDefenseTarget ? [] : yearGroups.filter(g =>  scheduledGroupIds.has(Number(g.id)))
 
   // ── Calendar events (current year, all phases, excluding cancelled) ─────────
   // Both start and end MUST be UTC ISO strings so FullCalendar applies the same
@@ -386,14 +420,17 @@ export default function DefenseScheduler() {
     info.revert()
     const timeErr = getAllowedHoursError(info.event.start, 60)
     if (timeErr) { toast.error(timeErr); return }
-    const { groupId, groupName, projectTitle, phase } = info.event.extendedProps
-    setDropInfo({ groupId, groupName, projectTitle, phase, start: info.event.start })
+    const { groupId, groupName, projectTitle, phase, reDefenseOf } = info.event.extendedProps
+    setDropInfo({ groupId, groupName, projectTitle, phase, reDefenseOf: reDefenseOf || '', start: info.event.start })
     setForm({ venue: '', durationMinutes: 60 })
     setSaveError('')
   }, [])
 
   // ── Save new defense ────────────────────────────────────────────────────────
   async function handleConfirmSchedule() {
+    if (dropInfo.phase === 'ReDefense' && !dropInfo.reDefenseOf) {
+      setSaveError('Choose which defense the group is re-taking.'); return
+    }
     if (!form.venue.trim()) { setSaveError('Please enter a venue or room.'); return }
     const timeErr = getAllowedHoursError(dropInfo.start, form.durationMinutes)
     if (timeErr) { setSaveError(timeErr); return }
@@ -405,6 +442,7 @@ export default function DefenseScheduler() {
         durationMinutes:   form.durationMinutes,
         venue:             form.venue.trim(),
         phase:             dropInfo.phase,
+        reDefenseOf:       dropInfo.phase === 'ReDefense' ? dropInfo.reDefenseOf : undefined,
         // Empty on purpose: the server seats the group's standing panel, chosen when the group
         // was created, so nobody re-picks it for every defense.
         panelistIds:       [],
@@ -579,6 +617,7 @@ export default function DefenseScheduler() {
           open={showAuto}
           onClose={() => setShowAuto(false)}
           phase={activePhase}
+          reDefenseOf={tabReDefenseOf}
           candidateGroups={unscheduledGroups}
           onSaved={() => setLoadKey(k => k + 1)}
         />
@@ -590,6 +629,7 @@ export default function DefenseScheduler() {
           anchor={chainAnchor}
           onClose={() => setChainAnchor(null)}
           phase={chainAnchor.phase}
+          reDefenseOf={chainAnchor.reDefenseOf}
           candidateGroups={unscheduledGroups}
           onSaved={() => { setChainAnchor(null); setLoadKey(k => k + 1) }}
         />
@@ -649,18 +689,18 @@ export default function DefenseScheduler() {
                 </span>
                 <span className="ml-auto text-xs font-bold tabular-nums"
                   style={{ color: active ? 'rgba(255,255,255,0.85)' : 'var(--text-muted)' }}>
-                  {pr.scheduled}/{pr.total}
+                  {pr.total == null ? pr.scheduled : `${pr.scheduled}/${pr.total}`}
                 </span>
               </div>
               {/* Progress bar */}
-              <div className="w-full mt-1.5 rounded-full overflow-hidden"
+              {pr.total != null && <div className="w-full mt-1.5 rounded-full overflow-hidden"
                 style={{ height: 3, background: active ? 'rgba(255,255,255,0.25)' : 'var(--border-main)' }}>
                 <div className="h-full rounded-full transition-all duration-500"
                   style={{
                     width: `${pct}%`,
                     background: active ? '#fff' : ph.color,
                   }} />
-              </div>
+              </div>}
             </button>
           )
         })}
@@ -705,7 +745,10 @@ export default function DefenseScheduler() {
             <button
               onClick={() => setShowAuto(true)}
               className="btn-primary text-xs"
-              title="Generate a conflict-free schedule for the unscheduled groups">
+              disabled={needsReDefenseTarget}
+              title={needsReDefenseTarget
+                ? 'Choose which defense is being re-taken first'
+                : 'Generate a conflict-free schedule for the unscheduled groups'}>
               <Sparkles size={12} /> Auto-generate
             </button>
           )}
@@ -725,25 +768,32 @@ export default function DefenseScheduler() {
         <aside className="flex flex-col shrink-0"
           style={{ width: 232, borderRight: '1px solid var(--border-light)', background: 'var(--bg-page)' }}>
 
+          {/* Re-Defense: say which defense is being re-taken before anything can be scheduled */}
+          {isReDefenseTab && (
+            <ReDefenseTargetPicker value={reDefenseTarget} onChange={setReDefenseTarget} />
+          )}
+
           {/* Unscheduled section */}
           <div className="px-3 pt-3 pb-1 shrink-0">
             <p className="text-xs font-bold tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>
               TO SCHEDULE
             </p>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {unscheduledGroups.length === 0 ? 'None remaining' : `${unscheduledGroups.length} group${unscheduledGroups.length !== 1 ? 's' : ''}`}
+              {needsReDefenseTarget
+                ? 'Choose the defense being re-taken above'
+                : unscheduledGroups.length === 0 ? 'None remaining' : `${unscheduledGroups.length} group${unscheduledGroups.length !== 1 ? 's' : ''}`}
             </p>
           </div>
 
           <div ref={sidebarRef} className="overflow-y-auto px-2 pb-2 space-y-1.5"
             style={{ maxHeight: unscheduledGroups.length === 0 ? 0 : scheduledGroups.length > 0 ? '45%' : '100%', minHeight: 40 }}>
-            {unscheduledGroups.length === 0 ? (
+            {needsReDefenseTarget ? null : unscheduledGroups.length === 0 ? (
               <div className="px-3 py-3 flex items-center gap-2">
                 <CheckCircle2 size={14} style={{ color: p.color }} />
                 <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>All scheduled</span>
               </div>
             ) : unscheduledGroups.map(g => (
-              <UnscheduledChip key={g.id} group={g} phase={activePhase} />
+              <UnscheduledChip key={g.id} group={g} phase={activePhase} reDefenseOf={tabReDefenseOf} />
             ))}
           </div>
 
@@ -786,7 +836,7 @@ export default function DefenseScheduler() {
                     <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: ph.color }} />
                     <span className="text-xs flex-1" style={{ color: 'var(--text-secondary)' }}>{ph.label}</span>
                     <span className="text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                      {pr.scheduled}/{pr.total}
+                      {pr.total == null ? pr.scheduled : `${pr.scheduled}/${pr.total}`}
                     </span>
                   </div>
                 )
@@ -869,7 +919,7 @@ export default function DefenseScheduler() {
                     <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{dropInfo.projectTitle}</p>
                   )}
                   <p className="text-xs font-semibold mt-0.5" style={{ color: ph.color }}>
-                    {ph.label} · {dropInfo.start.toLocaleString('en-PH', {
+                    {defensePhaseLabel(dropInfo.phase, dropInfo.reDefenseOf)} · {dropInfo.start.toLocaleString('en-PH', {
                       weekday: 'short', month: 'short', day: 'numeric',
                       hour: '2-digit', minute: '2-digit',
                     })}
@@ -881,6 +931,36 @@ export default function DefenseScheduler() {
                 <div className="px-3 py-2.5 rounded-xl text-sm flex items-center gap-2"
                   style={{ background: 'rgba(220,38,38,0.07)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
                   <AlertCircle size={13} /> {saveError}
+                </div>
+              )}
+
+              {/* Re-Defense: the defense being re-taken (required) */}
+              {dropInfo.phase === 'ReDefense' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                    Re-defense of <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {REGULAR.map(rp => {
+                      const on = dropInfo.reDefenseOf === rp.key
+                      return (
+                        <button key={rp.key} type="button"
+                          onClick={() => setDropInfo(d => ({ ...d, reDefenseOf: rp.key }))}
+                          aria-pressed={on}
+                          className="py-2 rounded-lg text-xs font-semibold transition-all duration-150"
+                          style={{
+                            background: on ? rp.color : 'var(--bg-subtle)',
+                            color:      on ? '#fff' : 'var(--text-secondary)',
+                            border:     `1px solid ${on ? rp.color : 'var(--border-light)'}`,
+                          }}>
+                          {rp.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    The panel rates the re-defense with this defense's rubric.
+                  </p>
                 </div>
               )}
 
@@ -1032,7 +1112,7 @@ export default function DefenseScheduler() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-bold truncate" style={{ color: ph.color }}>{d.groupName}</p>
-                  <p className="text-xs font-semibold" style={{ color: ph.color }}>{ph.label}</p>
+                  <p className="text-xs font-semibold" style={{ color: ph.color }}>{defensePhaseLabel(d.phase, d.reDefenseOf)}</p>
                 </div>
               </div>
 
@@ -1146,7 +1226,7 @@ export default function DefenseScheduler() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="font-bold text-base" style={{ color: ph.color }}>{d.groupName}</p>
-                    <p className="text-xs font-semibold mt-0.5" style={{ color: ph.color }}>{ph.label}</p>
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: ph.color }}>{defensePhaseLabel(d.phase, d.reDefenseOf)}</p>
                   </div>
                   <span className="text-xs font-bold px-2 py-1 rounded-lg shrink-0"
                     style={{ background: ph.color, color: '#fff' }}>
@@ -1295,7 +1375,8 @@ function renderEventContent(info) {
   // On a colour chip the secondary lines reuse the same colour and lean on weight and size
   // for hierarchy: fading 10px text even to 90% drops the red Re-Defense chip below 4.5:1.
   const muted  = isList ? 'var(--text-muted)' : fg
-  const title  = `${info.event.title} · ${ph.label}${d?.venue ? ` · ${d.venue}` : ''}`
+  const title  = `${info.event.title} · ${defensePhaseLabel(d?.phase, d?.reDefenseOf)}${d?.venue ? ` · ${d.venue}` : ''}`
+  const short  = d?.phase === 'ReDefense' && d?.reDefenseOf ? `RD·${phaseOf(d.reDefenseOf).short}` : ph.short
 
   // A 30-minute slot is only tall enough for the name and time; venue and panel count are
   // dropped rather than clipped mid-word, and stay available in the tooltip and detail modal.
@@ -1305,7 +1386,7 @@ function renderEventContent(info) {
     <div className="overflow-hidden px-1.5 py-1 h-full flex flex-col gap-0.5" title={title} style={{ color: fg }}>
       <p className="font-bold text-xs leading-tight truncate">{info.event.title}</p>
       <p className="text-xs leading-tight truncate" style={{ fontSize: 10, color: muted }}>
-        {ph.short} · {info.event.start?.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
+        {short} · {info.event.start?.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
       </p>
       {!compact && d?.venue && (
         <p className="text-xs leading-tight truncate" style={{ fontSize: 10, color: muted }}>
@@ -1334,6 +1415,36 @@ function styleEvent(info) {
   if (!String(info.view?.type ?? '').startsWith('list')) {
     info.el.style.setProperty('--fc-event-text-color', readableTextOn(info.event.backgroundColor))
   }
+}
+
+// ── Re-defense target picker ──────────────────────────────────────────────────
+// A re-defense always re-takes one specific defense; the Admin names it before any group can
+// be dragged onto the calendar, and it decides which rubric the panel rates with.
+function ReDefenseTargetPicker({ value, onChange }) {
+  const rd = phaseOf('ReDefense')
+  return (
+    <div className="px-3 pt-3 pb-2 shrink-0" style={{ borderBottom: '1px solid var(--border-light)' }}>
+      <p className="text-xs font-bold tracking-wide mb-0.5" style={{ color: rd.color }}>RE-DEFENSE OF</p>
+      <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>Which defense is being re-taken?</p>
+      <div className="grid grid-cols-2 gap-1.5">
+        {REGULAR.map(ph => {
+          const on = value === ph.key
+          return (
+            <button key={ph.key} type="button" onClick={() => onChange(ph.key)}
+              aria-pressed={on}
+              className="px-2 py-1.5 rounded-lg text-xs font-semibold text-left transition-all duration-150"
+              style={{
+                background: on ? ph.color : 'var(--bg-subtle)',
+                color:      on ? '#fff' : 'var(--text-secondary)',
+                border:     `1px solid ${on ? ph.color : 'var(--border-light)'}`,
+              }}>
+              {ph.label.replace(' Defense', '')}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 // ── Detail row ────────────────────────────────────────────────────────────────
@@ -1386,7 +1497,7 @@ function CoverageBanner({ incompletePhases, totalGroups, unassignedYearGroups, s
         <AlertCircle size={14} style={{ color: '#b45309', flexShrink: 0 }} />
         <span className="text-xs font-semibold flex-1" style={{ color: '#b45309' }}>
           {totalMissing > 0
-            ? `${totalMissing} defense${totalMissing !== 1 ? 's' : ''} still unscheduled across ${incompletePhases.length} phase${incompletePhases.length !== 1 ? 's' : ''} — every group must be scheduled in all ${PHASES.length} phases.`
+            ? `${totalMissing} defense${totalMissing !== 1 ? 's' : ''} still unscheduled across ${incompletePhases.length} phase${incompletePhases.length !== 1 ? 's' : ''} — every group must be scheduled in all ${REGULAR.length} phases.`
             : `${unassignedYearGroups.length} group${unassignedYearGroups.length !== 1 ? 's' : ''} have no academic year set.`}
         </span>
         <span className="text-xs font-semibold shrink-0" style={{ color: '#b45309' }}>

@@ -38,5 +38,7 @@ namespace THESISMATESystem.Server.DTOs.Response
         public int Added { get; set; }
         // Student IDs skipped because they are already on this or another section's list.
         public List<string> Skipped { get; set; } = [];
+        // Entries rejected because they do not follow the student ID format (e.g. 23-LN-5825).
+        public List<string> Invalid { get; set; } = [];
     }
 }

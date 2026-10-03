@@ -22,7 +22,9 @@ import { toast } from '../../utils/toast'
 const PHASE_META = {
   TitleDefense:    { label: 'Title Defense',    short: 'TD', color: '#7c3aed', bg: 'rgba(124,58,237,0.12)'  },
   ProposalDefense: { label: 'Proposal Defense', short: 'PD', color: '#c9a84c', bg: 'rgba(201,168,76,0.12)'  },
+  PreFinalDefense: { label: 'Pre-Final Defense', short: 'PFD', color: '#0891b2', bg: 'rgba(8,145,178,0.12)' },
   FinalDefense:    { label: 'Final Defense',    short: 'FD', color: '#16a34a', bg: 'rgba(34,197,94,0.12)'   },
+  ReDefense:       { label: 'Re-Defense',       short: 'RD', color: '#dc2626', bg: 'rgba(239,68,68,0.12)'   },
 }
 function phaseMeta(key) { return PHASE_META[key] ?? { label: key, short: '?', color: '#6b7280', bg: 'rgba(107,114,128,0.12)' } }
 
@@ -266,6 +268,7 @@ function PhaseBarChart({ defenses }) {
   const phases = [
     { key: 'TitleDefense',    label: 'Title Defense',    color: '#7c3aed' },
     { key: 'ProposalDefense', label: 'Proposal Defense', color: '#c9a84c' },
+    { key: 'PreFinalDefense', label: 'Pre-Final Defense', color: '#0891b2' },
     { key: 'FinalDefense',    label: 'Final Defense',    color: '#16a34a' },
   ]
   const rows = phases.map(ph => ({

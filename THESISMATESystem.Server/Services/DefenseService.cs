@@ -44,17 +44,23 @@ namespace THESISMATESystem.Server.Services
                 .FirstOrDefaultAsync(g => g.Id == dto.CapstoneGroupId)
                 ?? throw new InvalidOperationException("The selected group no longer exists.");
 
+            // A Re-Defense has to say which defense it re-takes before it can be scheduled.
+            var reDefenseOf = DefensePhases.ValidateReDefenseOf(dto.Phase, dto.ReDefenseOf);
+
             // One active defense per group per phase. Without this a group could be scheduled
             // twice for the same phase — which also removed it from the scheduler's
             // "to schedule" list, so coverage looked complete while a slot was double-booked.
+            // Re-defenses are counted per re-taken phase: a group may re-take its Title Defense
+            // and later its Final Defense.
             var alreadyScheduled = await _db.DefenseSchedules.AnyAsync(s =>
                 s.CapstoneGroupId == dto.CapstoneGroupId &&
                 s.Phase == dto.Phase &&
+                s.ReDefenseOf == reDefenseOf &&
                 s.Status != DefenseStatus.Cancelled);
 
             if (alreadyScheduled)
                 throw new InvalidOperationException(
-                    $"{group.GroupName} already has a {dto.Phase} scheduled. Cancel it before scheduling another.");
+                    $"{group.GroupName} already has a {DefensePhases.Label(dto.Phase, reDefenseOf)} scheduled. Cancel it before scheduling another.");
 
             // The panel is normally fixed when the group is created; a schedule without an explicit
             // panel inherits it, so the Admin does not have to pick the same people again.
@@ -77,6 +83,7 @@ namespace THESISMATESystem.Server.Services
                 DurationMinutes   = duration,
                 Venue             = dto.Venue,
                 Phase             = dto.Phase,
+                ReDefenseOf       = reDefenseOf,
             };
 
             _db.DefenseSchedules.Add(schedule);
@@ -120,8 +127,8 @@ namespace THESISMATESystem.Server.Services
                     .Distinct();
 
                 var panelistNames = panelistUsers.Select(p => $"{p.FirstName} {p.LastName}".Trim()).ToList();
-                var html    = DefenseEmailTemplates.Scheduled(group.GroupName, schedule.Phase, schedule.ScheduledDateTime, schedule.Venue, schedule.DurationMinutes, panelistNames);
-                var subject = $"Defense Scheduled – {group.GroupName} – {DefenseEmailTemplates.PhaseLabel(schedule.Phase)}";
+                var html    = DefenseEmailTemplates.Scheduled(group.GroupName, schedule.Phase, schedule.ScheduledDateTime, schedule.Venue, schedule.DurationMinutes, panelistNames, schedule.ReDefenseOf);
+                var subject = $"Defense Scheduled – {group.GroupName} – {DefensePhases.Label(schedule.Phase, schedule.ReDefenseOf)}";
                 await Task.WhenAll(allEmails.Select(to => SendEmailSafeAsync(to, subject, html)));
             }
             catch (Exception ex)
@@ -176,7 +183,9 @@ namespace THESISMATESystem.Server.Services
                 .Select(s => new { s.CapstoneGroupId, s.Phase })
                 .ToListAsync();
 
-            var phases = Enum.GetValues<DefensePhase>().Select(phase =>
+            // Only the regular phases are owed by every group; a Re-Defense is scheduled for the
+            // groups that need one and would otherwise always read as "incomplete".
+            var phases = DefensePhases.Regular.Select(phase =>
             {
                 var done = scheduled.Where(s => s.Phase == phase).Select(s => s.CapstoneGroupId).ToHashSet();
                 return new PhaseCoverageDto
@@ -277,7 +286,12 @@ namespace THESISMATESystem.Server.Services
                 }
             }
             if (dto.Venue is not null)          schedule.Venue           = dto.Venue;
-            if (dto.Phase.HasValue)             schedule.Phase           = dto.Phase.Value;
+            if (dto.Phase.HasValue || dto.ReDefenseOf.HasValue)
+            {
+                var phase = dto.Phase ?? schedule.Phase;
+                schedule.ReDefenseOf = DefensePhases.ValidateReDefenseOf(phase, dto.ReDefenseOf ?? schedule.ReDefenseOf);
+                schedule.Phase       = phase;
+            }
             // Duration-only validation is skipped here: the frontend already validated the
             // end time before calling the API, and the stored ScheduledDateTime has
             // DateTimeKind.Unspecified (not reliably UTC), making server-side PHT conversion unreliable.
@@ -329,8 +343,8 @@ namespace THESISMATESystem.Server.Services
                     var adviserEmail2 = group2.Adviser?.Email;
                     var allEmails2    = memberEmails2.Concat(adviserEmail2 is not null ? [adviserEmail2] : []).Distinct();
 
-                    var html2    = DefenseEmailTemplates.Rescheduled(group2.GroupName, schedule.Phase, schedule.ScheduledDateTime, schedule.Venue);
-                    var subject2 = $"Defense Rescheduled – {group2.GroupName} – {DefenseEmailTemplates.PhaseLabel(schedule.Phase)}";
+                    var html2    = DefenseEmailTemplates.Rescheduled(group2.GroupName, schedule.Phase, schedule.ScheduledDateTime, schedule.Venue, schedule.ReDefenseOf);
+                    var subject2 = $"Defense Rescheduled – {group2.GroupName} – {DefensePhases.Label(schedule.Phase, schedule.ReDefenseOf)}";
                     await Task.WhenAll(allEmails2.Select(to => SendEmailSafeAsync(to, subject2, html2)));
                 }
                 catch (Exception ex)
@@ -367,8 +381,8 @@ namespace THESISMATESystem.Server.Services
                 var adviserEmail3 = group3.Adviser?.Email;
                 var allEmails3    = memberEmails3.Concat(adviserEmail3 is not null ? [adviserEmail3] : []).Distinct();
 
-                var html3    = DefenseEmailTemplates.Cancelled(group3.GroupName, schedule.Phase);
-                var subject3 = $"Defense Cancelled – {group3.GroupName} – {DefenseEmailTemplates.PhaseLabel(schedule.Phase)}";
+                var html3    = DefenseEmailTemplates.Cancelled(group3.GroupName, schedule.Phase, schedule.ReDefenseOf);
+                var subject3 = $"Defense Cancelled – {group3.GroupName} – {DefensePhases.Label(schedule.Phase, schedule.ReDefenseOf)}";
                 await Task.WhenAll(allEmails3.Select(to => SendEmailSafeAsync(to, subject3, html3)));
             }
             catch (Exception ex)
@@ -452,7 +466,7 @@ namespace THESISMATESystem.Server.Services
             {
                 try
                 {
-                    var msg = $"The {DefenseEmailTemplates.PhaseLabel(s.Phase)} of {s.CapstoneGroup.GroupName} is completed. The rating form is now open.";
+                    var msg = $"The {DefensePhases.Label(s.Phase, s.ReDefenseOf)} of {s.CapstoneGroup.GroupName} is completed. The rating form is now open.";
                     foreach (var pa in s.PanelAssignments)
                         await _notifications.SendAsync(pa.PanelistId, msg, NotificationType.RatingOpened,
                             groupId: s.CapstoneGroupId, defenseId: s.Id);
@@ -487,8 +501,10 @@ namespace THESISMATESystem.Server.Services
             if (!criterion.IsActive)
                 throw new InvalidOperationException($"Criterion '{criterion.Name}' has been removed from the rubric.");
 
-            if (criterion.Phase != schedule.Phase)
-                throw new InvalidOperationException($"Criterion '{criterion.Name}' does not belong to the {schedule.Phase} rubric.");
+            // A re-defense is rated with the rubric of the defense it re-takes.
+            var rubricPhase = DefensePhases.RubricPhase(schedule.Phase, schedule.ReDefenseOf);
+            if (criterion.Phase != rubricPhase)
+                throw new InvalidOperationException($"Criterion '{criterion.Name}' does not belong to the {DefensePhases.Label(rubricPhase)} rubric.");
 
             // The DTO already caps scores at 0–100; the criterion can set a lower maximum.
             var max = Math.Min(criterion.MaxScore, 100);
@@ -639,6 +655,11 @@ namespace THESISMATESystem.Server.Services
         // A rubric's weights are percentages of the total grade, so together they cannot pass 100%.
         private async Task EnsureWeightsFitAsync(DefensePhase phase, decimal weight, int? excludingId)
         {
+            // Re-defenses borrow the rubric of the defense they re-take, so a Re-Defense rubric
+            // would never be used.
+            if (!DefensePhases.IsRegular(phase))
+                throw new InvalidOperationException("A Re-Defense is rated with the rubric of the defense it re-takes; add the criterion to that phase instead.");
+
             var others = await _db.DefenseCriteria
                 .Where(c => c.IsActive && c.Phase == phase && (excludingId == null || c.Id != excludingId))
                 .SumAsync(c => (decimal?)c.Weight) ?? 0;
@@ -707,7 +728,8 @@ namespace THESISMATESystem.Server.Services
                 };
             }).ToList();
 
-            var totalCriteria = await _db.DefenseCriteria.CountAsync(c => c.IsActive && c.Phase == schedule.Phase);
+            var rubricPhase = DefensePhases.RubricPhase(schedule.Phase, schedule.ReDefenseOf);
+            var totalCriteria = await _db.DefenseCriteria.CountAsync(c => c.IsActive && c.Phase == rubricPhase);
             var totalRatingsExpected = panelCount * totalCriteria;
             // With no panel or no rubric nothing can be submitted, so a >= comparison against 0
             // would otherwise report a fully-rated defense.

@@ -7,6 +7,7 @@ import {
   School, Plus, ListChecks, Users, Trash2, Search, UserPlus, CheckCircle2,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
+import { STUDENT_ID_EXAMPLE, isValidStudentId } from '../../utils/studentId'
 
 // One "Student ID, Full Name" per line; tabs and semicolons also work so a column pasted
 // from a spreadsheet goes straight in.
@@ -89,11 +90,19 @@ export default function MyClassroom() {
   async function importRoster() {
     const entries = parseRoster(importText)
     if (entries.length === 0) { toast.error('Paste at least one Student ID.'); return }
+    // Registration only accepts the official format, so a class-list ID in any other shape
+    // could never be matched. Stop here and name them rather than sending them off.
+    const invalid = entries.filter(e => !isValidStudentId(e.studentNumber)).map(e => e.studentNumber)
+    if (invalid.length > 0) {
+      toast.error(`Not in the ${STUDENT_ID_EXAMPLE} format: ${invalid.join(', ')}`)
+      return
+    }
     setImporting(true)
     try {
       const res = await sectionService.addRoster(selected.id, entries)
       toast.success(`${res.added} added to the class list.`)
       if (res.skipped?.length) toast.info(`Skipped (already listed in a block): ${res.skipped.join(', ')}`)
+      if (res.invalid?.length) toast.error(`Skipped (not in the ${STUDENT_ID_EXAMPLE} format): ${res.invalid.join(', ')}`)
       setShowImport(false)
       setImportText('')
       await loadBlocks(selected.id)
@@ -314,11 +323,12 @@ export default function MyClassroom() {
           </button>
         </>}>
         <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-          One student per line: <code>Student ID, Full Name</code>. You can paste two columns straight from a spreadsheet.
+          One student per line: <code>Student ID, Full Name</code>, with the ID in the <code>{STUDENT_ID_EXAMPLE}</code> format.
+          You can paste two columns straight from a spreadsheet.
           The name is optional and is shown next to registrations for comparison.
         </p>
         <textarea className="form-input font-mono text-xs" rows={10} value={importText}
-          placeholder={'2022-00123, Juan Dela Cruz\n2022-00124, Maria Santos'}
+          placeholder={'23-LN-5825, Juan Dela Cruz\n23-LN-5826, Maria Santos'}
           onChange={e => setImportText(e.target.value)} />
       </Modal>
 

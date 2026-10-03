@@ -11,6 +11,8 @@
  * Frozen panes lock the Time column and header row while scrolling.
  */
 
+import { defensePhaseLabel } from '../utils/defensePhase'
+
 const SLOT_MINS  = 30
 const DAY_START  = 7   // 7:00 AM
 const DAY_END    = 21  // 9:00 PM (last slot starts at 8:30 PM)
@@ -18,7 +20,9 @@ const DAY_END    = 21  // 9:00 PM (last slot starts at 8:30 PM)
 const PHASE = {
   TitleDefense:    { label: 'Title Defense',    short: 'TD', bg: 'FFE9D5FF', fg: 'FF4C1D95' },
   ProposalDefense: { label: 'Proposal Defense', short: 'PD', bg: 'FFFFF3CC', fg: 'FF78350F' },
+  PreFinalDefense: { label: 'Pre-Final Defense', short: 'PFD', bg: 'FFCFFAFE', fg: 'FF155E75' },
   FinalDefense:    { label: 'Final Defense',    short: 'FD', bg: 'FFD1FAE5', fg: 'FF064E3B' },
+  ReDefense:       { label: 'Re-Defense',       short: 'RD', bg: 'FFFEE2E2', fg: 'FF991B1B' },
 }
 
 const DAY_NAMES   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
@@ -200,7 +204,7 @@ export async function exportDefenseGrid(yearDefenses, yearGroups, selectedYear) 
         .filter(Boolean)
 
       const lines = [
-        `[${ph.short}] ${ph.label}`,
+        `[${ph.short}] ${defensePhaseLabel(d.phase, d.reDefenseOf)}`,
         d.groupName,
         d.group?.projectTitle ?? '',
         `Venue: ${d.venue ?? '(TBD)'}`,

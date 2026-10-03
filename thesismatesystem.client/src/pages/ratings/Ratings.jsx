@@ -8,6 +8,7 @@ import { PageLoader } from '../../components/ui/Spinner'
 import Badge, { statusVariant } from '../../components/ui/Badge'
 import { defenseService } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
+import { rubricPhaseOf } from '../../utils/defensePhase'
 
 // Ratings are percentages: no score may exceed 100, and a criterion can set a lower cap.
 const maxFor = (criterion) => Math.min(Number(criterion.maxScore) || 100, 100)
@@ -61,7 +62,8 @@ export default function Ratings() {
     setRating({ defense, criteria: [], scores: {}, comments: {}, panelRatings: [], submitting: false, error: '', loadingRatings: true })
     try {
       const [phaseCriteria, existing] = await Promise.all([
-        defenseService.criteria(defense.phase),
+        // A re-defense is rated with the rubric of the defense it re-takes.
+        defenseService.criteria(rubricPhaseOf(defense)),
         defenseService.getRatings(defense.id),
       ])
       const all = Array.isArray(existing) ? existing : []

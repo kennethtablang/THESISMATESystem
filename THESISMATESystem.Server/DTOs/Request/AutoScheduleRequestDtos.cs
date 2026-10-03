@@ -6,6 +6,8 @@ namespace THESISMATESystem.Server.DTOs.Request
     public class AutoScheduleRequestDto
     {
         [Required] public DefensePhase Phase { get; set; }
+        // Required when Phase is ReDefense: the defense being re-taken.
+        public DefensePhase? ReDefenseOf { get; set; }
 
         // Groups to schedule. Empty means every active group without a defense for this phase.
         public List<int> GroupIds { get; set; } = [];
@@ -64,6 +66,7 @@ namespace THESISMATESystem.Server.DTOs.Request
         [Range(15, 480)] public int DurationMinutes { get; set; } = 60;
         [Required] public string Venue { get; set; } = string.Empty;
         [Required] public DefensePhase Phase { get; set; }
+        public DefensePhase? ReDefenseOf { get; set; }
         public List<string> PanelistIds { get; set; } = [];
     }
 

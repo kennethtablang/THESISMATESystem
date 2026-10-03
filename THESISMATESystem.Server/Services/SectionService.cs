@@ -3,6 +3,7 @@ using THESISMATESystem.Server.Data;
 using THESISMATESystem.Server.DTOs.Request;
 using THESISMATESystem.Server.DTOs.Response;
 using THESISMATESystem.Server.Enums;
+using THESISMATESystem.Server.Helpers;
 using THESISMATESystem.Server.Interfaces;
 using THESISMATESystem.Server.Models;
 
@@ -166,10 +167,21 @@ namespace THESISMATESystem.Server.Services
         {
             await EnsureExistsAsync(sectionId);
 
-            // Normalise first so "2021-001 " and "2021-001" count as the same ID.
-            var incoming = dto.Entries
-                .Select(e => new { Number = e.StudentNumber.Trim(), Name = string.IsNullOrWhiteSpace(e.FullName) ? null : e.FullName.Trim() })
+            // Normalise first so "23-ln-5825 " and "23-LN-5825" count as the same ID.
+            var normalised = dto.Entries
+                .Select(e => new { Number = StudentIdFormat.Normalize(e.StudentNumber), Name = string.IsNullOrWhiteSpace(e.FullName) ? null : e.FullName.Trim() })
                 .Where(e => e.Number.Length > 0)
+                .ToList();
+
+            // Registration only accepts the official format, so a class-list number in any other
+            // shape could never be matched to a student. Report it instead of storing it.
+            var result = new AddRosterResultDto
+            {
+                Invalid = normalised.Where(e => !StudentIdFormat.IsValid(e.Number)).Select(e => e.Number).Distinct().ToList(),
+            };
+
+            var incoming = normalised
+                .Where(e => StudentIdFormat.IsValid(e.Number))
                 .GroupBy(e => e.Number, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
                 .ToList();
@@ -181,7 +193,6 @@ namespace THESISMATESystem.Server.Services
                 .ToListAsync();
             var taken = existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            var result = new AddRosterResultDto();
             foreach (var entry in incoming)
             {
                 // A student belongs to one section, so an ID already listed anywhere is skipped

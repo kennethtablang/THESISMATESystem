@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { sectionService } from '../../services/api'
 import { passwordError } from '../../utils/passwordPolicy'
+import { STUDENT_ID_EXAMPLE, STUDENT_ID_HINT, formatStudentIdInput, isValidStudentId, normalizeStudentId } from '../../utils/studentId'
 import {
   Eye, EyeOff, ArrowRight, ArrowLeft,
   User, Mail, IdCard, Lock, CheckCircle2, AlertCircle, Layers,
@@ -108,6 +109,7 @@ export default function Register() {
     setError('')
     setDuplicateId(false)
     if (!form.studentId.trim()) { triggerError('Student ID is required.'); return }
+    if (!isValidStudentId(form.studentId)) { triggerError(`Student ID must follow the format ${STUDENT_ID_EXAMPLE}.`); return }
     if (!form.sectionId) { triggerError('Please select your block/section.'); return }
     if (form.password !== form.confirmPassword) { triggerError('Passwords do not match.'); return }
     const pwProblem = passwordError(form.password)
@@ -118,7 +120,7 @@ export default function Register() {
         firstName:  form.firstName.trim(),
         middleName: form.middleName.trim() || undefined,
         lastName:   form.lastName.trim(),
-        studentId:  form.studentId.trim(),
+        studentId:  normalizeStudentId(form.studentId),
         email:      form.email.trim(),
         password:   form.password,
         sectionId:  Number(form.sectionId),
@@ -415,11 +417,16 @@ export default function Register() {
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none">
                         <IdCard size={14} style={iconColor('studentId')} />
                       </div>
-                      <input type="text" className="form-input pl-9" placeholder="2021-12345"
-                        value={form.studentId} onChange={(e) => set('studentId', e.target.value)}
+                      <input type="text" className="form-input pl-9" placeholder={STUDENT_ID_EXAMPLE}
+                        value={form.studentId} onChange={(e) => set('studentId', formatStudentIdInput(e.target.value))}
                         onFocus={() => setFocused('studentId')} onBlur={() => setFocused('')}
+                        maxLength={10} autoCapitalize="characters" spellCheck={false}
+                        pattern="\d{2}-[A-Za-z]{2}-\d{4}" title={STUDENT_ID_HINT}
                         required />
                     </div>
+                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      {STUDENT_ID_HINT}
+                    </p>
                   </div>
 
                   <div>

@@ -10,6 +10,7 @@ import { toast } from '../../utils/toast'
 const PHASES = [
   { key: 'TitleDefense',    label: 'Title Defense',    color: '#7c3aed', bg: 'rgba(124,58,237,0.08)', border: 'rgba(124,58,237,0.2)' },
   { key: 'ProposalDefense', label: 'Proposal Defense', color: '#c9a84c', bg: 'rgba(201,168,76,0.08)', border: 'rgba(201,168,76,0.3)' },
+  { key: 'PreFinalDefense', label: 'Pre-Final Defense', color: '#0891b2', bg: 'rgba(8,145,178,0.08)', border: 'rgba(8,145,178,0.25)' },
   { key: 'FinalDefense',    label: 'Final Defense',    color: '#16a34a', bg: 'rgba(22,163,74,0.08)',  border: 'rgba(22,163,74,0.2)'  },
 ]
 
@@ -17,7 +18,7 @@ const BLANK_FORM = { name: '', description: '', weight: '', maxScore: 100 }
 
 export default function RubricManager() {
   const [activePhase, setActivePhase] = useState('TitleDefense')
-  const [criteriaMap, setCriteriaMap] = useState({ TitleDefense: [], ProposalDefense: [], FinalDefense: [] })
+  const [criteriaMap, setCriteriaMap] = useState(() => Object.fromEntries(PHASES.map(p => [p.key, []])))
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState(null)
 
@@ -43,12 +44,8 @@ export default function RubricManager() {
     setLoading(true)
     setError(null)
     try {
-      const [td, pd, fd] = await Promise.all([
-        defenseService.criteria('TitleDefense'),
-        defenseService.criteria('ProposalDefense'),
-        defenseService.criteria('FinalDefense'),
-      ])
-      setCriteriaMap({ TitleDefense: td, ProposalDefense: pd, FinalDefense: fd })
+      const lists = await Promise.all(PHASES.map(p => defenseService.criteria(p.key)))
+      setCriteriaMap(Object.fromEntries(PHASES.map((p, i) => [p.key, lists[i]])))
     } catch (e) {
       setError(e.message)
     } finally {
@@ -174,7 +171,8 @@ export default function RubricManager() {
             <Info size={15} style={{ color: '#c9a84c', marginTop: 1, flexShrink: 0 }} />
             <span style={{ color: 'var(--text-secondary)' }}>
               Weights across all criteria in a phase should total 100%.
-              These criteria are used by panelists when rating student defenses.
+              These criteria are used by panelists when rating student defenses. A Re-Defense is rated
+              with the rubric of the defense being re-taken.
             </span>
           </div>
 

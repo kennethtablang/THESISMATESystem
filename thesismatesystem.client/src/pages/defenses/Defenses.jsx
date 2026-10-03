@@ -13,23 +13,29 @@ import {
   AlertCircle, CheckCircle2,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
+import { defensePhaseLabel } from '../../utils/defensePhase'
 
 // ── Phase config ──────────────────────────────────────────────────────────────
 const PHASES = {
   TitleDefense:    { label: 'Title Defense',    short: 'TD', color: '#7c3aed', bg: 'rgba(124,58,237,0.10)', border: 'rgba(124,58,237,0.25)' },
   ProposalDefense: { label: 'Proposal Defense', short: 'PD', color: '#c9a84c', bg: 'rgba(201,168,76,0.10)', border: 'rgba(201,168,76,0.25)' },
+  PreFinalDefense: { label: 'Pre-Final Defense', short: 'PFD', color: '#0891b2', bg: 'rgba(8,145,178,0.10)', border: 'rgba(8,145,178,0.25)' },
   FinalDefense:    { label: 'Final Defense',    short: 'FD', color: '#16a34a', bg: 'rgba(34,197,94,0.10)',  border: 'rgba(34,197,94,0.25)' },
+  ReDefense:       { label: 'Re-Defense',       short: 'RD', color: '#dc2626', bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.25)' },
 }
-const PHASE_KEYS = ['TitleDefense', 'ProposalDefense', 'FinalDefense']
+// The phases scheduled (and rated with their own rubric) here. A Re-Defense is scheduled from the
+// Defense Scheduler, where the defense being re-taken is chosen first.
+const PHASE_KEYS = ['TitleDefense', 'ProposalDefense', 'PreFinalDefense', 'FinalDefense']
+const FILTER_KEYS = [...PHASE_KEYS, 'ReDefense']
 
-function PhaseTag({ phase, size = 'sm' }) {
+function PhaseTag({ phase, reDefenseOf, size = 'sm' }) {
   const p = PHASES[phase]
   if (!p) return null
   const pad = size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
   return (
     <span className={`inline-flex items-center gap-1 rounded-lg font-semibold ${pad}`}
       style={{ background: p.bg, color: p.color, border: `1px solid ${p.border}` }}>
-      {p.short} {p.label}
+      {p.short} {defensePhaseLabel(phase, reDefenseOf)}
     </span>
   )
 }
@@ -180,7 +186,7 @@ export default function Defenses() {
 
   const phaseCounts = useMemo(() => {
     const counts = { All: defenses.length }
-    PHASE_KEYS.forEach(k => { counts[k] = defenses.filter(d => d.phase === k).length })
+    FILTER_KEYS.forEach(k => { counts[k] = defenses.filter(d => d.phase === k).length })
     return counts
   }, [defenses])
 
@@ -380,7 +386,7 @@ export default function Defenses() {
 
         {/* ── Phase filter + action row ─────────────────────────────────── */}
         <div className="flex items-center gap-2 mb-6 flex-wrap">
-          {['All', ...PHASE_KEYS].map(key => {
+          {['All', ...FILTER_KEYS].map(key => {
             const p   = key !== 'All' ? PHASES[key] : null
             const cnt = phaseCounts[key] ?? 0
             const active = phaseFilter === key
@@ -527,7 +533,7 @@ export default function Defenses() {
                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{selected.academicYear}</p>
                 )}
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <PhaseTag phase={selected.phase} />
+                  <PhaseTag phase={selected.phase} reDefenseOf={selected.reDefenseOf} />
                   <Badge variant={statusVariant(selected.status)} size="sm">{selected.status}</Badge>
                 </div>
               </div>
@@ -805,7 +811,7 @@ export default function Defenses() {
               style={{ background: PHASES[cancelTarget.phase]?.bg ?? 'var(--bg-subtle)', border: `1px solid ${PHASES[cancelTarget.phase]?.border ?? 'var(--border-light)'}` }}>
               <p className="font-semibold text-sm" style={{ color: 'var(--text-heading)' }}>{cancelTarget.groupName}</p>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                {PHASES[cancelTarget.phase]?.label} · {new Date(cancelTarget.scheduledDateTime).toLocaleString('en-PH', {
+                {defensePhaseLabel(cancelTarget.phase, cancelTarget.reDefenseOf)} · {new Date(cancelTarget.scheduledDateTime).toLocaleString('en-PH', {
                   weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
                 })}
               </p>
@@ -863,7 +869,7 @@ function DefenseCard({ defense, isFaculty, isAdmin, toggling, onView, onToggleRa
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1.5">
               <p className="font-semibold" style={{ color: 'var(--text-heading)' }}>{defense.groupName}</p>
-              {p && <PhaseTag phase={defense.phase} />}
+              {p && <PhaseTag phase={defense.phase} reDefenseOf={defense.reDefenseOf} />}
               <Badge variant={statusVariant(defense.status)} size="sm">{defense.status}</Badge>
               {(isActive || isCompleted) && (
                 defense.isRatingOpen

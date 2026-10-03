@@ -12,6 +12,7 @@ namespace THESISMATESystem.Server.DTOs.Response
         public int DurationMinutes { get; set; }
         public string Venue { get; set; } = string.Empty;
         public DefensePhase Phase { get; set; }
+        public DefensePhase? ReDefenseOf { get; set; }
         public DefenseStatus Status { get; set; }
         public bool IsRatingOpen { get; set; }
         public DateTime CreatedAt { get; set; }

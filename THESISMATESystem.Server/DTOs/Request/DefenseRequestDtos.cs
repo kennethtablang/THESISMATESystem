@@ -10,6 +10,8 @@ namespace THESISMATESystem.Server.DTOs.Request
         public int DurationMinutes { get; set; } = 60;
         [Required] public string Venue { get; set; } = string.Empty;
         public DefensePhase Phase { get; set; } = DefensePhase.TitleDefense;
+        // Required when Phase is ReDefense: the defense being re-taken.
+        public DefensePhase? ReDefenseOf { get; set; }
         public List<string> PanelistIds { get; set; } = [];
     }
 
@@ -19,6 +21,7 @@ namespace THESISMATESystem.Server.DTOs.Request
         public int? DurationMinutes { get; set; }
         public string? Venue { get; set; }
         public DefensePhase? Phase { get; set; }
+        public DefensePhase? ReDefenseOf { get; set; }
         public List<string>? PanelistIds { get; set; }
     }
 

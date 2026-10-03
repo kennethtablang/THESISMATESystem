@@ -13,6 +13,9 @@ namespace THESISMATESystem.Server.Models
         public int DurationMinutes { get; set; } = 60;
         public string Venue { get; set; } = string.Empty;
         public DefensePhase Phase { get; set; } = DefensePhase.TitleDefense;
+        // Only for Phase == ReDefense: which defense is being re-taken. It also decides which
+        // rubric the panel rates the re-defense with.
+        public DefensePhase? ReDefenseOf { get; set; }
         public DefenseStatus Status { get; set; } = DefenseStatus.Scheduled;
         public bool IsRatingOpen { get; set; } = false;
         public DateTime CreatedAt { get; set; } = PhilippineTime.Now;
