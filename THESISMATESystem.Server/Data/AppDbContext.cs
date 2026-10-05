@@ -22,6 +22,7 @@ namespace THESISMATESystem.Server.Data
 
         public DbSet<DocumentSubmission> DocumentSubmissions => Set<DocumentSubmission>();
         public DbSet<DocumentComment> DocumentComments => Set<DocumentComment>();
+        public DbSet<DocumentReviewDecision> DocumentReviewDecisions => Set<DocumentReviewDecision>();
         public DbSet<SystemFeature> SystemFeatures => Set<SystemFeature>();
         public DbSet<SystemFeatureComment> SystemFeatureComments => Set<SystemFeatureComment>();
         public DbSet<SystemFeatureScreenshot> SystemFeatureScreenshots => Set<SystemFeatureScreenshot>();
@@ -246,6 +247,26 @@ namespace THESISMATESystem.Server.Data
                 .WithMany(ds => ds.Comments)
                 .HasForeignKey(dc => dc.DocumentSubmissionId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<DocumentComment>(e =>
+            {
+                e.Property(c => c.Quote).HasMaxLength(2000);
+                e.Property(c => c.Prefix).HasMaxLength(200);
+            });
+
+            // One row per reviewer per document chain (keyed by the chain root).
+            builder.Entity<DocumentReviewDecision>(e =>
+            {
+                e.HasIndex(r => new { r.DocumentSubmissionId, r.ReviewerId }).IsUnique();
+                e.HasOne(r => r.DocumentSubmission)
+                 .WithMany(d => d.ReviewDecisions)
+                 .HasForeignKey(r => r.DocumentSubmissionId)
+                 .OnDelete(DeleteBehavior.Cascade);
+                e.HasOne(r => r.Reviewer)
+                 .WithMany()
+                 .HasForeignKey(r => r.ReviewerId)
+                 .OnDelete(DeleteBehavior.Restrict);
+            });
 
             // System features
             builder.Entity<SystemFeatureComment>()

@@ -31,5 +31,8 @@ namespace THESISMATESystem.Server.Models
         public DocumentSubmission? OriginalDocument { get; set; }
 
         public ICollection<DocumentComment> Comments { get; set; } = [];
+
+        // Only populated on a chain root.
+        public ICollection<DocumentReviewDecision> ReviewDecisions { get; set; } = [];
     }
 }

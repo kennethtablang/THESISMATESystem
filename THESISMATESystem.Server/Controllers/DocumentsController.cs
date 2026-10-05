@@ -144,8 +144,9 @@ namespace THESISMATESystem.Server.Controllers
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
+        // The adviser's or a standing panel member's own decision. The Admin no longer reviews.
         [HttpPatch("{id:int}/status")]
-        [Authorize(Roles = "Faculty,Admin")]
+        [Authorize(Roles = "Faculty")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateDocumentStatusRequestDto dto)
         {
             var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -157,6 +158,7 @@ namespace THESISMATESystem.Server.Controllers
             }
             catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPost("{id:int}/submit")]
@@ -171,6 +173,7 @@ namespace THESISMATESystem.Server.Controllers
             }
             catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         [HttpPost("groups/{groupId:int}/sections/{sectionKey}/finalize")]

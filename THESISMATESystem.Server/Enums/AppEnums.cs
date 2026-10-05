@@ -148,6 +148,14 @@ namespace THESISMATESystem.Server.Enums
         Approved
     }
 
+    // One adviser's / panelist's verdict on a submitted document (see DocumentReviewDecision).
+    public enum DocumentReviewStatus
+    {
+        Pending,
+        Approved,
+        NeedsRevision
+    }
+
     public enum DocumentSection
     {
         TitlePage = 1,

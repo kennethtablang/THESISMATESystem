@@ -14,6 +14,7 @@ import { PageLoader } from '../../components/ui/Spinner'
 import { documentService, groupService } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
 import DocumentCompare from '../student/DocumentCompare'
+import ReviewerDecisions from '../../components/ui/ReviewerDecisions'
 
 // ── Section definitions (matches student's DOCUMENT_SECTIONS) ─────────────────
 const DOCUMENT_SECTIONS = [
@@ -302,6 +303,15 @@ export default function ManuscriptReview() {
     return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name))
   })()
 
+  // Waiting on this user: their own adviser/panel decision is pending (revision round 6 — each
+  // reviewer decides separately and the Admin does not review). Documents submitted before
+  // per-reviewer decisions existed count while they are still under review.
+  function awaitsMe(d) {
+    const mine = d.reviews?.find(r => r.reviewerId === user?.id)
+    if (!mine) return false
+    return mine.status === 'Pending' || (mine.status == null && d.submissionStatus === 'SubmittedForReview')
+  }
+
   const filteredGroups = allGroups.filter(g =>
     g.name.toLowerCase().includes(search.trim().toLowerCase())
   )
@@ -334,7 +344,7 @@ export default function ManuscriptReview() {
   }
 
   const uploadedCount = DOCUMENT_SECTIONS.filter(s => getDocBySection(s.key)).length
-  const pendingCount  = groupDocs.filter(d => d.submissionStatus === 'SubmittedForReview').length
+  const pendingCount  = groupDocs.filter(awaitsMe).length
   const selectedGroup = allGroups.find(g => g.id === selectedGroupId)
 
   async function toggleExpand(sectionKey) {
@@ -408,7 +418,7 @@ export default function ManuscriptReview() {
               <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>No groups match.</p>
             ) : filteredGroups.map(g => {
               const sel = selectedGroupId === g.id
-              const groupPending = docs.filter(d => d.capstoneGroupId === g.id && d.submissionStatus === 'SubmittedForReview').length
+              const groupPending = docs.filter(d => d.capstoneGroupId === g.id && awaitsMe(d)).length
               return (
                 <button key={g.id} onClick={() => { setSelectedGroupId(g.id); setExpandedSection(null) }}
                   className="w-full text-left px-3 py-2.5 rounded-xl transition-all"
@@ -555,7 +565,7 @@ export default function ManuscriptReview() {
                 const isExpanded = expandedSection === section.key
                 const docVersions = doc ? (versions[doc.id] ?? null) : null
                 const isPreviewing = preview?.id === doc?.id
-                const isPending  = doc?.submissionStatus === 'SubmittedForReview'
+                const isPending  = !!doc && awaitsMe(doc)
 
                 return (
                   <div key={section.key} className="rounded-2xl overflow-hidden transition-all"
@@ -642,6 +652,7 @@ export default function ManuscriptReview() {
                                   </span>
                                 )}
                               </div>
+                              <ReviewerDecisions reviews={doc.reviews} align="start" className="mt-2" />
                             </>
                           ) : (
                             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Not yet uploaded by the group.</p>

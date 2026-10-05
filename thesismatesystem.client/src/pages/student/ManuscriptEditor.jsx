@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { manuscriptService, groupService, documentService } from '../../services/api'
+import { manuscriptService, groupService } from '../../services/api'
 import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import { PageLoader } from '../../components/ui/Spinner'
@@ -9,7 +9,7 @@ import {
   Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Image, Table as TableIcon, Save, Lock, Users, List, ListOrdered, Strikethrough,
   Wifi, WifiOff, ZoomIn, ZoomOut, Download, FileText, ChevronDown, ChevronUp,
-  Heading1, Heading2, Heading3, MessageSquare, X, Trash2, FileUp, Check, Highlighter,
+  Heading1, Heading2, Heading3, MessageSquare, X, Trash2, Check, Highlighter,
   CheckCircle2, Circle, AlertTriangle, BookMarked, ArrowLeft,
 } from 'lucide-react'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -31,7 +31,7 @@ import { CollaborativeCursors } from '../../lib/CollaborativeCursors'
 import * as Y from 'yjs'
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import { SignalRYjsProvider } from '../../lib/SignalRYjsProvider'
-import { downloadDocx, generateDocxBlob } from '../../lib/exportDocx'
+import { downloadDocx } from '../../lib/exportDocx'
 import { GrammarCheck } from '../../lib/GrammarCheckExtension'
 import { ReviewAnnotations, setReviewAnnotations, anchorForRange } from '../../lib/ReviewAnnotations'
 import {
@@ -162,7 +162,6 @@ export default function ManuscriptEditor() {
   const [ydoc, setYdoc] = useState(null)
   const [provider, setProvider] = useState(null)
   const [hubState, setHubState] = useState('disconnected') // 'connecting'|'connected'|'disconnected'
-  const [finalizing, setFinalizing] = useState(false)
   const [annotations, setAnnotations] = useState([])     // adviser/panel highlights for the open section
   const [reviewers, setReviewers] = useState([])
   const [liveHtml, setLiveHtml] = useState(null)          // composed HTML of the open section, as typed
@@ -313,26 +312,6 @@ export default function ManuscriptEditor() {
       setSaving(false)
     }
   }, [group, reviewMode])
-
-  async function handleFinalize(html, sectionLabel) {
-    if (!group?.id || finalizing || reviewMode) return
-    setFinalizing(true)
-    setSaveError('')
-    try {
-      const blob = await generateDocxBlob({
-        sections: [{ label: sectionLabel, html: html ?? '' }],
-        title: sectionLabel,
-      })
-      const fd = new FormData()
-      fd.append('file', blob, `${activeKey}.docx`)
-      await documentService.finalizeSection(group.id, activeKey, fd)
-      toast.success(`${sectionLabelOf(activeKey)} exported to Upload Documents.`)
-    } catch (err) {
-      setSaveError(err.message || 'Failed to export section.')
-    } finally {
-      setFinalizing(false)
-    }
-  }
 
   async function handleAddAnnotation(data) {
     if (!group) return false
@@ -597,8 +576,6 @@ export default function ManuscriptEditor() {
               hubState={hubState}
               allSections={sections}
               groupName={group?.groupName ?? 'Manuscript'}
-              onFinalize={reviewMode ? null : handleFinalize}
-              finalizing={finalizing}
               annotations={annotations}
               reviewers={reviewers}
               myReviewer={myReviewer}
@@ -680,7 +657,7 @@ function SubEditor({ ydoc, provider, field, placeholder, readOnly, compact, onRe
 
 function SectionPane({
   ydoc, provider, sectionKey, reviewMode, readOnly, isLocked, saving, sectionData, onSave, onLiveHtml,
-  hubState, allSections, groupName, onFinalize, finalizing, annotations, reviewers, myReviewer, myUserId,
+  hubState, allSections, groupName, annotations, reviewers, myReviewer, myUserId,
   onAddAnnotation, onDeleteAnnotation, citations,
 }) {
   const template = templateFor(sectionKey)
@@ -1275,24 +1252,6 @@ function SectionPane({
             onSection={handleExportSection} onAll={handleExportAll}
           />
 
-          {onFinalize && (
-            <button
-              className="text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0 rounded-lg font-medium transition-all"
-              onClick={() => onFinalize(compose(), sectionLabel)}
-              disabled={finalizing || saving}
-              title="Export this section to Upload Documents for adviser review"
-              style={{
-                background: 'rgba(99,102,241,0.1)',
-                color: '#6366f1',
-                border: '1px solid rgba(99,102,241,0.25)',
-                opacity: (finalizing || saving) ? 0.6 : 1,
-              }}>
-              {finalizing
-                ? <span className="w-3 h-3 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
-                : <FileUp size={12} />}
-              {finalizing ? 'Exporting…' : 'Finalize'}
-            </button>
-          )}
           <button
             className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0"
             onClick={() => { clearTimeout(autoSaveTimerRef.current); onSave(compose()) }}

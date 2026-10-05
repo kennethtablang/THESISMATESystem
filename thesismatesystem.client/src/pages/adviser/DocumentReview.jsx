@@ -11,9 +11,11 @@ import {
   ArrowLeft, ChevronLeft, ChevronRight,
   CheckCircle, AlertCircle, Clock, User, Send, MessageSquare,
   Download, FileText, Bold, Italic, Underline as UnderlineIcon,
-  Highlighter, Layers, ArrowLeftRight, BookOpen,
+  Highlighter, Layers, ArrowLeftRight, BookOpen, X, Users,
 } from 'lucide-react'
 import { documentService, groupService } from '../../services/api'
+import { anchorFromSelection, applyHighlights, scrollToHighlight, highlightsFromComments } from '../../lib/docHighlights'
+import ReviewerDecisions from '../../components/ui/ReviewerDecisions'
 import { useAuth } from '../../contexts/AuthContext'
 import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
@@ -119,10 +121,11 @@ function FormatToolbar({ editor }) {
 
 // ── Comment bubble ────────────────────────────────────────────────────────────
 
-function CommentBubble({ c }) {
+function CommentBubble({ c, color, active, onQuoteClick }) {
   const isFaculty = c.authorRole === 'Faculty'
   return (
-    <li className="flex gap-3">
+    <li id={`doc-comment-${c.id}`} className="flex gap-3 rounded-xl transition-all"
+      style={active ? { boxShadow: `0 0 0 2px ${color ?? '#c9a84c'}`, padding: 4, margin: -4 } : undefined}>
       <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
         style={{
           background: isFaculty
@@ -143,6 +146,15 @@ function CommentBubble({ c }) {
           </span>
           <span className="text-[10px] ml-auto" style={{ color: 'var(--text-muted)' }}>{formatDateTime(c.createdAt)}</span>
         </div>
+        {c.quote && (
+          <button type="button" onClick={() => onQuoteClick?.(c.id)}
+            title="Show this passage in the document"
+            className="w-full text-left text-xs italic mb-1.5 px-2.5 py-1.5 rounded-lg line-clamp-3"
+            style={{ borderLeft: `3px solid ${color ?? '#a16207'}`, background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}>
+            <Highlighter size={10} className="inline mr-1 -mt-0.5" style={{ color: color ?? '#a16207' }} />
+            “{c.quote}”
+          </button>
+        )}
         <div
           className="text-sm rounded-xl px-3 py-2.5 prose prose-sm max-w-none"
           style={{ background: 'var(--bg-subtle)', color: 'var(--text-primary)', border: '1px solid var(--border-light)' }}
@@ -155,12 +167,17 @@ function CommentBubble({ c }) {
 
 // ── Document preview pane ─────────────────────────────────────────────────────
 
-function DocPreview({ doc }) {
+// Reviewers (adviser / panel) can select text in a rendered .docx and attach a comment to it;
+// every quoted comment is drawn as a highlight in its author's colour. PDFs show in the
+// browser's own viewer, which cannot be highlighted from here.
+function DocPreview({ doc, highlights, activeHighlightId, canHighlight, onPickQuote, onHighlightClick }) {
   const containerRef = useRef(null)
   const pdfBlobRef = useRef(null)
   const [pdfUrl, setPdfUrl] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [renderTick, setRenderTick] = useState(0)
+  const [selection, setSelection] = useState(null)   // { docId, quote, prefix, rect }
 
   useEffect(() => {
     if (!doc) return
@@ -197,7 +214,7 @@ function DocPreview({ doc }) {
               useMathMLPolyfill: false,
             })
           }
-          if (!cancelled) setLoading(false)
+          if (!cancelled) { setLoading(false); setRenderTick(t => t + 1) }
         } else if (isPdf(doc.mimeType, doc.fileName)) {
           const url = URL.createObjectURL(blob)
           if (cancelled) { URL.revokeObjectURL(url); return }
@@ -222,10 +239,57 @@ function DocPreview({ doc }) {
     return () => { cancelled = true }
   }, [doc?.id])
 
+  // Redraw highlights after each render and whenever the comments change. Keyed by content:
+  // the parent rebuilds the array on every render, and redrawing rewrites the text nodes
+  // (which would drop a selection the reviewer is making).
+  const highlightKey = JSON.stringify(highlights ?? [])
+  useEffect(() => {
+    if (!renderTick || !containerRef.current) return
+    applyHighlights(containerRef.current, highlights ?? [], activeHighlightId)
+  }, [renderTick, highlightKey, activeHighlightId]) // eslint-disable-line react-hooks/exhaustive-deps -- highlightKey stands for highlights
+
+  useEffect(() => {
+    if (activeHighlightId != null) scrollToHighlight(containerRef.current, activeHighlightId)
+  }, [activeHighlightId])
+
+  function handleMouseUp() {
+    if (!canHighlight) return
+    // Let the browser settle the selection first.
+    setTimeout(() => {
+      const anchor = anchorFromSelection(containerRef.current)
+      setSelection(anchor && { ...anchor, docId: doc?.id })
+    }, 0)
+  }
+
+  function handleClick(e) {
+    const mark = e.target.closest?.('mark[data-hl]')
+    if (mark) onHighlightClick?.(Number(mark.dataset.hl))
+  }
+
   const showDocx = !pdfUrl && !error
 
   return (
     <div className="flex-1 relative overflow-hidden" style={{ background: '#f0f0f0', display: 'flex', flexDirection: 'column' }}>
+
+      {/* Floating "Highlight & comment" for the current selection */}
+      {selection?.docId === doc?.id && (
+        <button
+          type="button"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => {
+            onPickQuote?.({ quote: selection.quote, prefix: selection.prefix })
+            window.getSelection()?.removeAllRanges()
+            setSelection(null)
+          }}
+          className="fixed z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-lg"
+          style={{
+            top: Math.max(8, selection.rect.top - 40),
+            left: Math.max(8, selection.rect.left + selection.rect.width / 2 - 75),
+            background: '#0a1628', color: '#c9a84c', border: '1px solid rgba(201,168,76,0.4)',
+          }}>
+          <Highlighter size={12} /> Highlight &amp; comment
+        </button>
+      )}
 
       {/* Loading overlay — sits on top so the container div stays mounted */}
       {loading && (
@@ -270,6 +334,9 @@ function DocPreview({ doc }) {
       {/* DOCX container — always mounted so containerRef is valid when renderAsync runs */}
       <div
         ref={containerRef}
+        onMouseUp={handleMouseUp}
+        onClick={handleClick}
+        onScroll={() => selection && setSelection(null)}
         style={{
           display: showDocx ? 'block' : 'none',
           colorScheme: 'light',
@@ -306,10 +373,16 @@ export default function DocumentReview() {
   const commentsEndRef = useRef(null)
 
   const isAdmin = user?.role === 'Admin' || user?.role === 'SuperAdmin'
-  // Status changes are limited to Admins and the group's adviser on the API; other Faculty
-  // (panelists, classroom FICs) can open the document but got a 403 from these buttons.
-  // Reviewing is an Admin/adviser action; the SuperAdmin can read but not review.
-  const canReview = user?.role === 'Admin' || (user?.role === 'Faculty' && group?.adviser?.id === user?.id)
+  // Revision round 6: the adviser and every standing panel member each approve or request a
+  // revision on their own (doc.reviews). The Admin / subject teacher reads and comments only.
+  const myReview = user?.role === 'Faculty' ? doc?.reviews?.find(r => r.reviewerId === user?.id) ?? null : null
+  const canReview = !!myReview
+  // Their turn: asked and not answered yet. A reviewer with no row (submitted before this
+  // workflow, or joined the panel later) may still decide once the students have submitted.
+  const awaitingMe = canReview && (myReview.status === 'Pending'
+    || (myReview.status == null && doc.submissionStatus !== 'Draft'))
+  const [pendingQuote, setPendingQuote] = useState(null)       // { quote, prefix } for the next comment
+  const [activeHighlightId, setActiveHighlightId] = useState(null)
 
   const editor = useEditor({
     extensions: [
@@ -337,6 +410,8 @@ export default function DocumentReview() {
     setVersions([])
     setComments([])
     setCompareModal(false)
+    setPendingQuote(null)
+    setActiveHighlightId(null)
     // Only once the comment editor has mounted: on first render it exists but has no command
     // manager yet, and calling it threw — the whole Review page came up blank.
     if (editor?.isInitialized && !editor.isDestroyed) editor.commands.clearContent()
@@ -393,6 +468,10 @@ export default function DocumentReview() {
     try {
       const updated = await documentService.updateStatus(doc.id, newStatus)
       setDoc(updated)
+      if (newStatus === 'SubmittedForReview') {
+        toast.success('Your decision was taken back.')
+        return
+      }
       const autoContent = newStatus === 'Approved'
         ? 'This document has been approved.'
         : newStatus === 'NeedsRevision'
@@ -404,11 +483,9 @@ export default function DocumentReview() {
           setComments(prev => [...prev, autoComment])
         } catch { /* non-critical */ }
       }
-      toast.success(
-        newStatus === 'Approved'
-          ? 'Document approved. Students have been notified.'
-          : 'Revision requested. Students have been notified.'
-      )
+      toast.success(newStatus === 'Approved'
+        ? 'Approved. Students have been notified.'
+        : 'Revision requested. Select text in the document to highlight and comment on what needs to change.')
     } catch (e) {
       toast.error(e.message || 'Failed to update status.')
     } finally {
@@ -421,9 +498,10 @@ export default function DocumentReview() {
     const html = editor.getHTML()
     setSendingComment(true)
     try {
-      const comment = await documentService.addComment(doc.id, { content: html })
+      const comment = await documentService.addComment(doc.id, { content: html, ...(pendingQuote ?? {}) })
       setComments(prev => [...prev, comment])
       editor.commands.clearContent()
+      setPendingQuote(null)
     } catch (e) {
       toast.error(e.message || 'Failed to post comment.')
     } finally {
@@ -476,6 +554,19 @@ export default function DocumentReview() {
   )
 
   if (!doc) return null
+
+  const highlights = highlightsFromComments(comments, doc.reviews)
+  const colorOfAuthor = id => doc.reviews?.find(r => r.reviewerId === id)?.color
+
+  function focusHighlight(id) {
+    setActiveHighlightId(id)
+    document.getElementById(`doc-comment-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  function pickQuote(anchor) {
+    setPendingQuote(anchor)
+    editor?.commands.focus()
+  }
 
   const sectionLabel = doc.section ? (SECTION_LABELS[doc.section] ?? doc.section) : null
 
@@ -537,7 +628,14 @@ export default function DocumentReview() {
 
         {/* ── Left: document preview ─────────────────────────────────────── */}
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden" style={{ background: '#f5f5f0' }}>
-          <DocPreview doc={doc} />
+          <DocPreview
+            doc={doc}
+            highlights={highlights}
+            activeHighlightId={activeHighlightId}
+            canHighlight={canReview}
+            onPickQuote={pickQuote}
+            onHighlightClick={focusHighlight}
+          />
         </div>
 
         {/* ── Right: review sidebar ──────────────────────────────────────── */}
@@ -673,11 +771,24 @@ export default function DocumentReview() {
               </div>
             </div>
 
-            {/* Review actions — only for faculty/admin, only when submitted */}
-            {canReview && doc.submissionStatus === 'SubmittedForReview' && (
+            {/* ── Every reviewer's standing ── */}
+            {doc.reviews?.length > 0 && (
+              <div className="p-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                <p className="text-[10px] font-semibold mb-2 uppercase tracking-wide flex items-center gap-1.5"
+                  style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  <Users size={10} /> Adviser &amp; Panel Decisions
+                </p>
+                {doc.reviews.some(r => r.status)
+                  ? <ReviewerDecisions reviews={doc.reviews} align="start" />
+                  : <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>Not submitted for review yet.</p>}
+              </div>
+            )}
+
+            {/* Review actions — the adviser and panel members only, on their own turn */}
+            {awaitingMe && (
               <div className="p-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                 <p className="text-[10px] font-semibold mb-2 uppercase tracking-wide"
-                  style={{ color: 'rgba(255,255,255,0.35)' }}>Review Decision</p>
+                  style={{ color: 'rgba(255,255,255,0.35)' }}>Your Review Decision · {myReview.label}</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleStatusUpdate('Approved')}
@@ -707,21 +818,21 @@ export default function DocumentReview() {
               </div>
             )}
 
-            {/* Already reviewed status card */}
-            {canReview && (doc.submissionStatus === 'Approved' || doc.submissionStatus === 'NeedsRevision') && (
+            {/* This reviewer already decided */}
+            {canReview && (myReview.status === 'Approved' || myReview.status === 'NeedsRevision') && (
               <div className="mx-4 mt-4 p-3 rounded-xl"
                 style={{
-                  background: doc.submissionStatus === 'Approved' ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
-                  border: `1px solid ${doc.submissionStatus === 'Approved' ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)'}`,
+                  background: myReview.status === 'Approved' ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
+                  border: `1px solid ${myReview.status === 'Approved' ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)'}`,
                 }}>
                 <p className="text-xs font-semibold mb-0.5"
-                  style={{ color: doc.submissionStatus === 'Approved' ? '#16a34a' : '#d97706' }}>
-                  {doc.submissionStatus === 'Approved' ? 'Document Approved' : 'Revision Requested'}
+                  style={{ color: myReview.status === 'Approved' ? '#16a34a' : '#d97706' }}>
+                  {myReview.status === 'Approved' ? 'You approved this document' : 'You requested a revision'}
                 </p>
                 <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                  {doc.submissionStatus === 'Approved'
-                    ? 'This document has been approved.'
-                    : 'Students have been asked to upload a revised version.'}
+                  {myReview.status === 'Approved'
+                    ? 'It will not come back to you unless you undo this.'
+                    : 'Select text in the document to highlight and comment on what should change. The students’ resubmission comes back to you only.'}
                 </p>
                 <button
                   onClick={() => handleStatusUpdate('SubmittedForReview')}
@@ -755,7 +866,12 @@ export default function DocumentReview() {
                 </div>
               ) : (
                 <ul className="space-y-4 mb-2">
-                  {comments.map(c => <CommentBubble key={c.id} c={c} />)}
+                  {comments.map(c => (
+                    <CommentBubble key={c.id} c={c}
+                      color={colorOfAuthor(c.author?.id)}
+                      active={c.id === activeHighlightId}
+                      onQuoteClick={setActiveHighlightId} />
+                  ))}
                 </ul>
               )}
               <div ref={commentsEndRef} />
@@ -764,6 +880,21 @@ export default function DocumentReview() {
 
           {/* ── Comment input (pinned to bottom) ──────────────────────────── */}
           <div className="p-4 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.07)', background: 'var(--bg-sidebar, #0a1628)' }}>
+            {pendingQuote ? (
+              <div className="flex items-start gap-2 mb-2 px-2.5 py-1.5 rounded-lg text-xs"
+                style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)', color: 'rgba(255,255,255,0.8)' }}>
+                <Highlighter size={12} className="shrink-0 mt-0.5" style={{ color: '#c9a84c' }} />
+                <span className="flex-1 min-w-0 italic line-clamp-2">“{pendingQuote.quote}”</span>
+                <button type="button" onClick={() => setPendingQuote(null)} title="Comment without a highlight"
+                  style={{ color: 'rgba(255,255,255,0.5)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  <X size={12} />
+                </button>
+              </div>
+            ) : canReview && (
+              <p className="text-[10px] mb-1.5 flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                <Highlighter size={10} /> Select text in the document to highlight it with your comment.
+              </p>
+            )}
             <FormatToolbar editor={editor} />
             <div className="rounded-xl overflow-hidden mb-2"
               style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border-light)' }}>

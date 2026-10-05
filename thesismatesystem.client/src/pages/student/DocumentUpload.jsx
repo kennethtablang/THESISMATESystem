@@ -4,7 +4,7 @@ import DOMPurify from 'dompurify'
 import {
   Upload, MessageSquare, Download, Clock, ChevronDown, ChevronUp,
   Send, History, RefreshCw, CheckCircle, Zap, User,
-  File as FileIcon, Eye, X, AlertCircle, ArrowLeftRight, PenLine,
+  File as FileIcon, Eye, X, AlertCircle, ArrowLeftRight, PenLine, Highlighter,
 } from 'lucide-react'
 import { renderAsync } from 'docx-preview'
 import TopBar from '../../components/layout/TopBar'
@@ -13,6 +13,9 @@ import { documentService, groupService, manuscriptService } from '../../services
 import { generateDocxBlob } from '../../lib/exportDocx'
 import { toast } from '../../utils/toast'
 import DocumentCompare from './DocumentCompare'
+import ReviewerDecisions from '../../components/ui/ReviewerDecisions'
+import { revisionRequesters, reviewerNames } from '../../utils/documentReviews'
+import { applyHighlights, highlightsFromComments } from '../../lib/docHighlights'
 
 const DOCUMENT_SECTIONS = [
   { key: 1,  label: 'Title Page',        hint: 'Cover page with thesis title, authors, and institution' },
@@ -47,6 +50,13 @@ const MANUSCRIPT_KEY_MAP = {
   12: 'chapter4',
   13: 'chapter5',
   14: 'references',
+}
+
+// Whether a manuscript section has anything written beyond its sub-topic headings.
+function hasWriting(html) {
+  if (!html) return false
+  const body = html.replace(/<h2[^>]*data-subsection[^>]*>[\s\S]*?<\/h2>/gi, '')
+  return body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0
 }
 
 function normalizeDoc(doc) {
@@ -100,11 +110,26 @@ function Initials({ name, size = 22 }) {
 }
 
 // ── Preview Panel ──────────────────────────────────────────────────────────────
-function PreviewPanel({ docId, fileName, mimeType, onClose }) {
+// Shows the adviser's and panel's highlights (comments with a quote) on .docx previews.
+function PreviewPanel({ docId, fileName, mimeType, reviews, onClose }) {
   const containerRef = useRef(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [pdfUrl, setPdfUrl] = useState(null)
+  const [rendered, setRendered] = useState(false)
+  const [highlights, setHighlights] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    documentService.comments(docId)
+      .then(cs => { if (!cancelled) setHighlights(highlightsFromComments(cs, reviews)) })
+      .catch(() => {})   // the preview still works without highlights
+    return () => { cancelled = true }
+  }, [docId]) // eslint-disable-line react-hooks/exhaustive-deps -- reviews only colour the marks
+
+  useEffect(() => {
+    if (rendered && containerRef.current) applyHighlights(containerRef.current, highlights)
+  }, [rendered, highlights])
 
   useEffect(() => {
     let revokeUrl = null
@@ -128,6 +153,7 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
             ignoreWidth: true,
             ignoreHeight: true,
           })
+          if (!cancelled) setRendered(true)
         } else if (isPdf(mimeType, fileName)) {
           const url = URL.createObjectURL(blob)
           revokeUrl = url
@@ -156,6 +182,12 @@ function PreviewPanel({ docId, fileName, mimeType, onClose }) {
         <span className="flex-1 min-w-0 text-sm font-semibold truncate" style={{ color: 'var(--text-heading)' }}>
           {fileName}
         </span>
+        {highlights.length > 0 && (
+          <span className="text-[11px] flex items-center gap-1 shrink-0" style={{ color: 'var(--text-muted)' }}
+            title="Passages your adviser or panel highlighted">
+            <Highlighter size={11} /> {highlights.length}
+          </span>
+        )}
         <button onClick={onClose} className="btn-ghost p-1.5 shrink-0">
           <X size={14} />
         </button>
@@ -259,6 +291,13 @@ function CommentThread({ docId }) {
                   <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>{c.authorRole}</span>
                   <span className="text-[10px] ml-auto shrink-0" style={{ color: 'var(--text-muted)' }}>{formatDateTime(c.createdAt)}</span>
                 </div>
+                {c.quote && (
+                  <p className="text-xs italic mb-1 px-2 py-1 rounded-md"
+                    style={{ borderLeft: '3px solid #c9a84c', background: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
+                    <Highlighter size={10} className="inline mr-1 -mt-0.5" style={{ color: '#c9a84c' }} />
+                    “{c.quote}”
+                  </p>
+                )}
                 <div
                   className="text-sm leading-relaxed prose prose-sm max-w-none [&_p]:m-0 [&_p+p]:mt-1"
                   style={{ color: 'var(--text-secondary)' }}
@@ -294,6 +333,7 @@ export default function DocumentUpload() {
   const [preview, setPreview] = useState(null) // { id, fileName, mimeType }
   const [submittingId, setSubmittingId] = useState(null)
   const [compareModal, setCompareModal] = useState(null) // { versions, initialIdA, initialIdB, sectionLabel }
+  const [manuscript, setManuscript] = useState({})        // sectionKey → saved HTML
   const fileInputRefs = useRef({})
   const versionFileRefs = useRef({})
 
@@ -305,6 +345,10 @@ export default function DocumentUpload() {
       // section as "not uploaded" and invite needless re-uploads.
       .catch(err => { if (err.status !== 404) toast.error(err.message || 'An error occurred while loading your documents.') })
       .finally(() => setLoading(false))
+    // Chapters written in the Manuscript editor can be submitted straight from here.
+    manuscriptService.myGroup()
+      .then(list => setManuscript(Object.fromEntries((list ?? []).map(x => [x.sectionKey, x.content]))))
+      .catch(() => {})
   }, [])
 
   // If multiple chain-roots exist for the same section (e.g. one from a manual
@@ -328,7 +372,10 @@ export default function DocumentUpload() {
   }
 
   function openPreview(doc) {
-    setPreview({ id: doc.id, fileName: doc.fileName, mimeType: doc.mimeType })
+    // Older versions from the history list carry no reviewer list; take the section's.
+    const reviews = doc.reviews ?? docs.find(d => d.id === doc.id || d.originalDocumentId === doc.id)?.reviews
+      ?? docs.find(d => d.section === expandedSection)?.reviews
+    setPreview({ id: doc.id, fileName: doc.fileName, mimeType: doc.mimeType, reviews })
   }
 
   async function handleSectionUpload(sectionKey, file) {
@@ -367,35 +414,43 @@ export default function DocumentUpload() {
     }
   }
 
-  async function handleSubmitForReview(docId, sectionKey) {
+  // One step: for a chapter written in the Manuscript, export the current text as the next
+  // version (the server reuses a not-yet-submitted export instead of adding another), then send
+  // it — to the adviser and the whole panel the first time, afterwards only to whoever asked
+  // for a revision. There is no separate Finalize any more (revision round 6): finalizing and
+  // then submitting created two versions for one change.
+  async function handleSubmitForReview(docId, sectionKey, recipients) {
     const mKey = MANUSCRIPT_KEY_MAP[sectionKey]
-    setSubmittingId(docId)
+    setSubmittingId(docId ?? `section-${sectionKey}`)
     try {
       let finalDocId = docId
 
       if (mKey) {
-        // For manuscript sections: regenerate a proper DOCX from the latest TipTap content
         const allSections = await manuscriptService.myGroup()
         const sectionData = allSections.find(s => s.sectionKey === mKey)
-        if (sectionData?.content) {
-          const label = DOCUMENT_SECTIONS.find(s => s.key === sectionKey)?.label ?? mKey
-          const blob = await generateDocxBlob({
-            sections: [{ label, html: sectionData.content }],
-            title: label,
-          })
-          const fd = new FormData()
-          fd.append('file', blob, `${mKey}.docx`)
-          // Re-finalize: uploads the fresh DOCX and creates a new tracked version
-          const finalized = normalizeDoc(await documentService.finalizeSection(group.id, mKey, fd))
-          finalDocId = finalized.id
+        if (!hasWriting(sectionData?.content)) {
+          toast.error('Write this section in the Manuscript before submitting it.')
+          return
         }
+        const label = DOCUMENT_SECTIONS.find(s => s.key === sectionKey)?.label ?? mKey
+        const blob = await generateDocxBlob({
+          sections: [{ label, html: sectionData.content }],
+          title: label,
+        })
+        const fd = new FormData()
+        fd.append('file', blob, `${mKey}.docx`)
+        const exported = normalizeDoc(await documentService.finalizeSection(group.id, mKey, fd))
+        finalDocId = exported.id
       }
 
       await documentService.submit(finalDocId)
       // Reload the full doc list so version numbers and ids are up to date
       const freshDocs = await documentService.byGroup(group.id)
       setDocs(freshDocs.map(normalizeDoc))
-      toast.success('Submitted to your adviser for review.')
+      setVersions({})
+      toast.success(recipients?.length
+        ? `Resubmitted to ${reviewerNames(recipients)}.`
+        : 'Submitted to your adviser and panel for review.')
     } catch (err) {
       toast.error(err.message || 'Failed to submit.')
     } finally {
@@ -450,7 +505,7 @@ export default function DocumentUpload() {
         <div className="flex items-end justify-between mb-4">
           <div>
             <h2 className="page-title">Manuscript Documents</h2>
-            <p className="page-subtitle">Upload each section for your adviser to review in order</p>
+            <p className="page-subtitle">Upload each section for your adviser and panel to review in order</p>
           </div>
           <div className="text-right shrink-0 ml-4">
             <p className="text-2xl font-bold tabular-nums" style={{ color: '#c9a84c' }}>
@@ -479,9 +534,12 @@ export default function DocumentUpload() {
               const docVersions = doc ? (versions[doc.id] ?? null) : null
               const isPreviewing = preview?.id === doc?.id
               // Chapters 1–5 and References are written in the Manuscript editor, not uploaded;
-              // their entry here is the file the editor's Finalize produces.
+              // their entry here is the file exported from it when the students submit.
               const manuscriptKey = MANUSCRIPT_KEY_MAP[section.key]
               const openInManuscript = () => navigate(`/manuscript?section=${manuscriptKey}`)
+              const canSubmitWriting = !!manuscriptKey && hasWriting(manuscript[manuscriptKey])
+              const submitKey = doc?.id ?? `section-${section.key}`
+              const isSubmitting = submittingId === submitKey
 
               return (
                 <div key={section.key} className="rounded-2xl overflow-hidden transition-all"
@@ -514,7 +572,7 @@ export default function DocumentUpload() {
                           {isUploaded && doc.isAutoFinalized && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0"
                               style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
-                              <Zap size={9} /> Auto-finalized
+                              <Zap size={9} /> From Manuscript
                             </span>
                           )}
                           {isUploaded && (
@@ -584,10 +642,10 @@ export default function DocumentUpload() {
                             </button>
                           </>
                         ) : manuscriptKey ? (
-                          <button className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5"
+                          <button className={`${canSubmitWriting ? 'btn-ghost' : 'btn-primary'} text-xs px-3 py-1.5 flex items-center gap-1.5`}
                             onClick={openInManuscript}
                             title="Chapters are written in the Manuscript editor">
-                            <PenLine size={12} />Write in Manuscript
+                            <PenLine size={12} />{canSubmitWriting ? 'Edit in Manuscript' : 'Write in Manuscript'}
                           </button>
                         ) : (
                           <>
@@ -606,51 +664,67 @@ export default function DocumentUpload() {
                       </div>
                     </div>
 
-                    {/* Submit status / action — right-aligned below the main row */}
-                    {isUploaded && (() => {
-                      const st = doc.submissionStatus
-                      if (st === 'SubmittedForReview') return (
-                        <div className="flex justify-end mt-2">
+                    {/* Review status / submit action — right-aligned below the main row.
+                        Each adviser / panel decision is listed on its own; a resubmission goes
+                        only to whoever requested the revision. */}
+                    {(isUploaded || canSubmitWriting) && (() => {
+                      const st = doc?.submissionStatus ?? 'Draft'
+                      const reviews = doc?.reviews ?? []
+                      const anyDecision = reviews.some(r => r.status)
+                      const askBack = revisionRequesters(reviews)
+                      const submitLabel = askBack.length
+                        ? `Resubmit to ${reviewerNames(askBack)}`
+                        : 'Submit to Adviser and Panels'
+                      const submitButton = (
+                        <button
+                          onClick={() => handleSubmitForReview(doc?.id ?? null, section.key, askBack)}
+                          disabled={isSubmitting}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0"
+                          style={{
+                            background: 'rgba(99,102,241,0.1)', color: '#6366f1',
+                            border: '1px solid rgba(99,102,241,0.25)',
+                            opacity: isSubmitting ? 0.6 : 1,
+                            cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                          }}>
+                          {isSubmitting
+                            ? <span className="w-3 h-3 border-2 rounded-full animate-spin"
+                                style={{ borderColor: 'rgba(99,102,241,0.3)', borderTopColor: '#6366f1' }} />
+                            : <Send size={11} />}
+                          {isSubmitting ? 'Submitting…' : submitLabel}
+                        </button>
+                      )
+                      const chip = (Icon, label, color, bg) => (
+                        <div className="flex justify-end">
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                            style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.2)' }}>
-                            <Send size={10} /> Submitted for Review
+                            style={{ background: bg, color, border: `1px solid ${bg.replace('0.1)', '0.2)')}` }}>
+                            <Icon size={10} /> {label}
                           </div>
                         </div>
                       )
-                      if (st === 'Approved') return (
-                        <div className="flex justify-end mt-2">
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                            style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a', border: '1px solid rgba(34,197,94,0.2)' }}>
-                            <CheckCircle size={10} /> Approved
-                          </div>
-                        </div>
-                      )
-                      if (st === 'NeedsRevision') return (
-                        <div className="flex justify-end mt-2">
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                            style={{ background: 'rgba(245,158,11,0.1)', color: '#d97706', border: '1px solid rgba(245,158,11,0.2)' }}>
-                            <AlertCircle size={10} /> Needs Revision — {manuscriptKey ? 'revise it in the Manuscript' : 'upload a new version'}
-                          </div>
-                        </div>
-                      )
+
                       return (
-                        <div className="flex justify-end mt-2">
-                          <button
-                            onClick={() => handleSubmitForReview(doc.id, section.key)}
-                            disabled={submittingId === doc.id}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
-                            style={{
-                              background: 'rgba(99,102,241,0.1)', color: '#6366f1',
-                              border: '1px solid rgba(99,102,241,0.25)',
-                              opacity: submittingId === doc.id ? 0.6 : 1,
-                              cursor: submittingId === doc.id ? 'not-allowed' : 'pointer',
-                            }}>
-                            {submittingId === doc.id
-                              ? <span className="w-3 h-3 border-2 rounded-full animate-spin"
-                                  style={{ borderColor: 'rgba(99,102,241,0.3)', borderTopColor: '#6366f1' }} />
-                              : <Send size={11} />}
-                            {submittingId === doc.id ? 'Submitting…' : 'Finalize & Submit to Adviser'}
-                          </button>
+                        <div className="mt-2 space-y-2">
+                          <ReviewerDecisions reviews={reviews} />
+
+                          {/* Documents reviewed before per-reviewer decisions existed */}
+                          {!anyDecision && st === 'SubmittedForReview' && chip(Send, 'Submitted for Review', '#6366f1', 'rgba(99,102,241,0.1)')}
+                          {!anyDecision && st === 'Approved' && chip(CheckCircle, 'Approved', '#16a34a', 'rgba(34,197,94,0.1)')}
+
+                          {st === 'Approved' && anyDecision && chip(CheckCircle, 'Approved by the adviser and panel', '#16a34a', 'rgba(34,197,94,0.1)')}
+
+                          {st === 'NeedsRevision' && (
+                            <div className="flex items-center justify-end gap-2 flex-wrap">
+                              <span className="text-[11px] flex items-center gap-1" style={{ color: '#d97706' }}>
+                                <AlertCircle size={11} />
+                                {manuscriptKey
+                                  ? 'Revise it in the Manuscript, then resubmit.'
+                                  : 'Upload a corrected version below, then resubmit.'}
+                              </span>
+                              {manuscriptKey && submitButton}
+                            </div>
+                          )}
+
+                          {st === 'Draft' && <div className="flex justify-end">{submitButton}</div>}
                         </div>
                       )
                     })()}
@@ -741,7 +815,7 @@ export default function DocumentUpload() {
                               <PenLine size={12} /> Revise in Manuscript
                             </button>
                             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                              Edit the chapter in the Manuscript editor, then press Finalize there to add a new version here.
+                              Make the changes in the Manuscript editor, then come back here and press Resubmit — it becomes the next version.
                             </p>
                           </div>
                         ) : (
@@ -785,7 +859,7 @@ export default function DocumentUpload() {
                 <CheckCircle size={20} style={{ color: '#16a34a', flexShrink: 0 }} />
                 <div>
                   <p className="font-semibold text-sm" style={{ color: '#16a34a' }}>All 15 sections uploaded</p>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Your adviser will review each document in the listed order.</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Your adviser and panel will review each document in the listed order.</p>
                 </div>
               </div>
             )}
@@ -799,6 +873,7 @@ export default function DocumentUpload() {
                 docId={preview.id}
                 fileName={preview.fileName}
                 mimeType={preview.mimeType}
+                reviews={preview.reviews}
                 onClose={() => setPreview(null)}
               />
             </div>

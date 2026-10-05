@@ -16,6 +16,10 @@ namespace THESISMATESystem.Server.DTOs.Request
     {
         // Rich-text HTML from the review editor, hence the larger cap.
         [Required, MaxLength(20000)] public string Content { get; set; } = string.Empty;
+
+        // Set when the comment is attached to highlighted text in the document preview.
+        [MaxLength(2000)] public string? Quote { get; set; }
+        [MaxLength(200)] public string? Prefix { get; set; }
     }
 
     public class UpdateDocumentCommentRequestDto

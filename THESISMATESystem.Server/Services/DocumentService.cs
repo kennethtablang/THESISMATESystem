@@ -18,9 +18,12 @@ namespace THESISMATESystem.Server.Services
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly INotificationService _notifications;
         private readonly IGroupAccessChecker _groupAccess;
+        private readonly IManuscriptService _manuscript;
 
-        public DocumentService(AppDbContext db, IWebHostEnvironment env, UserManager<ApplicationUser> userManager, INotificationService notifications, IGroupAccessChecker groupAccess)
+        public DocumentService(AppDbContext db, IWebHostEnvironment env, UserManager<ApplicationUser> userManager, INotificationService notifications, IGroupAccessChecker groupAccess,
+            IManuscriptService manuscript)
         {
+            _manuscript = manuscript;
             _db = db;
             _env = env;
             _userManager = userManager;
@@ -161,7 +164,7 @@ namespace THESISMATESystem.Server.Services
                 .OrderByDescending(d => d.Version)
                 .ToListAsync();
 
-            return BuildLatestPerChain(all);
+            return await AttachReviewsAsync(BuildLatestPerChain(all));
         }
 
         // The staff document list: every group the caller may open — for an Admin the groups of
@@ -180,10 +183,10 @@ namespace THESISMATESystem.Server.Services
                 .OrderByDescending(d => d.Version)
                 .ToListAsync();
 
-            return BuildLatestPerChain(all);
+            return await AttachReviewsAsync(BuildLatestPerChain(all));
         }
 
-        private static IEnumerable<DocumentSubmissionResponseDto> BuildLatestPerChain(List<DocumentSubmission> all)
+        private static List<DocumentSubmissionResponseDto> BuildLatestPerChain(List<DocumentSubmission> all)
         {
             // Count versions per chain (keyed by root id)
             var versionCounts = all
@@ -195,7 +198,8 @@ namespace THESISMATESystem.Server.Services
                 .GroupBy(d => d.OriginalDocumentId ?? d.Id)
                 .Select(g => g.OrderByDescending(d => d.Version).First())
                 .OrderByDescending(d => d.SubmittedAt)
-                .Select(d => MapToDtoWithMeta(d, versionCounts.GetValueOrDefault(d.OriginalDocumentId ?? d.Id, 1)));
+                .Select(d => MapToDtoWithMeta(d, versionCounts.GetValueOrDefault(d.OriginalDocumentId ?? d.Id, 1)))
+                .ToList();
         }
 
         public async Task<DocumentSubmissionResponseDto?> GetDocumentByIdAsync(int id, string callerId, string callerRole)
@@ -216,7 +220,7 @@ namespace THESISMATESystem.Server.Services
             var totalVersions = await _db.DocumentSubmissions
                 .CountAsync(d => d.Id == rootId || d.OriginalDocumentId == rootId);
 
-            return MapToDtoWithMeta(doc, totalVersions);
+            return (await AttachReviewsAsync([MapToDtoWithMeta(doc, totalVersions)]))[0];
         }
 
         public async Task<(string Path, string FileName)> GetDownloadInfoAsync(int id, string callerId, string callerRole)
@@ -238,11 +242,14 @@ namespace THESISMATESystem.Server.Services
             if (!await _groupAccess.CanAccessGroupAsync(authorId, authorRole, doc.CapstoneGroupId))
                 throw new UnauthorizedAccessException();
 
+            var quote = string.IsNullOrWhiteSpace(dto.Quote) ? null : dto.Quote;
             var comment = new DocumentComment
             {
                 DocumentSubmissionId = documentId,
                 AuthorId = authorId,
-                Content = dto.Content
+                Content = dto.Content,
+                Quote = quote,
+                Prefix = quote is null ? null : dto.Prefix,
             };
 
             _db.DocumentComments.Add(comment);
@@ -276,6 +283,8 @@ namespace THESISMATESystem.Server.Services
                     Author = new UserSummaryDto { Id = c.Author.Id, FullName = $"{c.Author.FirstName} {c.Author.LastName}" },
                     AuthorRole = roles.FirstOrDefault() ?? string.Empty,
                     Content = c.Content,
+                    Quote = c.Quote,
+                    Prefix = c.Prefix,
                     CreatedAt = c.CreatedAt,
                     UpdatedAt = c.UpdatedAt
                 });
@@ -319,7 +328,7 @@ namespace THESISMATESystem.Server.Services
             var totalVersions = await _db.DocumentSubmissions
                 .CountAsync(d => d.Id == rootId || d.OriginalDocumentId == rootId);
 
-            return MapToDtoWithMeta(submission, totalVersions);
+            return (await AttachReviewsAsync([MapToDtoWithMeta(submission, totalVersions)]))[0];
         }
 
         private async Task<DocumentCommentResponseDto> BuildCommentResponseAsync(DocumentComment comment)
@@ -333,6 +342,8 @@ namespace THESISMATESystem.Server.Services
                 Author = new UserSummaryDto { Id = comment.Author.Id, FullName = $"{comment.Author.FirstName} {comment.Author.LastName}" },
                 AuthorRole = roles.FirstOrDefault() ?? string.Empty,
                 Content = comment.Content,
+                Quote = comment.Quote,
+                Prefix = comment.Prefix,
                 CreatedAt = comment.CreatedAt,
                 UpdatedAt = comment.UpdatedAt
             };
@@ -479,6 +490,26 @@ namespace THESISMATESystem.Server.Services
                 .Where(d => d.CapstoneGroupId == groupId && d.Section == docSection && d.OriginalDocumentId == null)
                 .FirstOrDefaultAsync();
 
+            // The latest version was exported but never submitted: replace its file instead of
+            // stacking another version with the same content. Exporting and then submitting used
+            // to add two versions for one change (revision round 6).
+            if (existingRoot is not null)
+            {
+                var latest = await LatestInChainAsync(existingRoot.Id);
+                if (latest.SubmissionStatus == DocumentSubmissionStatus.Draft)
+                {
+                    if (File.Exists(latest.FilePath)) File.Delete(latest.FilePath);
+                    latest.FilePath = destPath;
+                    latest.FileName = fileName;
+                    latest.FileSize = fileInfo.Length;
+                    latest.MimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                    latest.SubmittedById = userId;
+                    latest.SubmittedAt = PhilippineTime.Now;
+                    await _db.SaveChangesAsync();
+                    return await BuildDocumentResponseAsync(latest);
+                }
+            }
+
             DocumentSubmission submission;
             if (existingRoot is not null)
             {
@@ -524,12 +555,15 @@ namespace THESISMATESystem.Server.Services
             return await BuildDocumentResponseAsync(submission);
         }
 
+        // ── Review workflow (revision round 6) ──────────────────────────────────
+        // A submission goes to the adviser and every standing panel member at once; each gives
+        // their own Approve / Request Revision. Approvals carry over to later versions, so a
+        // resubmission is only sent back to whoever asked for the revision.
+
         public async Task<DocumentSubmissionResponseDto> SubmitForReviewAsync(int documentId, string userId)
         {
             var doc = await _db.DocumentSubmissions
-                .Include(d => d.SubmittedBy)
                 .Include(d => d.CapstoneGroup)
-                .Include(d => d.Comments)
                 .FirstOrDefaultAsync(d => d.Id == documentId)
                 ?? throw new KeyNotFoundException("Document not found.");
 
@@ -538,69 +572,196 @@ namespace THESISMATESystem.Server.Services
             if (!isMember)
                 throw new UnauthorizedAccessException("You are not a member of this group.");
 
-            doc.SubmissionStatus = DocumentSubmissionStatus.SubmittedForReview;
+            var rootId = doc.OriginalDocumentId ?? doc.Id;
+            var latest = await LatestInChainAsync(rootId);
+            if (latest.Id != doc.Id)
+                throw new InvalidOperationException("Only the latest version can be submitted.");
+            if (latest.SubmissionStatus == DocumentSubmissionStatus.SubmittedForReview)
+                throw new InvalidOperationException("This document is already waiting for review.");
+
+            var reviewers = await _manuscript.GetReviewersAsync(doc.CapstoneGroupId);
+            if (reviewers.Count == 0)
+                throw new InvalidOperationException("Your group has no adviser or panel yet, so there is no one to submit to.");
+
+            var rows = await _db.DocumentReviewDecisions.Where(r => r.DocumentSubmissionId == rootId).ToListAsync();
+            var hadDecisions = rows.Count > 0;
+            var askedNow = new List<string>();
+            foreach (var reviewer in reviewers)
+            {
+                var row = rows.FirstOrDefault(r => r.ReviewerId == reviewer.UserId);
+                if (row is null)
+                {
+                    row = new DocumentReviewDecision { DocumentSubmissionId = rootId, ReviewerId = reviewer.UserId };
+                    _db.DocumentReviewDecisions.Add(row);
+                    rows.Add(row);
+                }
+                else if (row.Status == DocumentReviewStatus.Approved)
+                {
+                    continue;   // already approved — not asked again
+                }
+                else if (row.Status == DocumentReviewStatus.Pending)
+                {
+                    row.ReviewedVersion = latest.Version;   // still waiting; now looks at the newer version
+                    continue;
+                }
+
+                row.Status = DocumentReviewStatus.Pending;
+                row.ReviewedVersion = latest.Version;
+                row.RequestedAt = PhilippineTime.Now;
+                row.DecidedAt = null;
+                askedNow.Add(reviewer.UserId);
+            }
+
+            var current = reviewers.Select(r => r.UserId).ToHashSet();
+            var status = AggregateStatus(rows.Where(r => current.Contains(r.ReviewerId)));
+            if (status == DocumentSubmissionStatus.Approved)
+                throw new InvalidOperationException("This document is already approved by your adviser and panel.");
+
+            latest.SubmissionStatus = status;
             await _db.SaveChangesAsync();
 
-            // Notify the group's adviser
-            var group = await _db.CapstoneGroups.FindAsync(doc.CapstoneGroupId);
-            if (group is not null && !string.IsNullOrEmpty(group.AdviserId))
+            var groupName = doc.CapstoneGroup?.GroupName ?? "A group";
+            foreach (var reviewerId in askedNow)
             {
                 await _notifications.SendAsync(
-                    group.AdviserId,
-                    $"{doc.CapstoneGroup?.GroupName ?? "A group"} submitted \"{doc.Title}\" (v{doc.Version}) for your review.",
+                    reviewerId,
+                    hadDecisions
+                        ? $"{groupName} resubmitted \"{doc.Title}\" (v{latest.Version}) with the revisions you requested."
+                        : $"{groupName} submitted \"{doc.Title}\" (v{latest.Version}) for your review.",
                     NotificationType.DocumentSubmitted,
                     groupId: doc.CapstoneGroupId);
             }
 
-            var rootId = doc.OriginalDocumentId ?? doc.Id;
-            var totalVersions = await _db.DocumentSubmissions
-                .CountAsync(d => d.Id == rootId || d.OriginalDocumentId == rootId);
-
-            return MapToDtoWithMeta(doc, totalVersions);
+            return (await GetDocumentByIdAsync(latest.Id, userId, "Student"))!;
         }
 
+        // Only the group's adviser and its standing panel decide; the Admin (subject teacher) can
+        // read and comment but not approve or send a document back.
+        // newStatus: Approved, NeedsRevision, or SubmittedForReview to take one's decision back.
         public async Task<DocumentSubmissionResponseDto> UpdateDocumentStatusAsync(int documentId, string callerId, string callerRole, DocumentSubmissionStatus newStatus)
         {
+            if (callerRole != "Faculty")
+                throw new UnauthorizedAccessException("Only the adviser and the panel can approve or request a revision.");
+
             var doc = await _db.DocumentSubmissions
-                .Include(d => d.SubmittedBy)
                 .Include(d => d.CapstoneGroup)
-                .Include(d => d.Comments)
                 .FirstOrDefaultAsync(d => d.Id == documentId)
                 ?? throw new KeyNotFoundException("Document not found.");
 
-            // Admins can update any document. Faculty must be the group's adviser.
-            if (callerRole == "Faculty")
-            {
-                var advises = await _db.CapstoneGroups
-                    .AnyAsync(g => g.Id == doc.CapstoneGroupId && g.AdviserId == callerId);
-                if (!advises)
-                    throw new UnauthorizedAccessException("You are not the adviser of this group.");
-            }
-            else if (callerRole is not ("Admin" or "SuperAdmin"))
-            {
-                throw new UnauthorizedAccessException("Insufficient permissions.");
-            }
-
-            doc.SubmissionStatus = newStatus;
-            await _db.SaveChangesAsync();
-
-            // Notify group members
-            var statusLabel = newStatus switch
-            {
-                DocumentSubmissionStatus.Approved      => "approved",
-                DocumentSubmissionStatus.NeedsRevision => "marked for revision",
-                _                                      => newStatus.ToString().ToLower(),
-            };
-            await _notifications.SendToGroupMembersAsync(
-                doc.CapstoneGroupId,
-                $"Your document \"{doc.Title}\" has been {statusLabel} by your adviser.",
-                NotificationType.DocumentStatusUpdated);
+            var reviewers = await _manuscript.GetReviewersAsync(doc.CapstoneGroupId);
+            var me = reviewers.FirstOrDefault(r => r.UserId == callerId)
+                ?? throw new UnauthorizedAccessException("You are not the adviser or a panel member of this group.");
 
             var rootId = doc.OriginalDocumentId ?? doc.Id;
-            var totalVersions = await _db.DocumentSubmissions
-                .CountAsync(d => d.Id == rootId || d.OriginalDocumentId == rootId);
+            var latest = await LatestInChainAsync(rootId);
+            var rows = await _db.DocumentReviewDecisions.Where(r => r.DocumentSubmissionId == rootId).ToListAsync();
+            var row = rows.FirstOrDefault(r => r.ReviewerId == callerId);
 
-            return MapToDtoWithMeta(doc, totalVersions);
+            if (row is null && latest.SubmissionStatus == DocumentSubmissionStatus.Draft)
+                throw new InvalidOperationException("The students have not submitted this document yet.");
+
+            // Submitted before per-reviewer decisions existed, or a reviewer joined the panel
+            // after the submission: everyone without a row is still owed a decision, so they get
+            // a pending one — otherwise the first approval alone would read as fully approved.
+            if (latest.SubmissionStatus != DocumentSubmissionStatus.Draft)
+            {
+                foreach (var missing in reviewers.Where(r => rows.All(x => x.ReviewerId != r.UserId)))
+                {
+                    var pending = new DocumentReviewDecision
+                    {
+                        DocumentSubmissionId = rootId,
+                        ReviewerId = missing.UserId,
+                        ReviewedVersion = latest.Version,
+                    };
+                    _db.DocumentReviewDecisions.Add(pending);
+                    rows.Add(pending);
+                }
+            }
+            row ??= rows.First(r => r.ReviewerId == callerId);
+
+            row.Status = newStatus switch
+            {
+                DocumentSubmissionStatus.Approved           => DocumentReviewStatus.Approved,
+                DocumentSubmissionStatus.NeedsRevision      => DocumentReviewStatus.NeedsRevision,
+                DocumentSubmissionStatus.SubmittedForReview => DocumentReviewStatus.Pending,
+                _ => throw new InvalidOperationException("Choose Approve or Request Revision."),
+            };
+            row.ReviewedVersion = latest.Version;
+            row.DecidedAt = row.Status == DocumentReviewStatus.Pending ? null : PhilippineTime.Now;
+
+            var current = reviewers.Select(r => r.UserId).ToHashSet();
+            // A new version the students have not sent yet stays a draft.
+            if (latest.SubmissionStatus != DocumentSubmissionStatus.Draft)
+                latest.SubmissionStatus = AggregateStatus(rows.Where(r => current.Contains(r.ReviewerId)));
+            await _db.SaveChangesAsync();
+
+            if (row.Status != DocumentReviewStatus.Pending)
+            {
+                var who = me.Label == "Adviser" ? "Your adviser" : $"Panel member {me.FullName}";
+                var what = row.Status == DocumentReviewStatus.Approved ? "approved" : "requested a revision on";
+                var tail = latest.SubmissionStatus == DocumentSubmissionStatus.Approved
+                    ? " It is now approved by your adviser and the whole panel."
+                    : string.Empty;
+                await _notifications.SendToGroupMembersAsync(
+                    doc.CapstoneGroupId,
+                    $"{who} {what} \"{doc.Title}\" (v{latest.Version}).{tail}",
+                    NotificationType.DocumentStatusUpdated);
+            }
+
+            return (await GetDocumentByIdAsync(documentId, callerId, callerRole))!;
+        }
+
+        // Any revision request → the students must revise; otherwise anyone still pending →
+        // under review; everyone approved → approved.
+        private static DocumentSubmissionStatus AggregateStatus(IEnumerable<DocumentReviewDecision> rows)
+        {
+            var list = rows.ToList();
+            if (list.Any(r => r.Status == DocumentReviewStatus.NeedsRevision)) return DocumentSubmissionStatus.NeedsRevision;
+            if (list.Count == 0 || list.Any(r => r.Status == DocumentReviewStatus.Pending)) return DocumentSubmissionStatus.SubmittedForReview;
+            return DocumentSubmissionStatus.Approved;
+        }
+
+        private Task<DocumentSubmission> LatestInChainAsync(int rootId) =>
+            _db.DocumentSubmissions
+                .Where(d => d.Id == rootId || d.OriginalDocumentId == rootId)
+                .OrderByDescending(d => d.Version)
+                .FirstAsync();
+
+        // Fills in each document's reviewer list: the group's adviser and standing panel (same
+        // order, labels and colours as the manuscript highlights) with their decision rows.
+        private async Task<List<DocumentSubmissionResponseDto>> AttachReviewsAsync(List<DocumentSubmissionResponseDto> dtos)
+        {
+            if (dtos.Count == 0) return dtos;
+
+            var reviewersByGroup = new Dictionary<int, List<ManuscriptReviewerDto>>();
+            foreach (var groupId in dtos.Select(d => d.CapstoneGroupId).Distinct())
+                reviewersByGroup[groupId] = await _manuscript.GetReviewersAsync(groupId);
+
+            var rootIds = dtos.Select(d => d.OriginalDocumentId ?? d.Id).Distinct().ToList();
+            var rows = await _db.DocumentReviewDecisions
+                .Where(r => rootIds.Contains(r.DocumentSubmissionId))
+                .ToListAsync();
+
+            foreach (var dto in dtos)
+            {
+                var rootId = dto.OriginalDocumentId ?? dto.Id;
+                dto.Reviews = reviewersByGroup[dto.CapstoneGroupId].Select(r =>
+                {
+                    var row = rows.FirstOrDefault(x => x.DocumentSubmissionId == rootId && x.ReviewerId == r.UserId);
+                    return new DocumentReviewerDecisionDto
+                    {
+                        ReviewerId = r.UserId,
+                        FullName = r.FullName,
+                        Label = r.Label,
+                        IsAdviser = r.Label == "Adviser",
+                        Color = r.Color,
+                        Status = row?.Status,
+                        ReviewedVersion = row?.ReviewedVersion,
+                        DecidedAt = row?.DecidedAt,
+                    };
+                }).ToList();
+            }
+            return dtos;
         }
 
         private static DocumentSubmissionResponseDto MapToDtoWithMeta(DocumentSubmission d, int totalVersions) => new()

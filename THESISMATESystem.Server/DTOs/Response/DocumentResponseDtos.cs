@@ -23,6 +23,23 @@ namespace THESISMATESystem.Server.DTOs.Response
         public DocumentSection? Section { get; set; }
         public bool IsAutoFinalized { get; set; }
         public DocumentSubmissionStatus SubmissionStatus { get; set; }
+
+        // The adviser and every standing panel member of the group, each with their standing on
+        // this document chain. Status is null for a reviewer who has not been asked yet.
+        public List<DocumentReviewerDecisionDto> Reviews { get; set; } = [];
+    }
+
+    public class DocumentReviewerDecisionDto
+    {
+        public string ReviewerId { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        // "Adviser", "Panel Chair" or "Panel N" — same labels and colours as manuscript highlights.
+        public string Label { get; set; } = string.Empty;
+        public bool IsAdviser { get; set; }
+        public string Color { get; set; } = string.Empty;
+        public DocumentReviewStatus? Status { get; set; }
+        public int? ReviewedVersion { get; set; }
+        public DateTime? DecidedAt { get; set; }
     }
 
     public class DocumentVersionDto
@@ -42,6 +59,8 @@ namespace THESISMATESystem.Server.DTOs.Response
         public UserSummaryDto Author { get; set; } = null!;
         public string AuthorRole { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
+        public string? Quote { get; set; }
+        public string? Prefix { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
