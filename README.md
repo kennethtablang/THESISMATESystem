@@ -5,19 +5,27 @@ with a React + Vite client (`thesismatesystem.client`).
 
 ## First-time setup
 
-The JWT signing key and the SMTP credentials are **not** in `appsettings.json` — they are secrets,
-and a committed Gmail app password is a live credential for anyone with repo access. Each developer
-sets them locally, once, and they persist across `git clean` and branch switches.
+The development JWT key and the SMTP credentials are committed in
+`THESISMATESystem.Server/appsettings.Development.json`, so a fresh clone sends email with no extra
+setup when run in Development. This repository is public, so treat that Gmail app password as
+exposed: if it is revoked, generate a new one and update that file.
 
-Run from `THESISMATESystem.Server/`:
+To override them on one machine without touching the committed file, run from
+`THESISMATESystem.Server/` (user-secrets take precedence over `appsettings.Development.json`):
 
 ```bash
 dotnet user-secrets set "Jwt:Key" "<a long random string, 32+ characters>"
-dotnet user-secrets set "Email:Username" "noreply.thesismate.system@gmail.com"
+dotnet user-secrets set "Email:Username" "noreply.thesismate.systempsu@gmail.com"
 dotnet user-secrets set "Email:Password" "<16-character Gmail app password>"
 ```
 
 Check what is configured with `dotnet user-secrets list`.
+
+A fresh clone has none of these — user-secrets live in
+`%APPDATA%\Microsoft\UserSecrets\8c6c816b-abb6-4934-9cac-4c72caecf331\secrets.json`, outside the
+repository. Get the app password from the project owner over a private channel (not GitHub), or copy
+that `secrets.json` file to the same path on the new machine. Without it the app still runs in
+Development, but no email (verification, 2FA, password reset, notifications) is delivered.
 
 In production, supply the same values as environment variables instead —
 `Jwt__Key`, `Email__Username`, `Email__Password` (double underscore, not colon).
