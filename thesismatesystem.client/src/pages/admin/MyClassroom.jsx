@@ -4,7 +4,7 @@ import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import { PageLoader } from '../../components/ui/Spinner'
 import {
-  School, Plus, ListChecks, Users, Trash2, Search, UserPlus, CheckCircle2,
+  School, Plus, ListChecks, Users, Trash2, Search, CheckCircle2,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import { STUDENT_ID_EXAMPLE, isValidStudentId } from '../../utils/studentId'
@@ -40,12 +40,6 @@ export default function MyClassroom() {
   const [showImport, setShowImport] = useState(false)
   const [importText, setImportText] = useState('')
   const [importing,  setImporting]  = useState(false)
-
-  // Assign existing students that have no block yet (accounts made before blocks existed)
-  const [showAssign, setShowAssign] = useState(false)
-  const [unassigned, setUnassigned] = useState([])
-  const [picked,     setPicked]     = useState(new Set())
-  const [assigning,  setAssigning]  = useState(false)
 
   const activeId = useRef(null)
 
@@ -121,32 +115,6 @@ export default function MyClassroom() {
       setSelected(s => s && { ...s, rosterCount: s.rosterCount - 1 })
     } catch (err) {
       toast.error(err.message || 'Failed to remove entry.')
-    }
-  }
-
-  async function openAssign() {
-    setPicked(new Set())
-    setShowAssign(true)
-    try {
-      const data = await sectionService.unassignedStudents()
-      setUnassigned(Array.isArray(data) ? data : [])
-    } catch (err) {
-      toast.error(err.message || 'Failed to load students.')
-    }
-  }
-
-  async function assignPicked() {
-    if (picked.size === 0) return
-    setAssigning(true)
-    try {
-      await sectionService.assignStudents(selected.id, [...picked])
-      toast.success(`${picked.size} student${picked.size !== 1 ? 's' : ''} added to ${selected.name}.`)
-      setShowAssign(false)
-      await loadBlocks(selected.id)
-    } catch (err) {
-      toast.error(err.message || 'Failed to assign students.')
-    } finally {
-      setAssigning(false)
     }
   }
 
@@ -236,9 +204,9 @@ export default function MyClassroom() {
               <input type="text" className="form-input pl-8 text-xs py-1.5" style={{ width: 180 }}
                 placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            {tab === 'roster'
-              ? <button className="btn-primary text-xs" onClick={() => { setImportText(''); setShowImport(true) }}><Plus size={12} /> Add IDs</button>
-              : <button className="btn-secondary text-xs" onClick={openAssign}><UserPlus size={12} /> Add existing</button>}
+            {tab === 'roster' && (
+              <button className="btn-primary text-xs" onClick={() => { setImportText(''); setShowImport(true) }}><Plus size={12} /> Add IDs</button>
+            )}
           </div>
         </div>
 
@@ -330,38 +298,6 @@ export default function MyClassroom() {
         <textarea className="form-input font-mono text-xs" rows={10} value={importText}
           placeholder={'23-LN-5825, Juan Dela Cruz\n23-LN-5826, Maria Santos'}
           onChange={e => setImportText(e.target.value)} />
-      </Modal>
-
-      {/* ── Add existing students with no block ─────────────── */}
-      <Modal open={showAssign} onClose={() => setShowAssign(false)} title={`Add students to ${selected.name}`} size="md"
-        footer={<>
-          <button className="btn-secondary" onClick={() => setShowAssign(false)}>Cancel</button>
-          <button className="btn-primary" onClick={assignPicked} disabled={assigning || picked.size === 0}>
-            {assigning ? 'Adding…' : `Add ${picked.size || ''}`}
-          </button>
-        </>}>
-        <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-          Existing student accounts that have no block yet. New registrations join your block when you approve them.
-        </p>
-        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-light)', maxHeight: 340, overflowY: 'auto' }}>
-          {unassigned.length === 0 ? (
-            <p className="px-5 py-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Every student already has a block.</p>
-          ) : unassigned.map((s, idx) => (
-            <label key={s.id} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer"
-              style={{ borderBottom: idx < unassigned.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-              <input type="checkbox" checked={picked.has(s.id)}
-                onChange={() => setPicked(prev => {
-                  const next = new Set(prev)
-                  next.has(s.id) ? next.delete(s.id) : next.add(s.id)
-                  return next
-                })} />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{s.fullName}</p>
-                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{s.studentId ? `ID: ${s.studentId} · ` : ''}{s.email}</p>
-              </div>
-            </label>
-          ))}
-        </div>
       </Modal>
     </div>
   )

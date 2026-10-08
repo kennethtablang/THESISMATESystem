@@ -36,7 +36,7 @@ import { GrammarCheck } from '../../lib/GrammarCheckExtension'
 import { ReviewAnnotations, setReviewAnnotations, anchorForRange } from '../../lib/ReviewAnnotations'
 import {
   templateFor, chapterNumber, composeChapterHtml, completionFromHtml, checkCitations,
-  htmlToText, LEGACY_FIELD,
+  htmlToText, LEGACY_FIELD, SUBTOPIC_TITLES_MAP, defaultSubtopicTitle,
 } from '../../lib/chapterTemplates'
 
 // Custom FontSize extension (free alternative to @tiptap-pro/extension-font-size)
@@ -704,16 +704,37 @@ function SectionPane({
   const prevSavingRef = useRef(false)
   const [recentlySaved, setRecentlySaved] = useState(false)
 
-  // Fields shown: the earlier whole-chapter draft (only while it still has text), then each sub-topic.
+  // Titles the students give editable sub-topics (Chapter 2's SOP/RRL topics), shared live via Yjs
+  const titlesMap = useMemo(() => ydoc?.getMap(SUBTOPIC_TITLES_MAP) ?? null, [ydoc])
+  const [subTitles, setSubTitles] = useState({})
+
+  useEffect(() => {
+    if (!titlesMap) return
+    const sync = () => setSubTitles(titlesMap.toJSON())
+    sync()
+    titlesMap.observe(sync)
+    return () => titlesMap.unobserve(sync)
+  }, [titlesMap])
+
+  // Fields shown: the earlier whole-chapter draft (only while it still has text), the chapter
+  // introduction, then each sub-topic.
   const fields = useMemo(() => {
     if (!template) return [{ key: LEGACY_FIELD, title: null, placeholder: `Start writing ${sectionLabel}…` }]
-    const subs = template.subsections.map(s => ({
-      key: s.key, title: s.title, optional: !!s.optional,
-      placeholder: `Write the ${s.title.toLowerCase()} here…`,
-    }))
+    const intro = template.intro ? [{ key: template.intro.key, title: null, placeholder: template.intro.placeholder }] : []
+    const subs = template.subsections.map((s, i) => s.editableTitle
+      ? {
+          key: s.key, editableTitle: true, optional: !!s.optional,
+          title: defaultSubtopicTitle(template, s),
+          titlePlaceholder: `Sub-topic ${i + 1} title, e.g. SOP ${i + 1} RRL ${i + 1}`,
+          placeholder: 'Write the review of related literature and studies for this sub-topic here…',
+        }
+      : {
+          key: s.key, title: s.title, optional: !!s.optional,
+          placeholder: `Write the ${s.title.toLowerCase()} here…`,
+        })
     return hasLegacy
-      ? [{ key: LEGACY_FIELD, title: 'Earlier draft', legacy: true, placeholder: '' }, ...subs]
-      : subs
+      ? [{ key: LEGACY_FIELD, title: 'Earlier draft', legacy: true, placeholder: '' }, ...intro, ...subs]
+      : [...intro, ...subs]
   }, [template, hasLegacy, sectionLabel])
 
   // Chapters written before the sub-topic format kept everything in the default fragment.
@@ -745,8 +766,8 @@ function SectionPane({
   const compose = useCallback(() => {
     const byField = {}
     editorsRef.current.forEach((ed, f) => { if (!ed.isDestroyed) byField[f] = ed.getHTML() })
-    return template ? composeChapterHtml(sectionKey, byField) : (byField[LEGACY_FIELD] ?? '')
-  }, [template, sectionKey])
+    return template ? composeChapterHtml(sectionKey, byField, titlesMap?.toJSON()) : (byField[LEGACY_FIELD] ?? '')
+  }, [template, sectionKey, titlesMap])
 
   const refreshFilled = useCallback(() => {
     const next = {}
@@ -1498,10 +1519,24 @@ function SectionPane({
                             ? <CheckCircle2 size={11} style={{ color: '#16a34a' }} />
                             : <Circle size={11} style={{ color: f.optional ? '#cbd5e1' : '#f59e0b' }} />}
                       </span>
-                      <span className="ms-sub-title">
-                        {f.title}
-                        {f.optional && <span className="ms-sub-optional"> (optional)</span>}
-                      </span>
+                      {f.editableTitle ? (
+                        readOnly
+                          ? <span className={`ms-sub-title${subTitles[f.key]?.trim() ? '' : ' ms-sub-untitled'}`}>
+                              {subTitles[f.key]?.trim() || f.title}
+                            </span>
+                          : <input
+                              className="ms-sub-title-input"
+                              value={subTitles[f.key] ?? ''}
+                              placeholder={f.titlePlaceholder}
+                              maxLength={200}
+                              onChange={e => { titlesMap?.set(f.key, e.target.value); handleChange() }}
+                            />
+                      ) : (
+                        <span className="ms-sub-title">
+                          {f.title}
+                          {f.optional && <span className="ms-sub-optional"> (optional)</span>}
+                        </span>
+                      )}
                     </div>
                   )}
                   {f.legacy && (
@@ -1716,6 +1751,11 @@ function SectionPane({
         .ms-sub-head { position: relative; font-family: "Times New Roman", serif; font-size: 12px; font-weight: 700; line-height: 2; color: #1a1a1a; margin-top: 0.4em; user-select: none; }
         .ms-sub-status { position: absolute; left: -22px; top: 50%; transform: translateY(-50%); display: flex; }
         .ms-sub-optional { font-weight: 400; font-style: italic; color: #94a3b8; }
+        .ms-sub-untitled { font-weight: 400; font-style: italic; color: #94a3b8; }
+        .ms-sub-title-input { width: 100%; font: inherit; color: inherit; background: transparent; border: none; border-bottom: 1px dashed transparent; outline: none; padding: 0; user-select: text; }
+        .ms-sub-title-input:hover, .ms-sub-title-input:placeholder-shown { border-bottom-color: #e2d3a0; }
+        .ms-sub-title-input:focus { border-bottom-color: #c9a84c; }
+        .ms-sub-title-input::placeholder { color: #bbb; font-weight: 400; font-style: italic; }
         .ms-legacy-note { font-family: system-ui, sans-serif; font-size: 10px; color: #b45309; background: #fffbeb; border: 1px dashed #f59e0b; border-radius: 4px; padding: 4px 8px; margin: 2px 0 6px; }
         .ms-legacy-body { background: #fffdf5; border-left: 2px solid #f59e0b; padding-left: 8px; margin-bottom: 1em; }
         /* Allow cursor name labels to float above the text without clipping */

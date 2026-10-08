@@ -1,5 +1,6 @@
 // The capstone manuscript format, chapter by chapter. The editor shows every sub-topic as a
-// fixed heading with its own writing area, and a chapter's completion is the share of its
+// heading with its own writing area — fixed, or named by the students when `editableTitle` —
+// plus an optional heading-less `intro` right after the chapter title. A chapter's completion is the share of its
 // required sub-topics that have content. Adjust the lists here when the department's chapter
 // format changes — the editor, the export and the server-side completion all follow them
 // (the server reads the data-subsection / data-required markers written into the saved HTML).
@@ -18,12 +19,20 @@ export const CHAPTER_TEMPLATES = {
       { key: 'definitionOfTerms', title: 'Definition of Terms' },
     ],
   },
+  // The RRL sub-topics follow each study's statements of the problem (SOP 1 RRL 1, …), so the
+  // students name the first three themselves. The first two reuse the keys of the earlier fixed
+  // sub-topics so text already written there stays in place.
   chapter2: {
     title: 'REVIEW OF RELATED LITERATURE AND STUDIES',
+    intro: {
+      key: 'rrlIntro',
+      placeholder: 'Introduce the chapter, e.g. "This chapter presents studies in which this study was crafted and took inspiration from."',
+    },
     subsections: [
-      { key: 'featuresNecessary',     title: 'Features Necessary for the Development of the Project' },
-      { key: 'acceptabilityStandards', title: 'Standards for Determining the Acceptability Level of the Project' },
-      { key: 'rrlSummary',            title: 'Summary' },
+      { key: 'featuresNecessary',      editableTitle: true },
+      { key: 'acceptabilityStandards', editableTitle: true },
+      { key: 'rrlTopic3',              editableTitle: true },
+      { key: 'rrlSummary',             title: 'Summary' },
     ],
   },
   chapter3: {
@@ -67,6 +76,20 @@ export function chapterNumber(sectionKey) {
   return sectionKey.replace('chapter', '')
 }
 
+// Y.Map (in each chapter's Y.Doc) holding the titles students give editable sub-topics.
+export const SUBTOPIC_TITLES_MAP = 'subtopicTitles'
+
+/** Fallback label for an editable sub-topic the students have not named yet. */
+export function defaultSubtopicTitle(tpl, sub) {
+  return `Sub-topic ${tpl.subsections.indexOf(sub) + 1}`
+}
+
+/** Heading text for a sub-topic: its fixed title, or the one the students typed. */
+export function subsectionTitle(tpl, sub, titles) {
+  if (!sub.editableTitle) return sub.title
+  return titles?.[sub.key]?.trim() || defaultSubtopicTitle(tpl, sub)
+}
+
 // ── Saved-HTML composition ───────────────────────────────────────────────────
 
 function escapeHtml(s) {
@@ -75,21 +98,24 @@ function escapeHtml(s) {
 
 /**
  * The single HTML document saved for a chapter: centred chapter title, any earlier-draft text,
- * then each sub-topic heading (with the markers the server counts) followed by its content.
- * `htmlByField` maps a fragment name to that editor's HTML.
+ * the chapter introduction (no heading, so it does not count toward completion), then each
+ * sub-topic heading (with the markers the server counts) followed by its content.
+ * `htmlByField` maps a fragment name to that editor's HTML; `titles` holds the students' titles
+ * for editable sub-topics.
  */
-export function composeChapterHtml(sectionKey, htmlByField) {
+export function composeChapterHtml(sectionKey, htmlByField, titles = {}) {
   const tpl = templateFor(sectionKey)
   if (!tpl) return htmlByField[LEGACY_FIELD] ?? ''
 
   const parts = [`<h1>${escapeHtml(tpl.title)}</h1>`]
   const legacy = htmlByField[LEGACY_FIELD]
   if (legacy && !isEmptyHtml(legacy)) parts.push(legacy)
+  if (tpl.intro) parts.push(htmlByField[tpl.intro.key] ?? '')
 
   for (const sub of tpl.subsections) {
     parts.push(
       `<h2 data-subsection="${sub.key}" data-required="${sub.optional ? 'false' : 'true'}">` +
-      `${escapeHtml(sub.title)}${sub.optional ? ' (optional)' : ''}</h2>`
+      `${escapeHtml(subsectionTitle(tpl, sub, titles))}${sub.optional ? ' (optional)' : ''}</h2>`
     )
     parts.push(htmlByField[sub.key] ?? '')
   }

@@ -43,7 +43,7 @@ const PHASES = [
     key:    'PreFinalDefense',
     label:  'Pre-Final Defense',
     short:  'PFD',
-    desc:   'Chapters 1–4 + working system demo',
+    desc:   'Working system',
     color:  '#0891b2',
     bg:     'rgba(8,145,178,0.10)',
     border: 'rgba(8,145,178,0.25)',
