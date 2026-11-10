@@ -16,11 +16,13 @@ import {
 import { documentService, groupService } from '../../services/api'
 import { anchorFromSelection, applyHighlights, scrollToHighlight, highlightsFromComments } from '../../lib/docHighlights'
 import ReviewerDecisions from '../../components/ui/ReviewerDecisions'
+import RevisionChecklist from '../../components/ui/RevisionChecklist'
 import { useAuth } from '../../contexts/AuthContext'
 import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import DocumentCompare from '../student/DocumentCompare'
 
+import { roleLabel } from '../../utils/roles'
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const SECTION_LABELS = {
@@ -123,6 +125,15 @@ function FormatToolbar({ editor }) {
 
 function CommentBubble({ c, color, active, onQuoteClick }) {
   const isFaculty = c.authorRole === 'Faculty'
+  // The "approved" / "sent back" line that comes with a decision.
+  if (c.isStatusNote) {
+    return (
+      <li id={`doc-comment-${c.id}`} className="text-[11px] text-center py-1 px-2 rounded-lg"
+        style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)' }}>
+        {c.author?.fullName} · {c.content} · {formatDateTime(c.createdAt)}
+      </li>
+    )
+  }
   return (
     <li id={`doc-comment-${c.id}`} className="flex gap-3 rounded-xl transition-all"
       style={active ? { boxShadow: `0 0 0 2px ${color ?? '#c9a84c'}`, padding: 4, margin: -4 } : undefined}>
@@ -142,8 +153,16 @@ function CommentBubble({ c, color, active, onQuoteClick }) {
           </span>
           <span className="text-[10px] px-1.5 py-0.5 rounded"
             style={{ background: isFaculty ? 'rgba(201,168,76,0.15)' : 'rgba(99,102,241,0.12)', color: isFaculty ? '#c9a84c' : '#6366f1' }}>
-            {c.authorRole}
+            {roleLabel(c.authorRole)}
           </span>
+          {c.isRevisionItem && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+              style={c.resolvedAt
+                ? { background: 'rgba(34,197,94,0.15)', color: '#16a34a' }
+                : { background: 'rgba(245,158,11,0.15)', color: '#d97706' }}>
+              {c.resolvedAt ? 'Revised' : 'To revise'}
+            </span>
+          )}
           <span className="text-[10px] ml-auto" style={{ color: 'var(--text-muted)' }}>{formatDateTime(c.createdAt)}</span>
         </div>
         {c.quote && (
@@ -382,6 +401,7 @@ export default function DocumentReview() {
   const awaitingMe = canReview && (myReview.status === 'Pending'
     || (myReview.status == null && doc.submissionStatus !== 'Draft'))
   const [pendingQuote, setPendingQuote] = useState(null)       // { quote, prefix } for the next comment
+  const [revisionRefresh, setRevisionRefresh] = useState(0)
   const [activeHighlightId, setActiveHighlightId] = useState(null)
 
   const editor = useEditor({
@@ -472,20 +492,13 @@ export default function DocumentReview() {
         toast.success('Your decision was taken back.')
         return
       }
-      const autoContent = newStatus === 'Approved'
-        ? 'This document has been approved.'
-        : newStatus === 'NeedsRevision'
-          ? 'This document has been sent back for further revisions.'
-          : null
-      if (autoContent) {
-        try {
-          const autoComment = await documentService.addComment(doc.id, { content: autoContent })
-          setComments(prev => [...prev, autoComment])
-        } catch { /* non-critical */ }
-      }
+      // The server posts the "approved" / "sent back" note and turns this reviewer's comments on
+      // the version into revision items, so reload them.
+      documentService.comments(doc.id).then(setComments).catch(() => {})
+      setRevisionRefresh(n => n + 1)
       toast.success(newStatus === 'Approved'
         ? 'Approved. Students have been notified.'
-        : 'Revision requested. Select text in the document to highlight and comment on what needs to change.')
+        : 'Revision requested. Each highlight and comment you leave on this version is counted as an item to revise.')
     } catch (e) {
       toast.error(e.message || 'Failed to update status.')
     } finally {
@@ -500,6 +513,7 @@ export default function DocumentReview() {
     try {
       const comment = await documentService.addComment(doc.id, { content: html, ...(pendingQuote ?? {}) })
       setComments(prev => [...prev, comment])
+      if (comment.isRevisionItem) setRevisionRefresh(n => n + 1)
       editor.commands.clearContent()
       setPendingQuote(null)
     } catch (e) {
@@ -744,6 +758,24 @@ export default function DocumentReview() {
                 </span>
               </div>
 
+              {/* Every version keeps its own comments: open one to see what was said about it. */}
+              {versions.length > 1 && (
+                <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>Versions:</span>
+                  {[...versions].sort((a, b) => a.version - b.version).map(v => (
+                    <button key={v.id} type="button"
+                      onClick={() => v.id !== doc.id && navigate(`/documents/review/${v.id}`)}
+                      title={v.id === doc.id ? 'Showing this version' : `Open v${v.version} and its comments`}
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-md"
+                      style={v.id === doc.id
+                        ? { background: '#c9a84c', color: '#0a1628' }
+                        : { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}>
+                      v{v.version}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="flex items-center gap-2 text-xs mb-3" style={{ color: 'rgba(255,255,255,0.45)' }}>
                 <User size={11} />
                 <span>Submitted by <span style={{ color: 'rgba(255,255,255,0.7)' }}>{doc.submittedBy?.fullName}</span></span>
@@ -783,6 +815,19 @@ export default function DocumentReview() {
                   : <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>Not submitted for review yet.</p>}
               </div>
             )}
+
+            {/* Requested revisions across every version, with the students' ticks — the basis for
+                checking a resubmission. */}
+            <div className="p-4 empty:hidden" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                <RevisionChecklist
+                  dark
+                  docId={doc.id}
+                  refreshKey={revisionRefresh}
+                  canToggle={item => item.author?.id === user?.id || user?.role === 'Student'}
+                  onQuoteClick={item => item.documentSubmissionId === doc.id
+                    ? focusHighlight(item.id)
+                    : navigate(`/documents/review/${item.documentSubmissionId}`)} />
+            </div>
 
             {/* Review actions — the adviser and panel members only, on their own turn */}
             {awaitingMe && (

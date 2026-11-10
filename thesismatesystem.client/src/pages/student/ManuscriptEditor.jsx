@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { manuscriptService, groupService } from '../../services/api'
+import { manuscriptService, groupService, documentService } from '../../services/api'
 import { toast } from '../../utils/toast'
 import TopBar from '../../components/layout/TopBar'
 import { PageLoader } from '../../components/ui/Spinner'
@@ -163,6 +163,8 @@ export default function ManuscriptEditor() {
   const [provider, setProvider] = useState(null)
   const [hubState, setHubState] = useState('disconnected') // 'connecting'|'connected'|'disconnected'
   const [annotations, setAnnotations] = useState([])     // adviser/panel highlights for the open section
+  const [docRevisions, setDocRevisions] = useState([])   // revision items from the submitted document
+  const [revisionCounts, setRevisionCounts] = useState(null) // { total, resolved } for the open section
   const [reviewers, setReviewers] = useState([])
   const [liveHtml, setLiveHtml] = useState(null)          // composed HTML of the open section, as typed
 
@@ -220,6 +222,37 @@ export default function ManuscriptEditor() {
   }, [group, reviewMode])
   const loadAnnotationsRef = useRef(loadAnnotations)
   loadAnnotationsRef.current = loadAnnotations
+
+  // Cleared by switchSection; filled once the request returns (for the section still open).
+  useEffect(() => {
+    const docSection = DOC_SECTION_OF[activeKey]
+    if (!group || !docSection) return
+    const key = activeKey
+    documentService.byGroup(group.id)
+      .then(docs => {
+        const doc = (docs ?? []).find(d => d.section === docSection)
+        return doc?.revisionItemsTotal ? documentService.revisionItems(doc.id) : null
+      })
+      .then(data => {
+        if (!data || activeKeyRef.current !== key) return
+        const tally = Object.fromEntries((data.byReviewer ?? []).map(r => [r.reviewerId, r]))
+        setDocRevisions(revisionAnnotations((data.items ?? []).map(it => ({
+          ...it, reviewerLabel: tally[it.author?.id]?.label, color: tally[it.author?.id]?.color,
+        }))))
+        setRevisionCounts({ total: data.total, resolved: data.resolved })
+      })
+      .catch(() => { /* the manuscript still works without them */ })
+  }, [activeKey, group])
+
+  async function handleToggleRevised(annotation) {
+    try {
+      await documentService.setCommentResolved(annotation.commentId, !annotation.resolved)
+      setDocRevisions(prev => prev.map(a => a.id === annotation.id ? { ...a, resolved: !a.resolved } : a))
+      setRevisionCounts(c => c && ({ ...c, resolved: c.resolved + (annotation.resolved ? -1 : 1) }))
+    } catch (err) {
+      toast.error(err.message || 'Could not update the item.')
+    }
+  }
 
   useEffect(() => { loadAnnotations(activeKey) }, [activeKey, loadAnnotations])
 
@@ -284,6 +317,8 @@ export default function ManuscriptEditor() {
     setYdoc(null)
     setProvider(null)
     setAnnotations([])
+    setDocRevisions([])
+    setRevisionCounts(null)
     setLiveHtml(null)
     setActiveKey(key)
     if (connectionRef.current && group) {
@@ -576,7 +611,9 @@ export default function ManuscriptEditor() {
               hubState={hubState}
               allSections={sections}
               groupName={group?.groupName ?? 'Manuscript'}
-              annotations={annotations}
+              annotations={docRevisions.length ? [...annotations, ...docRevisions] : annotations}
+              revisionCounts={revisionCounts}
+              onToggleRevised={reviewMode ? null : handleToggleRevised}
               reviewers={reviewers}
               myReviewer={myReviewer}
               myUserId={user?.id}
@@ -595,6 +632,38 @@ export default function ManuscriptEditor() {
       </div>
     </div>
   )
+}
+
+// ── Requested revisions from the submitted document ──────────────────────────
+// Revision round 8: the highlights and comments an adviser / panelist left when they requested
+// a revision on the submitted chapter are shown on the manuscript too, each with a "revised"
+// tick and a "2/10 revised" counter. They are anchored by quote only (field '*'), so every
+// sub-topic editor looks for them; ids are negated so they never clash with manuscript highlights.
+const DOC_SECTION_OF = {
+  chapter1: 'Chapter1', chapter2: 'Chapter2', chapter3: 'Chapter3', chapter4: 'Chapter4', chapter5: 'Chapter5',
+  references: 'References',
+}
+
+function htmlText(html) {
+  return new DOMParser().parseFromString(html ?? '', 'text/html').body.textContent?.trim() ?? ''
+}
+
+function revisionAnnotations(items) {
+  return (items ?? []).map(it => ({
+    id: -it.id,
+    commentId: it.id,
+    field: '*',
+    quote: it.quote,
+    prefix: it.prefix,
+    content: htmlText(it.content),
+    author: it.author,
+    reviewerLabel: it.reviewerLabel ?? 'Reviewer',
+    color: it.color ?? '#a16207',
+    createdAt: it.createdAt,
+    revisionItem: true,
+    resolved: !!it.resolvedAt,
+    version: it.version,
+  }))
 }
 
 // ── One sub-topic's editor ─────────────────────────────────────────────────────
@@ -658,7 +727,7 @@ function SubEditor({ ydoc, provider, field, placeholder, readOnly, compact, onRe
 function SectionPane({
   ydoc, provider, sectionKey, reviewMode, readOnly, isLocked, saving, sectionData, onSave, onLiveHtml,
   hubState, allSections, groupName, annotations, reviewers, myReviewer, myUserId,
-  onAddAnnotation, onDeleteAnnotation, citations,
+  onAddAnnotation, onDeleteAnnotation, citations, revisionCounts, onToggleRevised,
 }) {
   const template = templateFor(sectionKey)
   const sectionLabel = sectionLabelOf(sectionKey)
@@ -723,14 +792,14 @@ function SectionPane({
     const intro = template.intro ? [{ key: template.intro.key, title: null, placeholder: template.intro.placeholder }] : []
     const subs = template.subsections.map((s, i) => s.editableTitle
       ? {
-          key: s.key, editableTitle: true, optional: !!s.optional,
+          key: s.key, editableTitle: true, optional: !!s.optional, heading: s.heading,
           title: defaultSubtopicTitle(template, s),
-          titlePlaceholder: `Sub-topic ${i + 1} title, e.g. SOP ${i + 1} RRL ${i + 1}`,
-          placeholder: 'Write the review of related literature and studies for this sub-topic here…',
+          titlePlaceholder: s.titlePlaceholder ?? `Sub-topic ${i + 1} title, e.g. SOP ${i + 1} RRL ${i + 1}`,
+          placeholder: s.placeholder ?? 'Write the review of related literature and studies for this sub-topic here…',
         }
       : {
-          key: s.key, title: s.title, optional: !!s.optional,
-          placeholder: `Write the ${s.title.toLowerCase()} here…`,
+          key: s.key, title: s.title, optional: !!s.optional, heading: s.heading,
+          placeholder: s.placeholder ?? `Write the ${s.title.toLowerCase()} here…`,
         })
     return hasLegacy
       ? [{ key: LEGACY_FIELD, title: 'Earlier draft', legacy: true, placeholder: '' }, ...intro, ...subs]
@@ -918,6 +987,7 @@ function SectionPane({
     const out = {}
     fields.forEach(f => { out[f.key] = [] })
     ;(annotations ?? []).forEach(a => {
+      if (a.field === '*') { fields.forEach(f => out[f.key].push(a)); return }
       const f = a.field ?? LEGACY_FIELD
       ;(out[f] ??= []).push(a)
     })
@@ -1319,6 +1389,15 @@ function SectionPane({
             {filledCount}/{requiredFields.length} sub-topics · {Math.round(filledCount / Math.max(requiredFields.length, 1) * 100)}% complete
           </span>
         )}
+        {revisionCounts?.total > 0 && (
+          <span className="font-semibold px-2 py-0.5 rounded-full"
+            title="Revisions requested by the adviser and panel, and how many are marked as revised"
+            style={revisionCounts.resolved === revisionCounts.total
+              ? { background: 'rgba(34,197,94,0.12)', color: '#16a34a' }
+              : { background: 'rgba(245,158,11,0.14)', color: '#d97706' }}>
+            {revisionCounts.resolved}/{revisionCounts.total} revised
+          </span>
+        )}
 
         {saving ? (
           <span className="flex items-center gap-1">
@@ -1510,6 +1589,7 @@ function SectionPane({
 
               {fields.map(f => (
                 <div key={f.key} className="ms-subsection">
+                  {f.heading && <div className="ms-sub-head ms-group-head">{f.heading}</div>}
                   {f.title && (
                     <div className="ms-sub-head">
                       <span className="ms-sub-status" title={f.legacy ? '' : filledFields[f.key] ? 'Has content' : f.optional ? 'Optional' : 'Not yet written'}>
@@ -1574,7 +1654,8 @@ function SectionPane({
                 onSelect={() => jumpToRailItem(item.id)}
                 canDelete={item.kind === 'student'
                   ? !reviewMode && !readOnly
-                  : reviewMode && item.annotation.author?.id === myUserId}
+                  : !item.annotation.revisionItem && reviewMode && item.annotation.author?.id === myUserId}
+                onToggleRevised={onToggleRevised}
                 onDelete={() => item.kind === 'student'
                   ? deleteStudentComment(item.id)
                   : onDeleteAnnotation(item.annotation.id)}
@@ -1585,7 +1666,7 @@ function SectionPane({
                 position: 'absolute', left: 816 * (zoom / 100) + 20, width: 220,
                 top: Math.max(paperHeight * (zoom / 100) - 40 - orphanAnnotations.length * 70, (railItems.at(-1)?.top ?? 0) + 110),
               }}>
-                <p style={{ fontSize: 10, color: '#e2e8f0', marginBottom: 4 }}>Highlighted text since changed:</p>
+                <p style={{ fontSize: 10, color: '#e2e8f0', marginBottom: 4 }}>Not found in the current text (changed, or a general comment):</p>
                 {orphanAnnotations.map(a => (
                   <RailBubble
                     key={a.id}
@@ -1593,8 +1674,9 @@ function SectionPane({
                     static
                     active={false}
                     onSelect={() => {}}
-                    canDelete={reviewMode && a.author?.id === myUserId}
+                    canDelete={!a.revisionItem && reviewMode && a.author?.id === myUserId}
                     onDelete={() => onDeleteAnnotation(a.id)}
+                    onToggleRevised={onToggleRevised}
                   />
                 ))}
               </div>
@@ -1748,6 +1830,7 @@ function SectionPane({
         .ms-chapter-head { text-align: center; font-family: "Times New Roman", serif; font-size: 12px; line-height: 2; color: #1a1a1a; margin-bottom: 0.6em; }
         .ms-chapter-head p { margin: 0; }
         .ms-subsection { position: relative; }
+        .ms-sub-head.ms-group-head { margin-top: 0.8em; }
         .ms-sub-head { position: relative; font-family: "Times New Roman", serif; font-size: 12px; font-weight: 700; line-height: 2; color: #1a1a1a; margin-top: 0.4em; user-select: none; }
         .ms-sub-status { position: absolute; left: -22px; top: 50%; transform: translateY(-50%); display: flex; }
         .ms-sub-optional { font-weight: 400; font-style: italic; color: #94a3b8; }
@@ -1783,7 +1866,7 @@ function SectionPane({
 }
 
 // ── Comment bubble in the right-hand rail ────────────────────────────────────
-function RailBubble({ item, index, left, active, onSelect, canDelete, onDelete, static: isStatic }) {
+function RailBubble({ item, index, left, active, onSelect, canDelete, onDelete, onToggleRevised, static: isStatic }) {
   const review = item.kind === 'review'
   const a = item.annotation
   const c = item.comment
@@ -1862,8 +1945,26 @@ function RailBubble({ item, index, left, active, onSelect, canDelete, onDelete, 
           ? <p style={{ fontSize: 11, color: '#333', lineHeight: 1.55, margin: 0 }}>{text}</p>
           : <p style={{ fontSize: 11, color: '#94a3b8', margin: 0, fontStyle: 'italic' }}>Highlighted</p>}
         <p style={{ fontSize: 10, color: '#999', marginTop: 5, marginBottom: 0 }}>
-          {fmtPHT(createdAt)}
+          {fmtPHT(createdAt)}{review && a.revisionItem ? ` · v${a.version} revision request` : ''}
         </p>
+        {review && a.revisionItem && (
+          onToggleRevised ? (
+            <button type="button"
+              onClick={e => { e.stopPropagation(); onToggleRevised(a) }}
+              style={{
+                marginTop: 6, width: '100%', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '3px 6px', cursor: 'pointer',
+                background: a.resolved ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
+                color: a.resolved ? '#16a34a' : '#b45309',
+                border: `1px solid ${a.resolved ? 'rgba(34,197,94,0.35)' : 'rgba(245,158,11,0.35)'}`,
+              }}>
+              {a.resolved ? '✓ Revised — click to undo' : 'Mark as revised'}
+            </button>
+          ) : (
+            <p style={{ marginTop: 6, fontSize: 10, fontWeight: 700, color: a.resolved ? '#16a34a' : '#b45309' }}>
+              {a.resolved ? '✓ Revised' : 'Not yet revised'}
+            </p>
+          )
+        )}
       </div>
     </div>
   )

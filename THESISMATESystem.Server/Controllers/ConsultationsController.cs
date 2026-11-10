@@ -57,6 +57,9 @@ namespace THESISMATESystem.Server.Controllers
         {
             if (!await CanAccessGroupAsync(dto.CapstoneGroupId)) return Forbid();
             var adviserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            // Consultations are held with the group's adviser, so only the adviser logs them.
+            if (!await _consultations.IsAdviserOfAsync(dto.CapstoneGroupId, adviserId))
+                return BadRequest(new { message = "Only the group's adviser can log its consultations." });
             var result = await _consultations.CreateConsultationAsync(adviserId, dto);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }

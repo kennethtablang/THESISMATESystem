@@ -6,6 +6,7 @@ import { User, Mail, Shield, Camera, Save, KeyRound, Eye, EyeOff, ShieldCheck, S
 import { toast } from '../../utils/toast'
 import { passwordError } from '../../utils/passwordPolicy'
 
+import { roleLabel } from '../../utils/roles'
 const roleColors = {
   Student:    { bg: 'rgba(59,130,246,0.12)',  text: '#3b82f6' },
   // Adviser / Panel / FacultyIC were merged into Faculty; without this entry Faculty fell back to Student's colour.
@@ -197,7 +198,7 @@ export default function Profile() {
                 className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-semibold"
                 style={{ background: roleStyle.bg, color: roleStyle.text }}
               >
-                <Shield size={10} className="mr-1" /> {role}
+                <Shield size={10} className="mr-1" /> {roleLabel(role)}
               </span>
               <span className="text-sm" style={{ color: 'var(--text-muted)' }}>PSU Lingayen</span>
             </div>
@@ -269,7 +270,7 @@ export default function Profile() {
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
                 <span className="flex items-center gap-1.5"><Shield size={13} /> Role</span>
               </label>
-              <input type="text" className="form-input" value={role} disabled style={{ opacity: 0.6 }} />
+              <input type="text" className="form-input" value={roleLabel(role)} disabled style={{ opacity: 0.6 }} />
             </div>
 
             <div className="pt-2">

@@ -59,12 +59,12 @@ namespace THESISMATESystem.Server.Services
             var groupQuery = _groupAccess.FilterAccessible(_db.CapstoneGroups, adminId, "Admin")
                 .Include(g => g.Adviser)
                 .Include(g => g.PanelMembers).ThenInclude(p => p.Panelist)
-                .Include(g => g.ChapterSubmissions)
                 .AsSplitQuery()
                 .Where(g => g.Status == GroupStatus.Active);
             if (dto.GroupIds.Count > 0)
                 groupQuery = groupQuery.Where(g => dto.GroupIds.Contains(g.Id));
             var groups = await groupQuery.ToListAsync();
+            var chaptersByGroup = await ChapterProgress.LatestByGroupAsync(_db, groups.Select(g => g.Id).ToList());
 
             var alreadyScheduled = await _db.DefenseSchedules
                 .Where(s => s.Phase == dto.Phase && s.ReDefenseOf == reDefenseOf && s.Status != DefenseStatus.Cancelled)
@@ -82,18 +82,20 @@ namespace THESISMATESystem.Server.Services
                         result.Unscheduled.Add(Skip(g, $"Already has a {DefensePhases.Label(dto.Phase, reDefenseOf)} scheduled."));
                     continue;
                 }
-                if (g.PanelMembers.Count == 0)
+                // A group's panel is chosen after its Title Defense (revision round 8), so only
+                // the later defenses need one.
+                if (g.PanelMembers.Count == 0 && DefensePhases.RubricPhase(dto.Phase, reDefenseOf) != DefensePhase.TitleDefense)
                 {
-                    result.Unscheduled.Add(Skip(g, "No panel members assigned to this group."));
+                    result.Unscheduled.Add(Skip(g, "No panel members assigned to this group yet. Assign them in Edit Group."));
                     continue;
                 }
-                if (dto.RequireReadiness && ReadinessProblem(g, dto.Phase) is { } problem)
+                if (dto.RequireReadiness && ReadinessProblem(g, chaptersByGroup[g.Id], dto.Phase) is { } problem)
                 {
                     result.Unscheduled.Add(Skip(g, problem));
                     continue;
                 }
 
-                var people = g.PanelMembers.Select(p => p.PanelistId).Append(g.AdviserId).Distinct().ToList();
+                var people = g.PanelMembers.Select(p => p.PanelistId).Append(g.AdviserId).OfType<string>().Distinct().ToList();
                 candidates.Add((g, people));
             }
 
@@ -143,7 +145,7 @@ namespace THESISMATESystem.Server.Services
             foreach (var e in existing)
             {
                 var interval = new Interval(e.ScheduledDateTime, e.ScheduledDateTime.AddMinutes(e.DurationMinutes));
-                foreach (var person in e.Panelists.Append(e.AdviserId).Distinct())
+                foreach (var person in e.Panelists.Append(e.AdviserId).OfType<string>().Distinct())
                     Add(personBusy, person, interval);
                 Add(venueBusy, e.Venue.Trim(), interval);
             }
@@ -206,7 +208,7 @@ namespace THESISMATESystem.Server.Services
                     ReDefenseOf = reDefenseOf,
                     PanelistIds = panel.Select(p => p.PanelistId).ToList(),
                     PanelistNames = panel.Select(p => $"{p.Panelist.FirstName} {p.Panelist.LastName}".Trim() + (p.IsChair ? " (Chair)" : "")).ToList(),
-                    AdviserName = $"{group.Adviser.FirstName} {group.Adviser.LastName}".Trim(),
+                    AdviserName = group.Adviser is null ? "" : $"{group.Adviser.FirstName} {group.Adviser.LastName}".Trim(),
                 });
             }
 
@@ -251,12 +253,12 @@ namespace THESISMATESystem.Server.Services
             var groupQuery = _groupAccess.FilterAccessible(_db.CapstoneGroups, adminId, "Admin")
                 .Include(g => g.Adviser)
                 .Include(g => g.PanelMembers).ThenInclude(p => p.Panelist)
-                .Include(g => g.ChapterSubmissions)
                 .AsSplitQuery()
                 .Where(g => g.Status == GroupStatus.Active && g.Id != anchor.CapstoneGroupId);
             if (dto.GroupIds.Count > 0)
                 groupQuery = groupQuery.Where(g => dto.GroupIds.Contains(g.Id));
             var groups = await groupQuery.ToListAsync();
+            var chaptersByGroup = await ChapterProgress.LatestByGroupAsync(_db, groups.Select(g => g.Id).ToList());
 
             var alreadyScheduledSet = (await _db.DefenseSchedules
                 .Where(s => s.Phase == phase && s.ReDefenseOf == reDefenseOf && s.Status != DefenseStatus.Cancelled)
@@ -272,17 +274,19 @@ namespace THESISMATESystem.Server.Services
                         result.Unscheduled.Add(Skip(g, $"Already has a {DefensePhases.Label(phase, reDefenseOf)} scheduled."));
                     continue;
                 }
-                if (g.PanelMembers.Count == 0)
+                // A group's panel is chosen after its Title Defense (revision round 8), so only
+                // the later defenses need one.
+                if (g.PanelMembers.Count == 0 && DefensePhases.RubricPhase(phase, reDefenseOf) != DefensePhase.TitleDefense)
                 {
-                    result.Unscheduled.Add(Skip(g, "No panel members assigned to this group."));
+                    result.Unscheduled.Add(Skip(g, "No panel members assigned to this group yet. Assign them in Edit Group."));
                     continue;
                 }
-                if (dto.RequireReadiness && ReadinessProblem(g, phase) is { } problem)
+                if (dto.RequireReadiness && ReadinessProblem(g, chaptersByGroup[g.Id], phase) is { } problem)
                 {
                     result.Unscheduled.Add(Skip(g, problem));
                     continue;
                 }
-                candidates.Add((g, g.PanelMembers.Select(p => p.PanelistId).Append(g.AdviserId).Distinct().ToList()));
+                candidates.Add((g, g.PanelMembers.Select(p => p.PanelistId).Append(g.AdviserId).OfType<string>().Distinct().ToList()));
             }
 
             if (candidates.Count == 0) return result;
@@ -335,7 +339,7 @@ namespace THESISMATESystem.Server.Services
             foreach (var e in existing)
             {
                 var interval = new Interval(e.ScheduledDateTime, e.ScheduledDateTime.AddMinutes(e.DurationMinutes));
-                foreach (var person in e.Panelists.Append(e.AdviserId).Distinct())
+                foreach (var person in e.Panelists.Append(e.AdviserId).OfType<string>().Distinct())
                     Add(personBusy, person, interval);
                 Add(venueBusy, e.Venue.Trim(), interval);
             }
@@ -393,7 +397,7 @@ namespace THESISMATESystem.Server.Services
                     ReDefenseOf = reDefenseOf,
                     PanelistIds = panel.Select(p => p.PanelistId).ToList(),
                     PanelistNames = panel.Select(p => $"{p.Panelist.FirstName} {p.Panelist.LastName}".Trim() + (p.IsChair ? " (Chair)" : "")).ToList(),
-                    AdviserName = $"{group.Adviser.FirstName} {group.Adviser.LastName}".Trim(),
+                    AdviserName = group.Adviser is null ? "" : $"{group.Adviser.FirstName} {group.Adviser.LastName}".Trim(),
                 });
             }
 
@@ -422,7 +426,7 @@ namespace THESISMATESystem.Server.Services
                 var panelistIds = item.PanelistIds.Count > 0
                     ? item.PanelistIds.Distinct().ToList()
                     : group.PanelMembers.Select(p => p.PanelistId).ToList();
-                var people = panelistIds.Append(group.AdviserId).Distinct().ToList();
+                var people = panelistIds.Append(group.AdviserId).OfType<string>().Distinct().ToList();
                 var start = DateTime.SpecifyKind(item.ScheduledDateTime, DateTimeKind.Utc);
                 var end = start.AddMinutes(item.DurationMinutes);
 
@@ -476,7 +480,7 @@ namespace THESISMATESystem.Server.Services
             {
                 if (string.Equals(s.Venue.Trim(), venue, StringComparison.OrdinalIgnoreCase))
                     return $"{venue} is already booked for {s.GroupName} at that time.";
-                if (s.Panelists.Append(s.AdviserId).Intersect(people).Any())
+                if (s.Panelists.Append(s.AdviserId).OfType<string>().Intersect(people).Any())
                     return $"A panelist or the adviser is already in {s.GroupName}'s defense at that time.";
             }
             return null;
@@ -499,13 +503,9 @@ namespace THESISMATESystem.Server.Services
             return (s, e);
         }
 
-        private static string? ReadinessProblem(Models.CapstoneGroup g, DefensePhase phase)
+        private static string? ReadinessProblem(Models.CapstoneGroup g, IEnumerable<ChapterProgressEntry> chapters, DefensePhase phase)
         {
-            var approved = g.ChapterSubmissions
-                .Where(c => c.Status == ChapterStatus.Approved)
-                .Select(c => c.ChapterNumber)
-                .Distinct()
-                .Count();
+            var approved = ChapterProgress.ApprovedCount(chapters);
 
             return phase switch
             {

@@ -41,6 +41,7 @@ namespace THESISMATESystem.Server.Data
         public DbSet<GroupPanelMember> GroupPanelMembers => Set<GroupPanelMember>();
         public DbSet<SectionAdminAssignment> SectionAdminAssignments => Set<SectionAdminAssignment>();
         public DbSet<ChapterPanelReview> ChapterPanelReviews => Set<ChapterPanelReview>();
+        public DbSet<DefenseRecommendation> DefenseRecommendations => Set<DefenseRecommendation>();
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -146,7 +147,13 @@ namespace THESISMATESystem.Server.Data
                 .HasOne(g => g.Adviser)
                 .WithMany(u => u.AdvisedGroups)
                 .HasForeignKey(g => g.AdviserId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<DocumentSubmission>()
+                .HasOne(d => d.CapstoneGroup)
+                .WithMany(g => g.DocumentSubmissions)
+                .HasForeignKey(d => d.CapstoneGroupId);
 
             builder.Entity<GroupMember>()
                 .HasIndex(gm => new { gm.CapstoneGroupId, gm.UserId })
@@ -252,6 +259,20 @@ namespace THESISMATESystem.Server.Data
             {
                 e.Property(c => c.Quote).HasMaxLength(2000);
                 e.Property(c => c.Prefix).HasMaxLength(200);
+                e.HasOne(c => c.ResolvedBy).WithMany().HasForeignKey(c => c.ResolvedById)
+                 .IsRequired(false).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // Compliance matrix: recommendations given at a defense.
+            builder.Entity<DefenseRecommendation>(e =>
+            {
+                e.Property(r => r.Recommendation).HasMaxLength(2000);
+                e.Property(r => r.Location).HasMaxLength(100);
+                e.Property(r => r.Initials).HasMaxLength(20);
+                e.HasOne(r => r.DefenseSchedule).WithMany(s => s.Recommendations)
+                 .HasForeignKey(r => r.DefenseScheduleId).OnDelete(DeleteBehavior.Cascade);
+                e.HasOne(r => r.Author).WithMany().HasForeignKey(r => r.AuthorId)
+                 .OnDelete(DeleteBehavior.Restrict);
             });
 
             // One row per reviewer per document chain (keyed by the chain root).

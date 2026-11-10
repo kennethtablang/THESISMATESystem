@@ -23,5 +23,6 @@ namespace THESISMATESystem.Server.Models
 
         public ICollection<PanelAssignment> PanelAssignments { get; set; } = [];
         public ICollection<DefenseRating> DefenseRatings { get; set; } = [];
+        public ICollection<DefenseRecommendation> Recommendations { get; set; } = [];
     }
 }

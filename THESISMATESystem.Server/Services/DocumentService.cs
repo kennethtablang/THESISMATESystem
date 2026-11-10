@@ -250,6 +250,8 @@ namespace THESISMATESystem.Server.Services
                 Content = dto.Content,
                 Quote = quote,
                 Prefix = quote is null ? null : dto.Prefix,
+                // A reviewer who has requested a revision on this version is listing what to fix.
+                IsRevisionItem = authorRole == "Faculty" && await HasRequestedRevisionOnAsync(doc, authorId),
             };
 
             _db.DocumentComments.Add(comment);
@@ -258,6 +260,8 @@ namespace THESISMATESystem.Server.Services
             return await BuildCommentResponseAsync(comment);
         }
 
+        // Comments of one version. Every version keeps its own comments, so opening an older
+        // version shows what was said about it.
         public async Task<IEnumerable<DocumentCommentResponseDto>> GetCommentsAsync(int documentId, string callerId, string callerRole)
         {
             var doc = await _db.DocumentSubmissions.FindAsync(documentId)
@@ -266,30 +270,129 @@ namespace THESISMATESystem.Server.Services
             if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, doc.CapstoneGroupId))
                 throw new UnauthorizedAccessException();
 
-            var comments = await _db.DocumentComments
-                .Include(c => c.Author)
+            var comments = await CommentQuery()
                 .Where(c => c.DocumentSubmissionId == documentId)
                 .OrderBy(c => c.CreatedAt)
                 .ToListAsync();
+            return await ToCommentDtosAsync(comments);
+        }
 
+        public async Task<DocumentRevisionItemsDto> GetRevisionItemsAsync(int documentId, string callerId, string callerRole)
+        {
+            var doc = await _db.DocumentSubmissions.FindAsync(documentId)
+                ?? throw new KeyNotFoundException("Document not found.");
+            if (!await _groupAccess.CanAccessGroupAsync(callerId, callerRole, doc.CapstoneGroupId))
+                throw new UnauthorizedAccessException();
+
+            var rootId = doc.OriginalDocumentId ?? doc.Id;
+            var items = await CommentQuery()
+                .Where(c => c.IsRevisionItem
+                         && (c.DocumentSubmissionId == rootId || c.DocumentSubmission.OriginalDocumentId == rootId))
+                .OrderBy(c => c.DocumentSubmission.Version).ThenBy(c => c.CreatedAt)
+                .ToListAsync();
+
+            var reviewers = await _manuscript.GetReviewersAsync(doc.CapstoneGroupId);
+            var dtos = await ToCommentDtosAsync(items);
+            return new DocumentRevisionItemsDto
+            {
+                Total = items.Count,
+                Resolved = items.Count(c => c.ResolvedAt != null),
+                Items = dtos,
+                ByReviewer = items
+                    .GroupBy(c => c.AuthorId)
+                    .Select(g =>
+                    {
+                        var r = reviewers.FirstOrDefault(x => x.UserId == g.Key);
+                        var author = g.First().Author;
+                        return new ReviewerRevisionTallyDto
+                        {
+                            ReviewerId = g.Key,
+                            FullName = r?.FullName ?? $"{author.FirstName} {author.LastName}".Trim(),
+                            Label = r?.Label ?? "Reviewer",
+                            Color = r?.Color ?? "#a16207",
+                            Total = g.Count(),
+                            Resolved = g.Count(c => c.ResolvedAt != null),
+                        };
+                    })
+                    .ToList(),
+            };
+        }
+
+        public async Task<DocumentCommentResponseDto> SetCommentResolvedAsync(int commentId, string callerId, string callerRole, bool resolved)
+        {
+            var comment = await CommentQuery().FirstOrDefaultAsync(c => c.Id == commentId)
+                ?? throw new KeyNotFoundException("Comment not found.");
+            if (!comment.IsRevisionItem)
+                throw new InvalidOperationException("Only a requested revision can be marked as revised.");
+
+            var groupId = comment.DocumentSubmission.CapstoneGroupId;
+            var isMember = await _db.GroupMembers.AnyAsync(gm => gm.CapstoneGroupId == groupId && gm.UserId == callerId);
+            // The students tick items off; the reviewer who wrote one may reopen it.
+            if (!isMember && comment.AuthorId != callerId)
+                throw new UnauthorizedAccessException();
+
+            if (resolved && comment.ResolvedAt is null)
+            {
+                comment.ResolvedAt = PhilippineTime.Now;
+                comment.ResolvedById = callerId;
+            }
+            else if (!resolved)
+            {
+                comment.ResolvedAt = null;
+                comment.ResolvedById = null;
+            }
+            await _db.SaveChangesAsync();
+            await _db.Entry(comment).Reference(c => c.ResolvedBy).LoadAsync();
+            return (await ToCommentDtosAsync([comment]))[0];
+        }
+
+        private IQueryable<DocumentComment> CommentQuery() =>
+            _db.DocumentComments
+                .Include(c => c.Author)
+                .Include(c => c.ResolvedBy)
+                .Include(c => c.DocumentSubmission);
+
+        private async Task<List<DocumentCommentResponseDto>> ToCommentDtosAsync(IEnumerable<DocumentComment> comments)
+        {
+            var roleCache = new Dictionary<string, string>();
             var result = new List<DocumentCommentResponseDto>();
             foreach (var c in comments)
             {
-                var roles = await _userManager.GetRolesAsync(c.Author);
+                if (!roleCache.TryGetValue(c.AuthorId, out var role))
+                {
+                    role = (await _userManager.GetRolesAsync(c.Author)).FirstOrDefault() ?? string.Empty;
+                    roleCache[c.AuthorId] = role;
+                }
                 result.Add(new DocumentCommentResponseDto
                 {
                     Id = c.Id,
                     DocumentSubmissionId = c.DocumentSubmissionId,
                     Author = new UserSummaryDto { Id = c.Author.Id, FullName = $"{c.Author.FirstName} {c.Author.LastName}" },
-                    AuthorRole = roles.FirstOrDefault() ?? string.Empty,
+                    AuthorRole = role,
                     Content = c.Content,
                     Quote = c.Quote,
                     Prefix = c.Prefix,
                     CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt
+                    UpdatedAt = c.UpdatedAt,
+                    Version = c.DocumentSubmission?.Version ?? 0,
+                    IsStatusNote = c.IsStatusNote,
+                    IsRevisionItem = c.IsRevisionItem,
+                    ResolvedAt = c.ResolvedAt,
+                    ResolvedBy = c.ResolvedBy is null ? null
+                        : new UserSummaryDto { Id = c.ResolvedBy.Id, FullName = $"{c.ResolvedBy.FirstName} {c.ResolvedBy.LastName}" },
                 });
             }
             return result;
+        }
+
+        // True when the reviewer's standing on this document's chain is "needs revision" for
+        // exactly this version: their comments on it are then things to revise.
+        private async Task<bool> HasRequestedRevisionOnAsync(DocumentSubmission doc, string reviewerId)
+        {
+            var rootId = doc.OriginalDocumentId ?? doc.Id;
+            return await _db.DocumentReviewDecisions.AnyAsync(r =>
+                r.DocumentSubmissionId == rootId && r.ReviewerId == reviewerId
+                && r.Status == DocumentReviewStatus.NeedsRevision && r.ReviewedVersion == doc.Version);
         }
 
         public async Task<bool> DeleteDocumentAsync(int id, string userId, string callerRole)
@@ -334,19 +437,8 @@ namespace THESISMATESystem.Server.Services
         private async Task<DocumentCommentResponseDto> BuildCommentResponseAsync(DocumentComment comment)
         {
             await _db.Entry(comment).Reference(c => c.Author).LoadAsync();
-            var roles = await _userManager.GetRolesAsync(comment.Author);
-            return new DocumentCommentResponseDto
-            {
-                Id = comment.Id,
-                DocumentSubmissionId = comment.DocumentSubmissionId,
-                Author = new UserSummaryDto { Id = comment.Author.Id, FullName = $"{comment.Author.FirstName} {comment.Author.LastName}" },
-                AuthorRole = roles.FirstOrDefault() ?? string.Empty,
-                Content = comment.Content,
-                Quote = comment.Quote,
-                Prefix = comment.Prefix,
-                CreatedAt = comment.CreatedAt,
-                UpdatedAt = comment.UpdatedAt
-            };
+            await _db.Entry(comment).Reference(c => c.DocumentSubmission).LoadAsync();
+            return (await ToCommentDtosAsync([comment]))[0];
         }
 
         public async Task<DocumentSubmissionResponseDto> FinalizeChapterToDocumentAsync(int groupId, int chapterNumber, string userId)
@@ -689,6 +781,30 @@ namespace THESISMATESystem.Server.Services
             row.ReviewedVersion = latest.Version;
             row.DecidedAt = row.Status == DocumentReviewStatus.Pending ? null : PhilippineTime.Now;
 
+            // The reviewer's highlights and comments on this version become the revision items when
+            // they request a revision (whether written before or after clicking the button), and
+            // stop being items again if they approve instead or take the request back.
+            var myComments = await _db.DocumentComments
+                .Where(c => c.DocumentSubmissionId == latest.Id && c.AuthorId == callerId && !c.IsStatusNote)
+                .ToListAsync();
+            foreach (var c in myComments)
+            {
+                if (row.Status == DocumentReviewStatus.NeedsRevision) c.IsRevisionItem = true;
+                else if (c.ResolvedAt is null) c.IsRevisionItem = false;
+            }
+            if (row.Status != DocumentReviewStatus.Pending)
+            {
+                _db.DocumentComments.Add(new DocumentComment
+                {
+                    DocumentSubmissionId = latest.Id,
+                    AuthorId = callerId,
+                    IsStatusNote = true,
+                    Content = row.Status == DocumentReviewStatus.Approved
+                        ? "This document has been approved."
+                        : "This document has been sent back for further revisions.",
+                });
+            }
+
             var current = reviewers.Select(r => r.UserId).ToHashSet();
             // A new version the students have not sent yet stays a draft.
             if (latest.SubmissionStatus != DocumentSubmissionStatus.Draft)
@@ -742,9 +858,21 @@ namespace THESISMATESystem.Server.Services
                 .Where(r => rootIds.Contains(r.DocumentSubmissionId))
                 .ToListAsync();
 
+            var tallies = await _db.DocumentComments
+                .Where(c => c.IsRevisionItem
+                         && rootIds.Contains(c.DocumentSubmission.OriginalDocumentId ?? c.DocumentSubmission.Id))
+                .GroupBy(c => c.DocumentSubmission.OriginalDocumentId ?? c.DocumentSubmission.Id)
+                .Select(g => new { RootId = g.Key, Total = g.Count(), Resolved = g.Count(c => c.ResolvedAt != null) })
+                .ToDictionaryAsync(t => t.RootId);
+
             foreach (var dto in dtos)
             {
                 var rootId = dto.OriginalDocumentId ?? dto.Id;
+                if (tallies.TryGetValue(rootId, out var tally))
+                {
+                    dto.RevisionItemsTotal = tally.Total;
+                    dto.RevisionItemsResolved = tally.Resolved;
+                }
                 dto.Reviews = reviewersByGroup[dto.CapstoneGroupId].Select(r =>
                 {
                     var row = rows.FirstOrDefault(x => x.DocumentSubmissionId == rootId && x.ReviewerId == r.UserId);

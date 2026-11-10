@@ -94,7 +94,7 @@ export default function CreateAccountModal({ open, onClose, onCreated }) {
         <div>
           {label('Role *')}
           <select className="form-input" value={form.role} onChange={e => set('role', e.target.value)}>
-            <option value="Faculty">Faculty</option>
+            <option value="Faculty">Adviser/Panel</option>
             <option value="Admin">Admin / Subject teacher</option>
           </select>
           <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>

@@ -20,6 +20,8 @@ namespace THESISMATESystem.Server.Interfaces
         Task<DocumentSubmissionResponseDto> FinalizeChapterToDocumentAsync(int groupId, int chapterNumber, string userId);
         Task<DocumentSubmissionResponseDto> FinalizeSectionToDocumentAsync(int groupId, string sectionKey, string userId, IFormFile file);
         Task<DocumentSubmissionResponseDto> SubmitForReviewAsync(int documentId, string userId);
+        Task<DocumentRevisionItemsDto> GetRevisionItemsAsync(int documentId, string callerId, string callerRole);
+        Task<DocumentCommentResponseDto> SetCommentResolvedAsync(int commentId, string callerId, string callerRole, bool resolved);
         Task<DocumentSubmissionResponseDto> UpdateDocumentStatusAsync(int documentId, string callerId, string callerRole, DocumentSubmissionStatus newStatus);
     }
 }

@@ -51,4 +51,16 @@ namespace THESISMATESystem.Server.DTOs.Request
         [Range(1, 100)]            public int? MaxScore { get; set; }
         public DefensePhase?       Phase { get; set; }
     }
+
+    public class RecommendationItemDto
+    {
+        [Required, MaxLength(2000)] public string Recommendation { get; set; } = string.Empty;
+        [Required, MaxLength(100)]  public string Location { get; set; } = string.Empty;
+    }
+
+    /// <summary>Replaces the caller's own rows of a defense's compliance matrix.</summary>
+    public class SaveRecommendationsRequestDto
+    {
+        [MaxLength(50)] public List<RecommendationItemDto> Items { get; set; } = [];
+    }
 }

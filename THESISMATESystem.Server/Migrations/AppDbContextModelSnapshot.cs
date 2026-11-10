@@ -322,7 +322,6 @@ namespace THESISMATESystem.Server.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("AdviserId")
-                        .IsRequired()
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<DateTime>("CreatedAt")
@@ -796,6 +795,51 @@ namespace THESISMATESystem.Server.Migrations
                     b.ToTable("DefenseRatings");
                 });
 
+            modelBuilder.Entity("THESISMATESystem.Server.Models.DefenseRecommendation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AuthorId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DefenseScheduleId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Initials")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Recommendation")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorId");
+
+                    b.HasIndex("DefenseScheduleId");
+
+                    b.ToTable("DefenseRecommendations");
+                });
+
             modelBuilder.Entity("THESISMATESystem.Server.Models.DefenseSchedule", b =>
                 {
                     b.Property<int>("Id")
@@ -864,6 +908,12 @@ namespace THESISMATESystem.Server.Migrations
                     b.Property<int>("DocumentSubmissionId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsRevisionItem")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsStatusNote")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Prefix")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -871,6 +921,12 @@ namespace THESISMATESystem.Server.Migrations
                     b.Property<string>("Quote")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ResolvedById")
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -880,6 +936,8 @@ namespace THESISMATESystem.Server.Migrations
                     b.HasIndex("AuthorId");
 
                     b.HasIndex("DocumentSubmissionId");
+
+                    b.HasIndex("ResolvedById");
 
                     b.ToTable("DocumentComments");
                 });
@@ -1631,8 +1689,7 @@ namespace THESISMATESystem.Server.Migrations
                     b.HasOne("THESISMATESystem.Server.Models.ApplicationUser", "Adviser")
                         .WithMany("AdvisedGroups")
                         .HasForeignKey("AdviserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("THESISMATESystem.Server.Models.Section", "Section")
                         .WithMany()
@@ -1836,6 +1893,25 @@ namespace THESISMATESystem.Server.Migrations
                     b.Navigation("Panelist");
                 });
 
+            modelBuilder.Entity("THESISMATESystem.Server.Models.DefenseRecommendation", b =>
+                {
+                    b.HasOne("THESISMATESystem.Server.Models.ApplicationUser", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("THESISMATESystem.Server.Models.DefenseSchedule", "DefenseSchedule")
+                        .WithMany("Recommendations")
+                        .HasForeignKey("DefenseScheduleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
+
+                    b.Navigation("DefenseSchedule");
+                });
+
             modelBuilder.Entity("THESISMATESystem.Server.Models.DefenseSchedule", b =>
                 {
                     b.HasOne("THESISMATESystem.Server.Models.CapstoneGroup", "CapstoneGroup")
@@ -1861,9 +1937,16 @@ namespace THESISMATESystem.Server.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("THESISMATESystem.Server.Models.ApplicationUser", "ResolvedBy")
+                        .WithMany()
+                        .HasForeignKey("ResolvedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Author");
 
                     b.Navigation("DocumentSubmission");
+
+                    b.Navigation("ResolvedBy");
                 });
 
             modelBuilder.Entity("THESISMATESystem.Server.Models.DocumentReviewDecision", b =>
@@ -1888,7 +1971,7 @@ namespace THESISMATESystem.Server.Migrations
             modelBuilder.Entity("THESISMATESystem.Server.Models.DocumentSubmission", b =>
                 {
                     b.HasOne("THESISMATESystem.Server.Models.CapstoneGroup", "CapstoneGroup")
-                        .WithMany()
+                        .WithMany("DocumentSubmissions")
                         .HasForeignKey("CapstoneGroupId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2192,6 +2275,8 @@ namespace THESISMATESystem.Server.Migrations
 
                     b.Navigation("DefenseSchedules");
 
+                    b.Navigation("DocumentSubmissions");
+
                     b.Navigation("Members");
 
                     b.Navigation("PanelMembers");
@@ -2226,6 +2311,8 @@ namespace THESISMATESystem.Server.Migrations
                     b.Navigation("DefenseRatings");
 
                     b.Navigation("PanelAssignments");
+
+                    b.Navigation("Recommendations");
                 });
 
             modelBuilder.Entity("THESISMATESystem.Server.Models.DocumentSubmission", b =>

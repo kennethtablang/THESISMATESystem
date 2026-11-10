@@ -22,6 +22,7 @@ const Notifications    = lazy(() => import('./pages/notifications/Notifications'
 const Profile          = lazy(() => import('./pages/profile/Profile'))
 const Reports          = lazy(() => import('./pages/reports/Reports'))
 const Defenses         = lazy(() => import('./pages/defenses/Defenses'))
+const Consultations    = lazy(() => import('./pages/consultations/Consultations'))
 const DefenseScheduler = lazy(() => import('./pages/defenses/DefenseScheduler'))
 const RubricManager    = lazy(() => import('./pages/defenses/RubricManager'))
 const GroupsLayout     = lazy(() => import('./pages/groups/GroupsLayout'))
@@ -198,6 +199,7 @@ export default function App() {
           </Route>
           <Route path="chapters" element={<StaffOrStudent><ChaptersPage /></StaffOrStudent>} />
           <Route path="defenses" element={<StaffOrStudent><Defenses /></StaffOrStudent>} />
+          <Route path="consultations" element={<StaffOrStudent><Consultations /></StaffOrStudent>} />
           <Route path="defense-scheduler" element={
             <RoleGuard roles={['Admin', 'Faculty']}>
               <DefenseScheduler />
@@ -209,7 +211,7 @@ export default function App() {
             </RoleGuard>
           } />
           <Route path="ratings" element={
-            <RoleGuard roles={['Faculty']}>
+            <RoleGuard roles={['Faculty', 'Admin']}>
               <Ratings />
             </RoleGuard>
           } />

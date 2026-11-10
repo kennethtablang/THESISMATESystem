@@ -10,6 +10,7 @@ import GanttChart from '../../components/ui/GanttChart'
 import ImagePreviewPanel from '../../components/ui/ImagePreviewPanel'
 import { systemFeatureService, groupService } from '../../services/api'
 
+import { roleLabel } from '../../utils/roles'
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
 const statusColors = {
@@ -116,7 +117,7 @@ function CommentPanel({ featureId, currentUserId, refreshKey }) {
                   <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                     style={{ background: c.authorRole === 'Faculty' ? 'rgba(201,168,76,0.15)' : 'rgba(59,130,246,0.12)',
                              color: c.authorRole === 'Faculty' ? '#c9a84c' : '#3b82f6' }}>
-                    {c.authorRole}
+                    {roleLabel(c.authorRole)}
                   </span>
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{new Date(c.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
                   {c.author?.id === currentUserId && (

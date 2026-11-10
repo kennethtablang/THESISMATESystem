@@ -14,11 +14,12 @@ namespace THESISMATESystem.Server.DTOs.Request
     public class CreateGroupRequestDto
     {
         [Required] public string GroupName { get; set; } = string.Empty;
-        [Required] public string AdviserId { get; set; } = string.Empty;
+        // Revision round 8: a group is formed with only its name and members. The adviser and the
+        // panel are chosen in Edit Group after the Title Defense, so both are optional here.
+        public string? AdviserId { get; set; }
         [Required] public string AcademicYear { get; set; } = string.Empty;
         public List<string> MemberIds { get; set; } = [];
-        // The group's standing panel, set at creation so no separate assignment step is needed.
-        [MinLength(1, ErrorMessage = "Select at least one panel member.")]
+        [MaxLength(3, ErrorMessage = "A group's panel has at most 3 members.")]
         public List<string> PanelistIds { get; set; } = [];
         // Must be one of PanelistIds. Defaults to the first panelist when omitted.
         public string? PanelChairId { get; set; }
@@ -31,7 +32,8 @@ namespace THESISMATESystem.Server.DTOs.Request
         public string? ProjectTitle { get; set; }
         public bool? TitleApproved { get; set; }
         public List<string>? MemberIds { get; set; }
-        // When set, replaces the group's panel.
+        // When set, replaces the group's panel (at most 3 members).
+        [MaxLength(3, ErrorMessage = "A group's panel has at most 3 members.")]
         public List<string>? PanelistIds { get; set; }
         public string? PanelChairId { get; set; }
     }

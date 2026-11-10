@@ -11,5 +11,6 @@ namespace THESISMATESystem.Server.Interfaces
         Task<ConsultationLogResponseDto?> GetConsultationByIdAsync(int id);
         Task<ConsultationLogResponseDto> UpdateConsultationAsync(int id, string adviserId, UpdateConsultationRequestDto dto);
         Task<bool> DeleteConsultationAsync(int id, string adviserId);
+        Task<bool> IsAdviserOfAsync(int groupId, string userId);
     }
 }

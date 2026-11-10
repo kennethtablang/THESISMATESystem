@@ -3,6 +3,7 @@ import { useParams, useNavigate, useOutletContext } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { groupService, authService, classroomService } from '../../services/api'
 import Modal from '../../components/ui/Modal'
+import { PanelPicker, MAX_PANEL } from './TeamPickers'
 import { PageLoader } from '../../components/ui/Spinner'
 import {
   ArrowLeft, Users, BookOpen, FileText, Calendar,
@@ -266,30 +267,38 @@ export default function GroupDetail() {
 
   // ── Edit group ──────────────────────────────────────────────────────────────
   function openEditModal() {
+    const panel = group.panelMembers ?? []
     setEditForm({
       groupName:   group.groupName    ?? '',
       projectTitle: group.projectTitle ?? '',
       adviserId:   group.adviser?.id  ?? '',
+      panelistIds: panel.map(p => p.id),
+      panelChairId: panel.find(p => p.isChair)?.id ?? panel[0]?.id ?? '',
     })
     setEditError('')
     setShowEditModal(true)
     if (advisers.length === 0) {
       authService.allUsers()
-        .then(users => setAdvisers(users.filter(u => u.role === 'Faculty')))
+        .then(users => setAdvisers(users.filter(u => u.role === 'Faculty' && u.isActive)))
         .catch(err => toast.error(err.message || 'An error occurred while loading advisers.'))
     }
   }
 
   async function handleEditSave() {
     if (!editForm.groupName.trim()) { setEditError('Group name is required.'); return }
-    if (!editForm.adviserId)        { setEditError('Please select an adviser.'); return }
+    if (editForm.panelistIds.length > MAX_PANEL) { setEditError(`A group's panel has at most ${MAX_PANEL} members.`); return }
+    // The adviser and panel are chosen after the Title Defense, so both may still be empty.
+    if ((group.panelMembers ?? []).length > 0 && editForm.panelistIds.length === 0) {
+      setEditError('Keep at least one panel member.'); return
+    }
     setEditSaving(true)
     setEditError('')
     try {
       const updated = await groupService.update(id, {
         groupName:    editForm.groupName.trim(),
         projectTitle: editForm.projectTitle.trim() || null,
-        adviserId:    editForm.adviserId,
+        adviserId:    editForm.adviserId || null,
+        ...(editForm.panelistIds.length > 0 ? { panelistIds: editForm.panelistIds, panelChairId: editForm.panelChairId || null } : {}),
       })
       applyGroupUpdate(updated)
       setShowEditModal(false)
@@ -927,22 +936,6 @@ export default function GroupDetail() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Adviser *</label>
-            <select
-              className="form-input"
-              value={editForm.adviserId}
-              onChange={e => setEditForm(f => ({ ...f, adviserId: e.target.value }))}
-            >
-              <option value="">Select an adviser</option>
-              {advisers.map(a => (
-                <option key={a.id} value={a.id}>{a.fullName}</option>
-              ))}
-            </select>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              A faculty member can advise multiple groups simultaneously.
-            </p>
-          </div>
-          <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Research Title</label>
             <input
               type="text" className="form-input"
@@ -950,6 +943,38 @@ export default function GroupDetail() {
               value={editForm.projectTitle}
               onChange={e => setEditForm(f => ({ ...f, projectTitle: e.target.value }))}
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Adviser</label>
+            <select
+              className="form-input"
+              value={editForm.adviserId}
+              onChange={e => setEditForm(f => {
+                // The adviser cannot also be on the panel; drop them from it if they were.
+                const panelistIds = (f.panelistIds ?? []).filter(pid => pid !== e.target.value)
+                const panelChairId = panelistIds.includes(f.panelChairId) ? f.panelChairId : panelistIds[0] ?? ''
+                return { ...f, adviserId: e.target.value, panelistIds, panelChairId }
+              })}
+            >
+              <option value="" disabled={!!group?.adviser}>Not yet assigned</option>
+              {advisers.map(a => (
+                <option key={a.id} value={a.id}>{a.fullName}</option>
+              ))}
+            </select>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Assigned after the Title Defense. One adviser can advise several groups.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+              Panel members <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({editForm.panelistIds?.length ?? 0}/{MAX_PANEL})</span>
+            </label>
+            <PanelPicker faculty={advisers} adviserId={editForm.adviserId}
+              value={editForm.panelistIds ?? []} chairId={editForm.panelChairId}
+              onChange={(ids, chair) => setEditForm(f => ({ ...f, panelistIds: ids, panelChairId: chair }))} />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Up to {MAX_PANEL} panel members, chosen after the Title Defense.
+            </p>
           </div>
         </div>
       </Modal>

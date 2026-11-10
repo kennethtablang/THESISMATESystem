@@ -22,6 +22,11 @@ namespace THESISMATESystem.Server.DTOs.Request
         [MaxLength(200)] public string? Prefix { get; set; }
     }
 
+    public class ResolveDocumentCommentRequestDto
+    {
+        public bool Resolved { get; set; }
+    }
+
     public class UpdateDocumentCommentRequestDto
     {
         public string Content { get; set; } = string.Empty;

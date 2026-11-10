@@ -8,7 +8,7 @@ import { navByRole, accountItems } from './navConfig'
 const roleConfig = {
   SuperAdmin: { color: '#f87171', label: 'Super Admin' },
   Admin:      { color: '#fb923c', label: 'Admin' },
-  Faculty:    { color: '#34d399', label: 'Faculty' },
+  Faculty:    { color: '#34d399', label: 'Adviser/Panel' },
   Student:    { color: '#38bdf8', label: 'Student' },
 }
 

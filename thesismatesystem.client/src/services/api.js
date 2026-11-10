@@ -142,6 +142,9 @@ export const defenseService = {
   getRatings: (id) => api.get(`/defenses/${id}/ratings`),
   coverage: (academicYear) => api.get(`/defenses/coverage?academicYear=${encodeURIComponent(academicYear)}`),
   getConsolidated: (id) => api.get(`/defenses/${id}/consolidated`),
+  // Compliance matrix (Proposal, Pre-Final, Final): everyone's rows; PUT replaces the caller's own.
+  recommendations: (id) => api.get(`/defenses/${id}/recommendations`),
+  saveRecommendations: (id, items) => api.put(`/defenses/${id}/recommendations`, { items }),
   finalize: (id) => api.post(`/defenses/${id}/finalize`),
   criteria: (phase) => api.get(`/defenses/criteria${phase ? `?phase=${phase}` : ''}`),
   createCriterion: (data) => api.post('/defenses/criteria', data),
@@ -293,6 +296,9 @@ export const documentService = {
   downloadFile: (id, filename) => downloadBlobAuth(`/documents/${id}/download`, filename || `document_${id}`),
   addComment: (id, data) => api.post(`/documents/${id}/comments`, data),
   comments: (id) => api.get(`/documents/${id}/comments`),
+  // Revision items across every version of the document, and ticking one off as revised.
+  revisionItems: (id) => api.get(`/documents/${id}/revision-items`),
+  setCommentResolved: (commentId, resolved) => api.patch(`/documents/comments/${commentId}/resolved`, { resolved }),
   delete: (id) => api.delete(`/documents/${id}`),
   uploadNewVersion: (id, file) => {
     const fd = new FormData()

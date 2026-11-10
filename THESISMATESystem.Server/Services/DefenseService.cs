@@ -73,7 +73,7 @@ namespace THESISMATESystem.Server.Services
                     .ToListAsync();
             }
             dto.PanelistIds = dto.PanelistIds.Distinct().ToList();
-            if (dto.PanelistIds.Contains(group.AdviserId))
+            if (group.AdviserId is not null && dto.PanelistIds.Contains(group.AdviserId))
                 throw new InvalidOperationException("The group's adviser cannot sit on its defense panel.");
 
             var schedule = new DefenseSchedule
@@ -114,7 +114,8 @@ namespace THESISMATESystem.Server.Services
 
                 var inAppMsg = $"Defense scheduled on {dto.ScheduledDateTime:MMM dd, yyyy h:mm tt} at {dto.Venue}.";
                 await _notifications.SendToGroupMembersAsync(dto.CapstoneGroupId, inAppMsg, NotificationType.DefenseScheduled, defenseId: schedule.Id);
-                await _notifications.SendAsync(group.AdviserId, inAppMsg, NotificationType.DefenseScheduled, groupId: dto.CapstoneGroupId, defenseId: schedule.Id);
+                if (group.AdviserId is not null)
+                    await _notifications.SendAsync(group.AdviserId, inAppMsg, NotificationType.DefenseScheduled, groupId: dto.CapstoneGroupId, defenseId: schedule.Id);
                 foreach (var p in panelistUsers)
                     await _notifications.SendAsync(p.Id, inAppMsg, NotificationType.DefenseScheduled, groupId: dto.CapstoneGroupId, defenseId: schedule.Id);
 
@@ -227,6 +228,112 @@ namespace THESISMATESystem.Server.Services
                 .ToListAsync();
             return await MapSchedules(schedules);
         }
+
+        public async Task<IEnumerable<DefenseScheduleResponseDto>> GetRatableSchedulesAsync(string userId, string role)
+        {
+            var query = LoadScheduleQuery();
+            if (role == "Admin")
+            {
+                var groupIds = _groupAccess.FilterAccessible(_db.CapstoneGroups, userId, "Admin").Select(g => g.Id);
+                query = query.Where(s => groupIds.Contains(s.CapstoneGroupId));
+            }
+            else
+            {
+                query = query.Where(s => s.PanelAssignments.Any(pa => pa.PanelistId == userId)
+                                      || s.CapstoneGroup.AdviserId == userId);
+            }
+
+            var schedules = await query.OrderByDescending(s => s.ScheduledDateTime).ToListAsync();
+            var dtos = (await MapSchedules(schedules)).ToList();
+            foreach (var (dto, s) in dtos.Zip(schedules))
+            {
+                dto.RaterRole = role == "Admin" ? "Admin"
+                    : s.PanelAssignments.Any(pa => pa.PanelistId == userId) ? "Panel"
+                    : "Adviser";
+            }
+            return dtos;
+        }
+
+        // Panelists rate their defenses; the group's adviser and the Admin/subject teacher of
+        // the group's block may rate it too (revision round 8).
+        private async Task<bool> CanRateAsync(DefenseSchedule schedule, string userId, string role)
+        {
+            if (role == "Admin")
+                return await _groupAccess.CanAccessGroupAsync(userId, "Admin", schedule.CapstoneGroupId);
+            if (role != "Faculty") return false;
+            return await _db.PanelAssignments.AnyAsync(pa => pa.DefenseScheduleId == schedule.Id && pa.PanelistId == userId)
+                || await _db.CapstoneGroups.AnyAsync(g => g.Id == schedule.CapstoneGroupId && g.AdviserId == userId);
+        }
+
+        public async Task<IEnumerable<DefenseRecommendationDto>> GetRecommendationsAsync(int scheduleId)
+        {
+            var rows = await _db.DefenseRecommendations
+                .Include(r => r.Author)
+                .Where(r => r.DefenseScheduleId == scheduleId)
+                .OrderBy(r => r.CreatedAt).ThenBy(r => r.SortOrder)
+                .ToListAsync();
+            return rows.Select(ToRecommendationDto);
+        }
+
+        public async Task<IEnumerable<DefenseRecommendationDto>> SaveRecommendationsAsync(int scheduleId, string userId, string role, SaveRecommendationsRequestDto dto)
+        {
+            var schedule = await _db.DefenseSchedules.FindAsync(scheduleId)
+                ?? throw new KeyNotFoundException("Defense schedule not found.");
+            if (!DefensePhases.HasComplianceMatrix(schedule.Phase, schedule.ReDefenseOf))
+                throw new InvalidOperationException("The compliance matrix applies to Proposal, Pre-Final and Final defenses only.");
+            if (schedule.Status != DefenseStatus.Completed)
+                throw new InvalidOperationException("Recommendations can be given once the defense has been completed.");
+            if (!schedule.IsRatingOpen)
+                throw new InvalidOperationException("Rating is closed for this defense, so its compliance matrix can no longer change.");
+            if (!await CanRateAsync(schedule, userId, role))
+                throw new UnauthorizedAccessException();
+
+            var author = await _db.Users.FindAsync(userId) ?? throw new UnauthorizedAccessException();
+            var initials = Initials(author.FirstName, author.MiddleName, author.LastName);
+
+            var mine = await _db.DefenseRecommendations
+                .Where(r => r.DefenseScheduleId == scheduleId && r.AuthorId == userId)
+                .ToListAsync();
+            _db.DefenseRecommendations.RemoveRange(mine);
+
+            var order = 0;
+            foreach (var item in dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Recommendation)))
+            {
+                _db.DefenseRecommendations.Add(new DefenseRecommendation
+                {
+                    DefenseScheduleId = scheduleId,
+                    AuthorId = userId,
+                    Recommendation = item.Recommendation.Trim(),
+                    Location = string.IsNullOrWhiteSpace(item.Location) ? "Other" : item.Location.Trim(),
+                    Initials = initials,
+                    SortOrder = order++,
+                    // Keeps a reviewer's rows together, in the order they first gave them.
+                    CreatedAt = mine.Count > 0 ? mine.Min(m => m.CreatedAt) : PhilippineTime.Now,
+                });
+            }
+            await _db.SaveChangesAsync();
+            return await GetRecommendationsAsync(scheduleId);
+        }
+
+        // "Carlos K. Cruz" → "CKC".
+        private static string Initials(string first, string? middle, string last) =>
+            string.Concat(new[] { first, middle, last }
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .SelectMany(n => n!.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                .Select(w => char.ToUpperInvariant(w[0])));
+
+        private static DefenseRecommendationDto ToRecommendationDto(DefenseRecommendation r) => new()
+        {
+            Id = r.Id,
+            DefenseScheduleId = r.DefenseScheduleId,
+            AuthorId = r.AuthorId,
+            AuthorName = r.Author is null ? string.Empty : $"{r.Author.FirstName} {r.Author.LastName}".Trim(),
+            Recommendation = r.Recommendation,
+            Location = r.Location,
+            Initials = r.Initials,
+            SortOrder = r.SortOrder,
+            CreatedAt = r.CreatedAt,
+        };
 
         public async Task<IEnumerable<DefenseScheduleResponseDto>> GetAllSchedulesAsync(string? facultyId = null, string? adminId = null)
         {
@@ -478,7 +585,7 @@ namespace THESISMATESystem.Server.Services
             }
         }
 
-        public async Task<DefenseRatingResponseDto> SubmitRatingAsync(string panelistId, SubmitRatingRequestDto dto)
+        public async Task<DefenseRatingResponseDto> SubmitRatingAsync(string panelistId, string role, SubmitRatingRequestDto dto)
         {
             var schedule = await _db.DefenseSchedules.FindAsync(dto.DefenseScheduleId)
                 ?? throw new InvalidOperationException("Defense schedule not found.");
@@ -489,10 +596,8 @@ namespace THESISMATESystem.Server.Services
             if (!schedule.IsRatingOpen)
                 throw new InvalidOperationException("Rating is currently closed for this presentation. Grades are immutable.");
 
-            var isAssigned = await _db.PanelAssignments
-                .AnyAsync(pa => pa.DefenseScheduleId == dto.DefenseScheduleId && pa.PanelistId == panelistId);
-            if (!isAssigned)
-                throw new InvalidOperationException("You are not assigned to this defense panel.");
+            if (!await CanRateAsync(schedule, panelistId, role))
+                throw new InvalidOperationException("Only the panel, the group's adviser and its subject teacher can rate this defense.");
 
             var criterion = await _db.DefenseCriteria.FindAsync(dto.DefenseCriterionId)
                 ?? throw new InvalidOperationException("Criterion not found.");
@@ -702,6 +807,7 @@ namespace THESISMATESystem.Server.Services
             foreach (var s in schedules)
             {
                 var dto = _mapper.Map<DefenseScheduleResponseDto>(s);
+                dto.HasComplianceMatrix = DefensePhases.HasComplianceMatrix(s.Phase, s.ReDefenseOf);
                 if (s.Status == DefenseStatus.Completed)
                     dto.ConsolidatedRating = await BuildConsolidatedRating(s);
                 dtos.Add(dto);
@@ -732,9 +838,11 @@ namespace THESISMATESystem.Server.Services
             var totalCriteria = await _db.DefenseCriteria.CountAsync(c => c.IsActive && c.Phase == rubricPhase);
             var totalRatingsExpected = panelCount * totalCriteria;
             // With no panel or no rubric nothing can be submitted, so a >= comparison against 0
-            // would otherwise report a fully-rated defense.
+            // would otherwise report a fully-rated defense. Only the panel's scores are owed; the
+            // adviser's and the subject teacher's are extra and averaged in when given.
+            var panelIds = schedule.PanelAssignments.Select(pa => pa.PanelistId).ToHashSet();
             var allSubmitted = totalRatingsExpected > 0
-                && schedule.DefenseRatings.Count >= totalRatingsExpected;
+                && schedule.DefenseRatings.Count(r => panelIds.Contains(r.PanelistId)) >= totalRatingsExpected;
 
             return new ConsolidatedRatingDto
             {

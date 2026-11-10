@@ -107,6 +107,32 @@ namespace THESISMATESystem.Server.Controllers
             catch (KeyNotFoundException) { return NotFound(); }
         }
 
+        // Revision items (highlights / comments from reviewers who requested a revision) across
+        // every version of the document, with how many the students have marked as revised.
+        [HttpGet("{id:int}/revision-items")]
+        public async Task<IActionResult> GetRevisionItems(int id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _documents.GetRevisionItemsAsync(id, userId, role)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (KeyNotFoundException) { return NotFound(); }
+        }
+
+        // The students tick a revision item off once done (or untick it); the reviewer who made
+        // it may also reopen it.
+        [HttpPatch("comments/{commentId:int}/resolved")]
+        [Authorize(Roles = "Student,Faculty")]
+        public async Task<IActionResult> SetCommentResolved(int commentId, [FromBody] ResolveDocumentCommentRequestDto dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _documents.SetCommentResolvedAsync(commentId, userId, role, dto.Resolved)); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         [HttpDelete("{id:int}")]
         [Authorize(Roles = "Student,Admin")]
         public async Task<IActionResult> Delete(int id)

@@ -6,6 +6,7 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { groupService, authService, notificationService, NOTIFICATIONS_CHANGED } from '../../services/api'
 import { navByRole, accountItems } from './navConfig'
 
+import { roleLabel } from '../../utils/roles'
 const ROLE_COLORS = {
   Student:    '#38bdf8',
   Faculty:    '#34d399',
@@ -260,7 +261,7 @@ function SearchModal({ onClose, role }) {
                     </div>
                     <span className="text-xs shrink-0 px-1.5 py-0.5 rounded-md font-medium"
                       style={{ background: `${rc}15`, color: rc, border: `1px solid ${rc}25` }}>
-                      {u.role}
+                      {roleLabel(u.role)}
                     </span>
                   </button>
                 )
@@ -492,7 +493,7 @@ export default function TopBar({ title, subtitle, left }) {
 
               <div className="hidden md:block text-left leading-tight">
                 <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)', lineHeight: 1.2 }}>{firstName}</p>
-                <p className="text-xs" style={{ color: roleColor, lineHeight: 1.2, fontSize: 10 }}>{user?.role ?? 'Student'}</p>
+                <p className="text-xs" style={{ color: roleColor, lineHeight: 1.2, fontSize: 10 }}>{roleLabel(user?.role ?? 'Student')}</p>
               </div>
 
               <ChevronDown
@@ -526,7 +527,7 @@ export default function TopBar({ title, subtitle, left }) {
                         background: `${roleColor}15`, border: `1px solid ${roleColor}30`,
                         padding: '0 6px', borderRadius: 99, display: 'inline-block', lineHeight: 1.7,
                       }}>
-                        {user?.role ?? 'Student'}
+                        {roleLabel(user?.role ?? 'Student')}
                       </span>
                     </div>
                   </div>

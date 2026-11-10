@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import TopBar from '../../components/layout/TopBar'
 import { monitoringService } from '../../services/api'
@@ -367,7 +368,23 @@ function GroupRow({ group, expanded, onToggle }) {
   )
 }
 
+// Where each score's details live, so a card can take the viewer there.
+function dimensionLink(dimKey, group, role) {
+  switch (dimKey) {
+    case 'chapterScore':       return { to: '/documents', label: role === 'Student' ? 'Open Upload Documents' : 'Open manuscripts' }
+    case 'systemFeatureScore': return { to: '/system-features', label: 'Open System Tracker' }
+    case 'manuscriptScore':    return role === 'Student'
+      ? { to: '/manuscript', label: 'Open Manuscript' }
+      : { to: `/manuscript/review/${group.groupId}`, label: 'Open manuscript' }
+    case 'consultationScore':  return { to: `/consultations?group=${group.groupId}`, label: 'Open consultation log' }
+    default: return null
+  }
+}
+
 function DimensionDetail({ group, dimKey }) {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const link = dimensionLink(dimKey, group, user?.role)
   const lines = []
   if (dimKey === 'chapterScore') {
     lines.push(`${group.approvedChapters} approved · ${group.underRevisionChapters} in revision · ${group.pendingChapters} pending`)
@@ -395,6 +412,12 @@ function DimensionDetail({ group, dimKey }) {
       {lines.map((l, i) => (
         <p key={i} className="text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>{l}</p>
       ))}
+      {link && (
+        <button type="button" onClick={() => navigate(link.to)}
+          className="text-[10px] font-semibold mt-1 hover:underline" style={{ color: '#c9a84c' }}>
+          {link.label} →
+        </button>
+      )}
     </div>
   )
 }

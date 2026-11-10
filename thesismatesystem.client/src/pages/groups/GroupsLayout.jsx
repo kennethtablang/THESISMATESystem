@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Outlet, useNavigate, useMatch } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { groupService, authService, classroomService, sectionService } from '../../services/api'
-import { PanelPicker, StudentPicker } from './TeamPickers'
+import { PanelPicker, StudentPicker, MAX_PANEL } from './TeamPickers'
 import TopBar from '../../components/layout/TopBar'
 import Modal from '../../components/ui/Modal'
 import { PageLoader } from '../../components/ui/Spinner'
@@ -90,13 +90,16 @@ export default function GroupsLayout() {
 
   async function handleEditSave() {
     if (!editForm.groupName.trim()) { setEditError('Group name is required.'); return }
-    if (!editForm.adviserId)        { setEditError('Please select an adviser.'); return }
-    if (editForm.panelistIds.length === 0) { setEditError('Select at least one panel member.'); return }
+    if (editForm.panelistIds.length > MAX_PANEL) { setEditError(`A group's panel has at most ${MAX_PANEL} members.`); return }
+    // The adviser and panel are chosen after the Title Defense, so both may still be empty.
+    const hadPanel = (editTarget.panelMembers ?? []).length > 0
+    if (hadPanel && editForm.panelistIds.length === 0) { setEditError('Keep at least one panel member.'); return }
     setEditSaving(true); setEditError('')
     try {
       const updated = await groupService.update(editTarget.id, {
-        groupName: editForm.groupName.trim(), projectTitle: editForm.projectTitle.trim() || null, adviserId: editForm.adviserId,
-        panelistIds: editForm.panelistIds, panelChairId: editForm.panelChairId || null,
+        groupName: editForm.groupName.trim(), projectTitle: editForm.projectTitle.trim() || null,
+        adviserId: editForm.adviserId || null,
+        ...(editForm.panelistIds.length > 0 ? { panelistIds: editForm.panelistIds, panelChairId: editForm.panelChairId || null } : {}),
       })
       setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))
       setShowEditModal(false)
@@ -150,15 +153,15 @@ export default function GroupsLayout() {
 
   async function handleCreate(e) {
     e.preventDefault()
-    if (!form.groupName.trim() || !form.adviserId || !form.academicYear.trim()) { setError('Group name, adviser and academic year are required.'); return }
-    if (form.panelistIds.length === 0) { setError('Select at least one panel member.'); return }
+    if (!form.groupName.trim() || !form.academicYear.trim()) { setError('Group name and academic year are required.'); return }
     setSaving(true); setError('')
     try {
+      // Revision round 8: only the name and members now; the adviser and panel are chosen in
+      // Edit Group after the Title Defense.
       const g = await groupService.create({
-        groupName: form.groupName.trim(), adviserId: form.adviserId, academicYear: form.academicYear.trim(),
-        memberIds: form.memberIds, panelistIds: form.panelistIds, panelChairId: form.panelChairId || null,
+        groupName: form.groupName.trim(), academicYear: form.academicYear.trim(), memberIds: form.memberIds,
       })
-      setGroups(prev => [g, ...prev]); setShowModal(false); toast.success('Group created with its panel.')
+      setGroups(prev => [g, ...prev]); setShowModal(false); toast.success('Group created. Assign its adviser and panel in Edit Group after the Title Defense.')
     } catch (err) { setError(err.message); toast.error(err.message || 'Failed to create group.') }
     finally { setSaving(false) }
   }
@@ -313,10 +316,17 @@ export default function GroupsLayout() {
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Group Name *</label>
             <input type="text" className="form-input" placeholder="e.g. Group Alpha, Group 1"
               value={editForm.groupName} onChange={e => setEditForm(f => ({ ...f, groupName: e.target.value }))} />
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Short identifier for the group.</p>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Adviser *</label>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Research Title</label>
+            <input type="text" className="form-input" placeholder="Enter the actual research/project title…"
+              value={editForm.projectTitle} onChange={e => setEditForm(f => ({ ...f, projectTitle: e.target.value }))} />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Displayed in place of the group name once set.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Adviser</label>
             <select className="form-input" value={editForm.adviserId}
               onChange={e => setEditForm(f => {
                 // The adviser cannot also be on the panel; drop them from it if they were.
@@ -324,23 +334,20 @@ export default function GroupsLayout() {
                 const panelChairId = panelistIds.includes(f.panelChairId) ? f.panelChairId : panelistIds[0] ?? ''
                 return { ...f, adviserId: e.target.value, panelistIds, panelChairId }
               })}>
-              <option value="">Select an adviser</option>
+              <option value="" disabled={!!editTarget?.adviser}>Not yet assigned</option>
               {advisers.map(a => <option key={a.id} value={a.id}>{a.fullName}</option>)}
             </select>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>A faculty member can advise multiple groups.</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Assigned after the Title Defense. One adviser can advise several groups.</p>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Panel members *</label>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
+              Panel members <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({editForm.panelistIds.length}/{MAX_PANEL})</span>
+            </label>
             <PanelPicker faculty={advisers} adviserId={editForm.adviserId}
               value={editForm.panelistIds} chairId={editForm.panelChairId}
               onChange={(ids, chair) => setEditForm(f => ({ ...f, panelistIds: ids, panelChairId: chair }))} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Research Title</label>
-            <input type="text" className="form-input" placeholder="Enter the actual research/project title…"
-              value={editForm.projectTitle} onChange={e => setEditForm(f => ({ ...f, projectTitle: e.target.value }))} />
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              Displayed in place of the group name once set. Leave blank to use only the group name.
+              Up to {MAX_PANEL} panel members, chosen after the Title Defense. Their defenses use this panel by default.
             </p>
           </div>
         </div>
@@ -411,28 +418,9 @@ export default function GroupsLayout() {
                 value={form.academicYear} onChange={e => setForm(f => ({ ...f, academicYear: e.target.value }))} required />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Adviser *</label>
-            <select className="form-input" value={form.adviserId}
-              onChange={e => setForm(f => ({
-                ...f, adviserId: e.target.value,
-                // The adviser cannot also be a panelist.
-                panelistIds: f.panelistIds.filter(id => id !== e.target.value),
-                panelChairId: f.panelChairId === e.target.value ? '' : f.panelChairId,
-              }))} required>
-              <option value="">Select an adviser</option>
-              {advisers.map(a => <option key={a.id} value={a.id}>{a.fullName}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Panel members *</label>
-            <PanelPicker faculty={advisers} adviserId={form.adviserId}
-              value={form.panelistIds} chairId={form.panelChairId}
-              onChange={(ids, chair) => setForm(f => ({ ...f, panelistIds: ids, panelChairId: chair }))} />
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              The panel can monitor this group right away, and its defenses use this panel by default.
-            </p>
-          </div>
+          <p className="text-xs px-3 py-2 rounded-lg" style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
+            The adviser and panel members are assigned in Edit Group after the group's Title Defense.
+          </p>
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>
               Members <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({form.memberIds.length} selected)</span>

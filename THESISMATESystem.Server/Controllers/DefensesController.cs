@@ -49,12 +49,15 @@ namespace THESISMATESystem.Server.Controllers
                 adminId: role == "Admin" ? userId : null));
         }
 
+        // The Rate Defenses list: defenses the caller sits on as a panelist, advises, or (Admin)
+        // handles as the block's subject teacher.
         [HttpGet("my-schedules")]
-        [Authorize(Roles = "Faculty")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> GetMySchedules()
         {
-            var panelistId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            return Ok(await _defenses.GetSchedulesByPanelistAsync(panelistId));
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            return Ok(await _defenses.GetRatableSchedulesAsync(userId, role));
         }
 
         [HttpGet("coverage")]
@@ -169,11 +172,34 @@ namespace THESISMATESystem.Server.Controllers
 
         // Ratings
         [HttpPost("ratings")]
-        [Authorize(Roles = "Faculty")]
+        [Authorize(Roles = "Faculty,Admin")]
         public async Task<IActionResult> SubmitRating(SubmitRatingRequestDto dto)
         {
-            var panelistId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            try { return Ok(await _defenses.SubmitRatingAsync(panelistId, dto)); }
+            var raterId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role    = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _defenses.SubmitRatingAsync(raterId, role, dto)); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        // Compliance matrix
+        [HttpGet("{id:int}/recommendations")]
+        public async Task<IActionResult> GetRecommendations(int id)
+        {
+            var groupId = await GroupOfScheduleAsync(id);
+            if (groupId is null) return NotFound();
+            if (!await CanAccessGroupAsync(groupId.Value)) return Forbid();
+            return Ok(await _defenses.GetRecommendationsAsync(id));
+        }
+
+        [HttpPut("{id:int}/recommendations")]
+        [Authorize(Roles = "Faculty,Admin")]
+        public async Task<IActionResult> SaveRecommendations(int id, SaveRecommendationsRequestDto dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var role   = User.FindFirstValue(ClaimTypes.Role)!;
+            try { return Ok(await _defenses.SaveRecommendationsAsync(id, userId, role, dto)); }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (UnauthorizedAccessException) { return Forbid(); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 

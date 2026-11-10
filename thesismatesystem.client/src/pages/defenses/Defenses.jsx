@@ -351,8 +351,8 @@ export default function Defenses() {
             style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
             <ToggleRight size={16} style={{ color: '#c9a84c', marginTop: 2, flexShrink: 0 }} />
             <span style={{ color: 'var(--text-secondary)' }}>
-              Schedule defenses for each phase, assign panelists, and toggle the rating lock.
-              When open, faculty panelists can submit scores. When locked, grades are immutable.
+              Defenses are scheduled in the Defense Scheduler. Here you follow each one and toggle the rating lock.
+              While open, the panel, the adviser and you can submit scores. When locked, grades are immutable.
             </span>
           </div>
         )}
@@ -412,11 +412,7 @@ export default function Defenses() {
             )
           })}
 
-          {isAdmin && (
-            <button className="btn-primary ml-auto" onClick={() => setShowCreate(true)}>
-              <Plus size={15} /> Schedule Defense
-            </button>
-          )}
+          {/* Revision round 8: defenses are scheduled from the Defense Scheduler only. */}
         </div>
 
         {/* ── Faculty criteria info ─────────────────────────────────────── */}
@@ -435,8 +431,8 @@ export default function Defenses() {
             title="No defenses scheduled"
             description="Defense schedules will appear here once they are created."
             action={isAdmin && (
-              <button className="btn-primary" onClick={() => setShowCreate(true)}>
-                <Plus size={15} /> Schedule Defense
+              <button className="btn-primary" onClick={() => navigate('/defense-scheduler')}>
+                <Plus size={15} /> Open Defense Scheduler
               </button>
             )}
           />

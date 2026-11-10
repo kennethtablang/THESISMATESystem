@@ -18,6 +18,32 @@ import {
 } from '../../services/api'
 import { toast } from '../../utils/toast'
 
+import { roleLabel } from '../../utils/roles'
+// Chapters reach the reviewers through Upload Documents / the manuscript (DocumentSubmission,
+// Chapter1–5) and, for older groups, the Chapters page (ChapterSubmission). The dashboard lists
+// the latest state per chapter from both, the same way the server's reports do.
+const DOC_STATUS_TO_CHAPTER = { Approved: 'Approved', NeedsRevision: 'UnderRevision', SubmittedForReview: 'PendingReview' }
+function chapterEntries(docs, legacy) {
+  const entries = []
+  for (const d of docs ?? []) {
+    const m = /^Chapter([1-5])$/.exec(d.section ?? '')
+    if (!m || d.submissionStatus === 'Draft') continue
+    entries.push({
+      id: `d${d.id}`, docId: d.id, chapterNumber: Number(m[1]), fileName: d.fileName,
+      status: DOC_STATUS_TO_CHAPTER[d.submissionStatus] ?? 'PendingReview',
+      submittedAt: d.submittedAt, version: d.version,
+      revisionItemsTotal: d.revisionItemsTotal ?? 0, revisionItemsResolved: d.revisionItemsResolved ?? 0,
+    })
+  }
+  for (const c of legacy ?? []) entries.push({ ...c, id: `c${c.id}` })
+  const latest = new Map()
+  for (const e of entries) {
+    const cur = latest.get(e.chapterNumber)
+    if (!cur || new Date(e.submittedAt) > new Date(cur.submittedAt)) latest.set(e.chapterNumber, e)
+  }
+  return [...latest.values()].sort((a, b) => a.chapterNumber - b.chapterNumber)
+}
+
 // ── Phase config ─────────────────────────────────────────────────────────────
 const PHASE_META = {
   TitleDefense:    { label: 'Title Defense',    short: 'TD', color: '#7c3aed', bg: 'rgba(124,58,237,0.12)'  },
@@ -353,7 +379,7 @@ function RoleBreakdownBar({ users }) {
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full shrink-0" style={{ background: meta.color }} />
-                <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{role}</span>
+                <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{roleLabel(role)}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -531,14 +557,15 @@ function StudentDashboard({ user }) {
       .then(g => {
         setGroup(g)
         return Promise.all([
+          documentService.byGroup(g.id).catch(() => []),
           chapterService.listByGroup(g.id).catch(() => []),
           consultationService.byGroup(g.id).catch(() => []),
           defenseService.byGroup(g.id).catch(() => []),
           groupService.getDeadlines(g.id).catch(() => []),
         ])
       })
-      .then(([ch, co, de, dl]) => {
-        setChapters(ch)
+      .then(([docs, ch, co, de, dl]) => {
+        setChapters(chapterEntries(docs, ch))
         setConsultations(co)
         setDefenses(de)
         setDeadlines(dl)
@@ -597,19 +624,20 @@ function StudentDashboard({ user }) {
           icon={FileText} label="Chapters Submitted" value={chapters.length}
           sub={approved > 0 ? `${approved} approved` : 'None approved yet'}
           color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
-          onClick={() => navigate('/chapters')}
+          onClick={() => navigate('/documents')}
         />
         <StatCard
           icon={AlertCircle} label="Needs Attention"
           value={needsRevision + pendingReview}
           sub={needsRevision > 0 ? `${needsRevision} under revision` : pendingReview > 0 ? `${pendingReview} pending review` : 'All clear'}
           color={{ bg: needsRevision > 0 ? 'rgba(245,158,11,0.12)' : 'rgba(34,197,94,0.08)', icon: needsRevision > 0 ? '#f59e0b' : '#16a34a' }}
-          onClick={() => navigate('/chapters')}
+          onClick={() => navigate('/documents')}
         />
         <StatCard
           icon={MessageSquare} label="Consultations" value={consultations.length}
-          sub="logged this semester"
+          sub="logged by your adviser"
           color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
+          onClick={() => navigate('/consultations')}
         />
         <StatCard
           icon={Calendar}
@@ -665,7 +693,7 @@ function StudentDashboard({ user }) {
       <div className="mb-6">
         <SectionHeader
           title="Chapter Submissions"
-          action={<button className="btn-ghost text-xs" onClick={() => navigate('/chapters')}>View all</button>}
+          action={<button className="btn-ghost text-xs" onClick={() => navigate('/documents')}>View all</button>}
         />
         <Card>
           {chapters.length === 0 ? (
@@ -681,7 +709,10 @@ function StudentDashboard({ user }) {
                 const iconColor  = isApproved ? '#16a34a' : isRevision ? '#f59e0b' : isPending ? '#3b82f6' : 'var(--text-muted)'
                 return (
                   <div key={c.id}
-                    className="relative flex items-center gap-4 px-5 py-4 transition-colors duration-100"
+                    role="button" tabIndex={0}
+                    onClick={() => navigate('/documents')}
+                    onKeyDown={e => { if (e.key === 'Enter') navigate('/documents') }}
+                    className="relative flex items-center gap-4 px-5 py-4 transition-colors duration-100 cursor-pointer"
                     style={{ borderBottom: idx < chapters.length - 1 ? '1px solid var(--border-light)' : 'none' }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-subtle)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -693,7 +724,7 @@ function StudentDashboard({ user }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                        {c.fileName || `Chapter ${c.chapterNumber}`}
+                        Chapter {c.chapterNumber}{c.version ? ` · v${c.version}` : ''}
                       </p>
                       <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                         {c.submittedAt
@@ -701,6 +732,16 @@ function StudentDashboard({ user }) {
                           : 'Date unknown'}
                       </p>
                     </div>
+                    {c.revisionItemsTotal > 0 && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md shrink-0"
+                        title="Requested revisions marked as revised"
+                        style={{
+                          background: c.revisionItemsResolved === c.revisionItemsTotal ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
+                          color: c.revisionItemsResolved === c.revisionItemsTotal ? '#16a34a' : '#d97706',
+                        }}>
+                        {c.revisionItemsResolved}/{c.revisionItemsTotal} revised
+                      </span>
+                    )}
                     <Badge variant={statusVariant(c.status)} size="sm">{statusLabel(c.status)}</Badge>
                   </div>
                 )
@@ -845,18 +886,20 @@ function FacultyDashboard({ user }) {
           .sort((a, b) => new Date(b.uploadedAt ?? b.createdAt) - new Date(a.uploadedAt ?? a.createdAt))
           .slice(0, 5)
       )
-      const chaptersByGroup = await Promise.all(
-        gs.map(g =>
-          chapterService.listByGroup(g.id)
-            .then(ch => ch.map(c => ({ ...c, groupName: g.groupName })))
-            .catch(() => [])
-        )
-      )
-      setPendingChapters(
-        chaptersByGroup.flat().filter(c => c.status === 'PendingReview' || c.status === 'UnderRevision')
-      )
+      // Pending reviews: submitted documents where this adviser/panelist still owes a decision
+      // (their own row is Pending, or they have none yet on a submitted document).
+      setPendingChapters((Array.isArray(docs) ? docs : [])
+        .filter(d => {
+          const mine = d.reviews?.find(r => r.reviewerId === user?.id)
+          return mine && (mine.status === 'Pending' || (mine.status == null && d.submissionStatus === 'SubmittedForReview'))
+        })
+        .map(d => ({
+          id: d.id, docId: d.id, groupName: d.groupName, fileName: d.title, version: d.version,
+          chapterNumber: /^Chapter([1-5])$/.exec(d.section ?? '')?.[1] ?? null,
+          status: 'PendingReview',
+        })))
     }).finally(() => setLoading(false))
-  }, [])
+  }, [user?.id])
 
   if (loading) return <DashboardLoader />
 
@@ -880,7 +923,7 @@ function FacultyDashboard({ user }) {
     <div className="p-4 sm:p-6 lg:p-8 animate-slide-up">
       <WelcomeBanner
         gradient="linear-gradient(135deg, #042e1f 0%, #064e3b 50%, #065f46 100%)"
-        badge="Faculty"
+        badge="Adviser/Panel"
         badgeColor="52,211,153"
         name={user?.fullName ?? 'Faculty'}
         sub={
@@ -900,14 +943,15 @@ function FacultyDashboard({ user }) {
         <StatCard icon={FileText} label="Pending Reviews" value={pendingChapters.length}
           sub={pendingChapters.length > 0 ? 'Requires response' : 'All reviewed'}
           color={{ bg: pendingChapters.length > 0 ? 'rgba(245,158,11,0.12)' : 'rgba(34,197,94,0.08)', icon: pendingChapters.length > 0 ? '#f59e0b' : '#16a34a' }}
-          onClick={() => navigate('/chapters')} />
+          onClick={() => pendingChapters.length === 1 ? navigate(`/documents/review/${pendingChapters[0].docId}`) : navigate('/documents')} />
         <StatCard icon={Star} label="Defense Assignments" value={upcomingDefenses.length}
           sub="upcoming defenses"
           color={{ bg: 'rgba(124,58,237,0.12)', icon: '#7c3aed' }}
           onClick={() => navigate('/defenses')} />
         <StatCard icon={MessageSquare} label="Consultations" value={thisMonthConsultations.length}
-          sub="this month"
-          color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }} />
+          sub="logged this month"
+          color={{ bg: 'rgba(59,130,246,0.12)', icon: '#3b82f6' }}
+          onClick={() => navigate('/consultations')} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -975,8 +1019,8 @@ function FacultyDashboard({ user }) {
           {pendingChapters.length > 0 && (
             <div>
               <SectionHeader
-                title="Pending Chapter Reviews"
-                action={<button className="btn-ghost text-xs" onClick={() => navigate('/chapters')}>View all</button>}
+                title="Awaiting Your Review"
+                action={<button className="btn-ghost text-xs" onClick={() => navigate('/documents')}>View all</button>}
               />
               <Card>
                 <div>
@@ -985,17 +1029,20 @@ function FacultyDashboard({ user }) {
                     const color = isRevision ? '#f59e0b' : '#3b82f6'
                     return (
                       <div key={c.id ?? i}
-                        className="flex items-center gap-4 px-5 py-4 transition-colors duration-100"
+                        role="button" tabIndex={0}
+                        onClick={() => navigate(`/documents/review/${c.docId}`)}
+                        onKeyDown={e => { if (e.key === 'Enter') navigate(`/documents/review/${c.docId}`) }}
+                        className="flex items-center gap-4 px-5 py-4 transition-colors duration-100 cursor-pointer"
                         style={{ borderBottom: i < Math.min(pendingChapters.length, 6) - 1 ? '1px solid var(--border-light)' : 'none' }}
                         onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-subtle)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                         <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
                           style={{ background: `${color}15`, color, border: `1px solid ${color}25` }}>
-                          {c.chapterNumber ?? '?'}
+                          {c.chapterNumber ?? '•'}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                            {c.fileName || `Chapter ${c.chapterNumber}`}
+                            {c.fileName || `Chapter ${c.chapterNumber}`}{c.version ? ` · v${c.version}` : ''}
                           </p>
                           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.groupName}</p>
                         </div>
@@ -1596,7 +1643,7 @@ function SuperAdminDashboard({ user }) {
           sub={adminsWithoutBlock.length > 0 ? `${adminsWithoutBlock.length} with no block` : 'All handle a block'}
           color={{ bg: 'rgba(251,146,60,0.12)', icon: '#fb923c' }}
           onClick={() => navigate('/users')} />
-        <StatCard icon={GraduationCap} label="Faculty" value={faculty.length}
+        <StatCard icon={GraduationCap} label="Advisers/Panel" value={faculty.length}
           sub={`${students.length} student account${students.length !== 1 ? 's' : ''}`}
           color={{ bg: 'rgba(34,197,94,0.12)', icon: '#16a34a' }}
           onClick={() => navigate('/users')} />
@@ -1722,7 +1769,7 @@ function SuperAdminDashboard({ user }) {
                           </div>
                           <span className="text-xs font-medium shrink-0 px-2 py-0.5 rounded-lg"
                             style={{ background: `${roleColor}15`, color: roleColor, border: `1px solid ${roleColor}30` }}>
-                            {u.role}
+                            {roleLabel(u.role)}
                           </span>
                         </div>
                       )

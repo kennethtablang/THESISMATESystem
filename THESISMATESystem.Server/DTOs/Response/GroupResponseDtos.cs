@@ -19,7 +19,7 @@ namespace THESISMATESystem.Server.DTOs.Response
         public DefenseOutcome DefenseOutcome { get; set; }
         public RevisionLevel RevisionLevel { get; set; }
         public bool RequiresReDefense { get; set; }
-        public UserSummaryDto Adviser { get; set; } = null!;
+        public UserSummaryDto? Adviser { get; set; }
         public List<UserSummaryDto> Members { get; set; } = [];
         public List<PanelMemberDto> PanelMembers { get; set; } = [];
         public MilestoneProgressDto? MilestoneProgress { get; set; }

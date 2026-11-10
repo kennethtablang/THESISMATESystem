@@ -14,9 +14,11 @@ namespace THESISMATESystem.Server.Services
         private readonly AppDbContext _db;
         private readonly IMapper _mapper;
         private readonly INotificationService _notifications;
+        private readonly IGroupAccessChecker _groupAccess;
 
-        public ConsultationService(AppDbContext db, IMapper mapper, INotificationService notifications)
+        public ConsultationService(AppDbContext db, IMapper mapper, INotificationService notifications, IGroupAccessChecker groupAccess)
         {
+            _groupAccess = groupAccess;
             _db = db;
             _mapper = mapper;
             _notifications = notifications;
@@ -56,10 +58,19 @@ namespace THESISMATESystem.Server.Services
 
             if (role == "Faculty")
                 query = query.Where(cl => cl.AdviserId == userId);
+            else
+            {
+                // An Admin sees the consultations of their own block's groups only.
+                var groupIds = _groupAccess.FilterAccessible(_db.CapstoneGroups, userId, role).Select(g => g.Id);
+                query = query.Where(cl => groupIds.Contains(cl.CapstoneGroupId));
+            }
 
             var logs = await query.OrderByDescending(cl => cl.ConsultationDate).ToListAsync();
             return _mapper.Map<IEnumerable<ConsultationLogResponseDto>>(logs);
         }
+
+        public Task<bool> IsAdviserOfAsync(int groupId, string userId) =>
+            _db.CapstoneGroups.AnyAsync(g => g.Id == groupId && g.AdviserId == userId);
 
         public async Task<IEnumerable<ConsultationLogResponseDto>> GetConsultationsByGroupAsync(int groupId)
         {

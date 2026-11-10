@@ -18,6 +18,26 @@ namespace THESISMATESystem.Server.DTOs.Response
         public DateTime CreatedAt { get; set; }
         public List<UserSummaryDto> Panelists { get; set; } = [];
         public ConsolidatedRatingDto? ConsolidatedRating { get; set; }
+
+        // Proposal, Pre-Final and Final defenses (and their re-defenses) end with a compliance
+        // matrix of recommendations.
+        public bool HasComplianceMatrix { get; set; }
+        // For the Rate Defenses list: why the caller may rate this one — "Panel", "Adviser" or
+        // "Admin". Empty elsewhere.
+        public string RaterRole { get; set; } = string.Empty;
+    }
+
+    public class DefenseRecommendationDto
+    {
+        public int Id { get; set; }
+        public int DefenseScheduleId { get; set; }
+        public string AuthorId { get; set; } = string.Empty;
+        public string AuthorName { get; set; } = string.Empty;
+        public string Recommendation { get; set; } = string.Empty;
+        public string Location { get; set; } = string.Empty;
+        public string Initials { get; set; } = string.Empty;
+        public int SortOrder { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 
     public class DefenseCriterionResponseDto

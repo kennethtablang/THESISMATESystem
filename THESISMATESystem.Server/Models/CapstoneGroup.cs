@@ -25,8 +25,10 @@ namespace THESISMATESystem.Server.Models
         public RevisionLevel RevisionLevel { get; set; } = RevisionLevel.None;
         public bool RequiresReDefense { get; set; } = false;
 
-        public string AdviserId { get; set; } = string.Empty;
-        public ApplicationUser Adviser { get; set; } = null!;
+        // Null until the Admin assigns one after the Title Defense (revision round 8): a group is
+        // created with only its name and members.
+        public string? AdviserId { get; set; }
+        public ApplicationUser? Adviser { get; set; }
 
         // The block the group was formed in. It decides which Admin/subject teacher sees the group;
         // older groups created before this existed are matched through their members' block instead.
@@ -38,5 +40,6 @@ namespace THESISMATESystem.Server.Models
         public ICollection<ChapterSubmission> ChapterSubmissions { get; set; } = [];
         public ICollection<ConsultationLog> ConsultationLogs { get; set; } = [];
         public ICollection<DefenseSchedule> DefenseSchedules { get; set; } = [];
+        public ICollection<DocumentSubmission> DocumentSubmissions { get; set; } = [];
     }
 }

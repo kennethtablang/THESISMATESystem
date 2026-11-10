@@ -236,8 +236,8 @@ namespace THESISMATESystem.Server.Services
             var reviewers = new List<ManuscriptReviewerDto>();
 
             var adviser = await _db.CapstoneGroups
-                .Where(g => g.Id == groupId && g.AdviserId != "")
-                .Select(g => new { g.AdviserId, g.Adviser.FirstName, g.Adviser.LastName })
+                .Where(g => g.Id == groupId && g.AdviserId != null && g.AdviserId != "")
+                .Select(g => new { AdviserId = g.AdviserId!, g.Adviser!.FirstName, g.Adviser.LastName })
                 .FirstOrDefaultAsync();
             if (adviser is not null)
                 reviewers.Add(new ManuscriptReviewerDto
@@ -542,7 +542,8 @@ namespace THESISMATESystem.Server.Services
 
         private async Task<HashSet<string>> BuildRecipientSetAsync(CapstoneGroup group, bool includeMembers)
         {
-            var ids = new HashSet<string> { group.AdviserId };
+            var ids = new HashSet<string>();
+            if (group.AdviserId is not null) ids.Add(group.AdviserId);
 
             var panelIds = await _db.PanelAssignments
                 .Include(pa => pa.DefenseSchedule)

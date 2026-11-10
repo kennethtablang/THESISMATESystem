@@ -16,7 +16,9 @@ import DocumentCompare from './DocumentCompare'
 import ReviewerDecisions from '../../components/ui/ReviewerDecisions'
 import { revisionRequesters, reviewerNames } from '../../utils/documentReviews'
 import { applyHighlights, highlightsFromComments } from '../../lib/docHighlights'
+import RevisionChecklist, { RevisedPill } from '../../components/ui/RevisionChecklist'
 
+import { roleLabel } from '../../utils/roles'
 const DOCUMENT_SECTIONS = [
   { key: 1,  label: 'Title Page',        hint: 'Cover page with thesis title, authors, and institution' },
   { key: 2,  label: 'Approval Sheet',    hint: 'Signed approval page from the committee' },
@@ -29,7 +31,7 @@ const DOCUMENT_SECTIONS = [
   { key: 9,  label: 'Chapter 1',         hint: 'Introduction' },
   { key: 10, label: 'Chapter 2',         hint: 'Review of Related Literature' },
   { key: 11, label: 'Chapter 3',         hint: 'Research Methodology' },
-  { key: 12, label: 'Chapter 4',         hint: 'Results and Discussion' },
+  { key: 12, label: 'Chapter 4',         hint: 'Discussion of Findings' },
   { key: 13, label: 'Chapter 5',         hint: 'Conclusion and Recommendations' },
   { key: 14, label: 'References',        hint: 'Bibliography and citations' },
   { key: 15, label: 'Appendices',        hint: 'Supporting materials and attachments' },
@@ -242,7 +244,7 @@ function PreviewPanel({ docId, fileName, mimeType, reviews, onClose }) {
 }
 
 // ── Comment Thread ─────────────────────────────────────────────────────────────
-function CommentThread({ docId }) {
+function CommentThread({ docId, versionLabel }) {
   const [comments, setComments] = useState([])
   const [text, setText] = useState('')
   const [loadingC, setLoadingC] = useState(true)
@@ -271,7 +273,7 @@ function CommentThread({ docId }) {
   return (
     <div>
       <p className="text-xs font-semibold mb-2.5 flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
-        <MessageSquare size={12} /> Comments
+        <MessageSquare size={12} /> Comments{versionLabel ? ` on ${versionLabel}` : ''}
         {comments.length > 0 && <span className="font-normal" style={{ color: 'var(--text-muted)' }}>({comments.length})</span>}
       </p>
       {loadingC ? (
@@ -288,7 +290,15 @@ function CommentThread({ docId }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{c.author?.fullName}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>{c.authorRole}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>{roleLabel(c.authorRole)}</span>
+                  {c.isRevisionItem && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold"
+                      style={c.resolvedAt
+                        ? { background: 'rgba(34,197,94,0.12)', color: '#16a34a' }
+                        : { background: 'rgba(245,158,11,0.12)', color: '#d97706' }}>
+                      {c.resolvedAt ? 'Revised' : 'To revise'}
+                    </span>
+                  )}
                   <span className="text-[10px] ml-auto shrink-0" style={{ color: 'var(--text-muted)' }}>{formatDateTime(c.createdAt)}</span>
                 </div>
                 {c.quote && (
@@ -333,6 +343,9 @@ export default function DocumentUpload() {
   const [preview, setPreview] = useState(null) // { id, fileName, mimeType }
   const [submittingId, setSubmittingId] = useState(null)
   const [compareModal, setCompareModal] = useState(null) // { versions, initialIdA, initialIdB, sectionLabel }
+  // Which version's comments are shown, per section (defaults to the latest). Every version
+  // keeps its own comments, so picking an older one shows what was said about it.
+  const [commentVersion, setCommentVersion] = useState({}) // sectionKey → { id, version }
   const [manuscript, setManuscript] = useState({})        // sectionKey → saved HTML
   const fileInputRefs = useRef({})
   const versionFileRefs = useRef({})
@@ -615,6 +628,7 @@ export default function DocumentUpload() {
                                   <MessageSquare size={10} />{doc.commentCount}
                                 </span>
                               )}
+                              <RevisedPill resolved={doc.revisionItemsResolved} total={doc.revisionItemsTotal} />
                             </div>
                           </>
                         ) : (
@@ -754,11 +768,17 @@ export default function DocumentUpload() {
                               )}
                             </p>
                             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-light)' }}>
-                              {[...docVersions].sort((a, b) => b.version - a.version).map((v, i, arr) => (
-                                <div key={v.id} className="flex items-center gap-3 px-3 py-2.5"
+                              {[...docVersions].sort((a, b) => b.version - a.version).map((v, i, arr) => {
+                                const shownId = commentVersion[section.key]?.id ?? doc.id
+                                const isShown = shownId === v.id
+                                return (
+                                <div key={v.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer"
+                                  title={`Show the comments on v${v.version}`}
+                                  onClick={() => setCommentVersion(prev => ({ ...prev, [section.key]: { id: v.id, version: v.version } }))}
                                   style={{
-                                    background: i % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-subtle)',
+                                    background: isShown ? 'rgba(201,168,76,0.10)' : i % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-subtle)',
                                     borderTop: i > 0 ? '1px solid var(--border-light)' : 'none',
+                                    boxShadow: isShown ? 'inset 3px 0 0 #c9a84c' : 'none',
                                   }}>
                                   <span className="text-xs font-bold w-8 shrink-0" style={{ color: v.version > 1 ? '#c9a84c' : 'var(--text-muted)' }}>
                                     v{v.version}
@@ -778,12 +798,12 @@ export default function DocumentUpload() {
                                   {/* Compare with previous version */}
                                   {arr[i + 1] && (
                                     <button
-                                      onClick={() => setCompareModal({
+                                      onClick={e => { e.stopPropagation(); setCompareModal({
                                         versions: docVersions,
                                         initialIdA: arr[i + 1].id,
                                         initialIdB: v.id,
                                         sectionLabel: section.label,
-                                      })}
+                                      }) }}
                                       title={`Compare v${arr[i + 1].version} → v${v.version}`}
                                       className="shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg"
                                       style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', cursor: 'pointer' }}
@@ -791,18 +811,19 @@ export default function DocumentUpload() {
                                       <ArrowLeftRight size={10} />
                                     </button>
                                   )}
-                                  <button onClick={() => openPreview(v)}
+                                  <button onClick={e => { e.stopPropagation(); openPreview(v) }}
                                     className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors"
                                     style={{ color: '#6366f1', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', cursor: 'pointer' }}>
                                     <Eye size={11} />
                                   </button>
-                                  <button onClick={() => documentService.downloadFile(v.id, v.fileName)}
+                                  <button onClick={e => { e.stopPropagation(); documentService.downloadFile(v.id, v.fileName) }}
                                     className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors"
                                     style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)', cursor: 'pointer' }}>
                                     <Download size={11} />
                                   </button>
                                 </div>
-                              ))}
+                                )
+                              })}
                             </div>
                           </div>
                         )}
@@ -842,9 +863,28 @@ export default function DocumentUpload() {
                         </div>
                         )}
 
-                        {/* Comments */}
+                        {/* Requested revisions — tick each one off once it is done */}
+                        {doc.revisionItemsTotal > 0 && (
+                          <div className="pt-4" style={{ borderTop: '1px solid var(--border-light)' }}>
+                            <RevisionChecklist
+                              docId={doc.id}
+                              canToggle={() => true}
+                              onCounts={({ total, resolved }) => setDocs(prev => prev.map(d => d.id === doc.id
+                                ? { ...d, revisionItemsTotal: total, revisionItemsResolved: resolved } : d))} />
+                          </div>
+                        )}
+
+                        {/* Comments of the chosen version (latest by default) */}
                         <div className="pt-4" style={{ borderTop: '1px solid var(--border-light)' }}>
-                          <CommentThread docId={doc.id} />
+                          <CommentThread
+                            key={commentVersion[section.key]?.id ?? doc.id}
+                            docId={commentVersion[section.key]?.id ?? doc.id}
+                            versionLabel={`v${commentVersion[section.key]?.version ?? doc.version}`} />
+                          {docVersions?.length > 1 && (
+                            <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>
+                              Click a version in the history above to see its comments.
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

@@ -13,7 +13,7 @@ const CHAPTER_LABELS = [
   'Chapter 1 — Introduction',
   'Chapter 2 — Review of Related Literature',
   'Chapter 3 — Research Methodology',
-  'Chapter 4 — Results and Discussion',
+  'Chapter 4 — Discussion of Findings',
   'Chapter 5 — Conclusion and Recommendations',
 ]
 

@@ -9,6 +9,10 @@ import Badge, { statusVariant } from '../../components/ui/Badge'
 import { defenseService } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
 import { rubricPhaseOf } from '../../utils/defensePhase'
+import ComplianceMatrix from './ComplianceMatrix'
+import { initialsOf } from '../../utils/initials'
+
+const RATER_ROLE_LABEL = { Panel: 'As panelist', Adviser: 'As adviser', Admin: 'As subject teacher' }
 
 // Ratings are percentages: no score may exceed 100, and a criterion can set a lower cap.
 const maxFor = (criterion) => Math.min(Number(criterion.maxScore) || 100, 100)
@@ -59,13 +63,16 @@ export default function Ratings() {
   }, [])
 
   async function openRating(defense) {
-    setRating({ defense, criteria: [], scores: {}, comments: {}, panelRatings: [], submitting: false, error: '', loadingRatings: true })
+    setRating({ defense, criteria: [], scores: {}, comments: {}, panelRatings: [], submitting: false, error: '', loadingRatings: true,
+      otherRecs: [], myRecs: [] })
     try {
-      const [phaseCriteria, existing] = await Promise.all([
+      const [phaseCriteria, existing, recs] = await Promise.all([
         // A re-defense is rated with the rubric of the defense it re-takes.
         defenseService.criteria(rubricPhaseOf(defense)),
         defenseService.getRatings(defense.id),
+        defense.hasComplianceMatrix ? defenseService.recommendations(defense.id).catch(() => []) : [],
       ])
+      const recList = Array.isArray(recs) ? recs : []
       const all = Array.isArray(existing) ? existing : []
       const scores = {}
       const comments = {}
@@ -87,6 +94,9 @@ export default function Ratings() {
         // hid the rest of the panel's scores, which is the whole point of reviewing a
         // closed defense.
         panelRatings: all,
+        otherRecs: recList.filter(x => x.authorId !== user?.id),
+        myRecs: recList.filter(x => x.authorId === user?.id)
+          .map(x => ({ recommendation: x.recommendation, location: x.location, initials: x.initials })),
         loadingRatings: false,
       }))
     } catch (err) {
@@ -108,6 +118,11 @@ export default function Ratings() {
       setRating(r => ({ ...r, error: `Score for "${outOfRange.name}" must be between 0 and ${maxFor(outOfRange)}.` }))
       return
     }
+    const recs = (rating.myRecs ?? []).filter(r => r.recommendation.trim())
+    if (recs.some(r => !r.location?.trim())) {
+      setRating(r => ({ ...r, error: 'Give a location for every recommendation in the compliance matrix.' }))
+      return
+    }
     setRating(r => ({ ...r, submitting: true, error: '' }))
     try {
       for (const criterion of criteria) {
@@ -117,6 +132,10 @@ export default function Ratings() {
           score: parseFloat(rating.scores[criterion.id]),
           comments: rating.comments[criterion.id] || null,
         })
+      }
+      if (rating.defense.hasComplianceMatrix) {
+        await defenseService.saveRecommendations(rating.defense.id,
+          recs.map(r => ({ recommendation: r.recommendation.trim(), location: r.location.trim() })))
       }
       // Mark it rated locally first: the refetch below can fail, and the card must not
       // keep claiming the defense is still awaiting your scores after a successful save.
@@ -132,7 +151,7 @@ export default function Ratings() {
     }
   }
 
-  if (loading) return <><TopBar title="Rate Defenses" subtitle="Panel evaluation" /><PageLoader /></>
+  if (loading) return <><TopBar title="Rate Defenses" subtitle="Defense evaluation" /><PageLoader /></>
 
   // my-schedules returns every panel assignment, cancelled ones included. A cancelled
   // defense can never be rated, so listing it under "Locked / Completed" only invited
@@ -156,8 +175,8 @@ export default function Ratings() {
         ) : active.length === 0 ? (
           <EmptyState
             icon={Star}
-            title="No defenses assigned"
-            description="Defenses assigned to you as a panel member will appear here once scheduled."
+            title="No defenses to rate"
+            description="Defenses you sit on as a panelist, advise, or handle as the subject teacher appear here once scheduled."
           />
         ) : (
           <div className="space-y-8">
@@ -286,6 +305,9 @@ export default function Ratings() {
                 {rating.defense.consolidatedRating && (
                   <ConsolidatedPanel consolidated={rating.defense.consolidatedRating} />
                 )}
+                {rating.defense.hasComplianceMatrix && (
+                  <ComplianceMatrix others={[...rating.otherRecs, ...rating.myRecs]} mine={[]} editable={false} />
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -363,6 +385,16 @@ export default function Ratings() {
                 {rating.defense.consolidatedRating && (
                   <ConsolidatedPanel consolidated={rating.defense.consolidatedRating} />
                 )}
+
+                {/* Compliance matrix — Proposal, Pre-Final and Final defenses (revision round 8) */}
+                {rating.defense.hasComplianceMatrix && (
+                  <ComplianceMatrix
+                    others={rating.otherRecs}
+                    mine={rating.myRecs}
+                    editable={!rating.submitting}
+                    myInitials={initialsOf(user)}
+                    onChange={rows => setRating(r => ({ ...r, myRecs: rows }))} />
+                )}
               </div>
             )}
           </div>
@@ -406,6 +438,11 @@ function DefenseRatingCard({ defense, rated, onRate }) {
               {rated && (
                 <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>
                   <CheckCircle2 size={10} /> You rated
+                </span>
+              )}
+              {RATER_ROLE_LABEL[defense.raterRole] && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgba(59,130,246,0.1)', color: '#2563eb' }}>
+                  {RATER_ROLE_LABEL[defense.raterRole]}
                 </span>
               )}
             </div>

@@ -8,12 +8,16 @@ function Box({ children }) {
   )
 }
 
+// A group's panel has at most three members (revision round 8).
+export const MAX_PANEL = 3
+
 /**
  * Faculty checklist with a chair radio. The adviser is excluded because they cannot sit on
- * their own group's panel.
+ * their own group's panel. Once three are picked the rest are disabled.
  */
 export function PanelPicker({ faculty, adviserId, value, chairId, onChange }) {
   const options = faculty.filter(f => f.id !== adviserId)
+  const full = value.length >= MAX_PANEL
 
   function toggle(id) {
     const next = value.includes(id) ? value.filter(x => x !== id) : [...value, id]
@@ -27,10 +31,12 @@ export function PanelPicker({ faculty, adviserId, value, chairId, onChange }) {
         <p className="px-4 py-4 text-sm text-center" style={{ color: 'var(--text-muted)' }}>No other faculty available.</p>
       ) : options.map((f, idx) => {
         const checked = value.includes(f.id)
+        const disabled = !checked && full
         return (
           <div key={f.id} className="flex items-center gap-3 px-3 py-2"
-            style={{ borderBottom: idx < options.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-            <input type="checkbox" id={`panel-${f.id}`} checked={checked} onChange={() => toggle(f.id)} />
+            title={disabled ? `A panel has at most ${MAX_PANEL} members.` : undefined}
+            style={{ borderBottom: idx < options.length - 1 ? '1px solid var(--border-light)' : 'none', opacity: disabled ? 0.5 : 1 }}>
+            <input type="checkbox" id={`panel-${f.id}`} checked={checked} disabled={disabled} onChange={() => toggle(f.id)} />
             <label htmlFor={`panel-${f.id}`} className="flex-1 min-w-0 text-sm truncate cursor-pointer" style={{ color: 'var(--text-primary)' }}>
               {f.fullName}
             </label>

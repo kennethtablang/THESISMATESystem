@@ -65,7 +65,7 @@ namespace THESISMATESystem.Server.Services
 
             // Notify the adviser
             var group = await _db.CapstoneGroups.FindAsync(groupId);
-            if (group is not null)
+            if (group?.AdviserId is not null)
             {
                 await _notifications.SendAsync(
                     group.AdviserId,

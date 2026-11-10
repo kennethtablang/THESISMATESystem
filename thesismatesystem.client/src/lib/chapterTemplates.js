@@ -45,13 +45,32 @@ export const CHAPTER_TEMPLATES = {
       { key: 'initialPrototype',      title: 'Description of Initial Prototype' },
     ],
   },
+  // Discussion of Findings answers the study's objectives one by one, so the students title each
+  // part after their own objective. The keys of the earlier fixed sub-topics are reused so text
+  // already written there stays in place. `heading` is a fixed label shown above a sub-topic.
   chapter4: {
-    title: 'RESULTS AND DISCUSSION',
+    title: 'DISCUSSION OF FINDINGS',
+    intro: {
+      key: 'findingsIntro',
+      placeholder: 'Write an introductory sentence for this chapter. Two to four sentences will suffice.',
+    },
     subsections: [
-      { key: 'projectDescription',    title: 'Project Description' },
-      { key: 'projectStructure',      title: 'Project Structure' },
-      { key: 'capabilitiesLimits',    title: 'Project Capabilities and Limitations' },
-      { key: 'projectEvaluation',     title: 'Project Evaluation' },
+      {
+        key: 'projectDescription', editableTitle: true,
+        heading: 'Answer to the Objectives of the Project',
+        titlePlaceholder: 'Title of objective number 1',
+        placeholder: 'Put introductory sentences first, then each difficulty encountered and why it became one (use a flowchart if needed)…',
+      },
+      {
+        key: 'projectStructure', editableTitle: true,
+        titlePlaceholder: 'Declarative statement based on your second objective',
+        placeholder: 'Introduce the section (at least 3 citations), then the system architecture figure and its process, each feature with a screenshot, and the Hardware and Software Requirements tables (use DFD, Use Case or ERD if needed)…',
+      },
+      {
+        key: 'capabilitiesLimits', editableTitle: true,
+        titlePlaceholder: 'Declarative statement based on your third objective',
+        placeholder: 'Put introductory sentences first, then the acceptability level of each user category with its table…',
+      },
     ],
   },
   chapter5: {
@@ -113,6 +132,7 @@ export function composeChapterHtml(sectionKey, htmlByField, titles = {}) {
   if (tpl.intro) parts.push(htmlByField[tpl.intro.key] ?? '')
 
   for (const sub of tpl.subsections) {
+    if (sub.heading) parts.push(`<h2>${escapeHtml(sub.heading)}</h2>`)
     parts.push(
       `<h2 data-subsection="${sub.key}" data-required="${sub.optional ? 'false' : 'true'}">` +
       `${escapeHtml(subsectionTitle(tpl, sub, titles))}${sub.optional ? ' (optional)' : ''}</h2>`

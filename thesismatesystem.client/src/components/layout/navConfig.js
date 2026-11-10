@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, FileText, Calendar,
   Bell, BarChart3, UserCircle, Star, Upload, Cpu,
   ShieldCheck, BookOpen, Megaphone, PenLine, Activity,
-  GraduationCap, Building2, CalendarRange, ClipboardList, UserCheck,
+  GraduationCap, Building2, CalendarRange, ClipboardList, UserCheck, MessageSquare,
 } from 'lucide-react'
 
 // Single source for per-role navigation. The sidebar renders it and the top bar's search
@@ -32,9 +32,11 @@ export const navByRole = {
     { divider: true, label: 'Academic' },
     { label: 'System Tracker',   icon: Cpu,             to: '/system-features' },
     { label: 'Monitoring',       icon: Activity,        to: '/monitoring' },
+    { label: 'Consultations',    icon: MessageSquare,   to: '/consultations' },
     { divider: true, label: 'Defenses' },
     { label: 'Defense Schedules',  icon: Calendar,       to: '/defenses' },
     { label: 'Defense Scheduler',  icon: CalendarRange,  to: '/defense-scheduler' },
+    { label: 'Rate Defenses',      icon: Star,           to: '/ratings' },
     { label: 'Rubric Manager',     icon: ClipboardList,  to: '/rubric-manager' },
     { divider: true, label: 'Reports' },
     { label: 'Reports',            icon: BarChart3,      to: '/reports' },
@@ -46,6 +48,7 @@ export const navByRole = {
     { label: 'Manuscripts',           icon: BookOpen,        to: '/documents' },
     { label: 'System Tracker',        icon: Cpu,             to: '/system-features' },
     { label: 'Monitoring',            icon: Activity,        to: '/monitoring' },
+    { label: 'Consultations',         icon: MessageSquare,   to: '/consultations' },
     { divider: true, label: 'Defenses' },
     { label: 'Defense Schedules',  icon: Calendar,      to: '/defenses' },
     { label: 'Defense Scheduler',  icon: CalendarRange, to: '/defense-scheduler' },
@@ -62,6 +65,7 @@ export const navByRole = {
     { label: 'Upload Documents',     icon: Upload,          to: '/documents' },
     { label: 'System Tracker',       icon: Cpu,             to: '/system-features' },
     { label: 'Monitoring',           icon: Activity,        to: '/monitoring' },
+    { label: 'Consultations',        icon: MessageSquare,   to: '/consultations' },
     { divider: true, label: 'Schedule' },
     { label: 'Defense Schedule',     icon: Calendar,        to: '/defenses' },
   ],

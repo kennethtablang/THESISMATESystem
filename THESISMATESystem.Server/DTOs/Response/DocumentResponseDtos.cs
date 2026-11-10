@@ -27,6 +27,11 @@ namespace THESISMATESystem.Server.DTOs.Response
         // The adviser and every standing panel member of the group, each with their standing on
         // this document chain. Status is null for a reviewer who has not been asked yet.
         public List<DocumentReviewerDecisionDto> Reviews { get; set; } = [];
+
+        // Highlights / comments from reviewers who requested a revision, across the whole chain,
+        // and how many of them the students have marked as revised ("2/10 revised").
+        public int RevisionItemsTotal { get; set; }
+        public int RevisionItemsResolved { get; set; }
     }
 
     public class DocumentReviewerDecisionDto
@@ -63,5 +68,31 @@ namespace THESISMATESystem.Server.DTOs.Response
         public string? Prefix { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+
+        // The version this comment was made on.
+        public int Version { get; set; }
+        public bool IsStatusNote { get; set; }
+        public bool IsRevisionItem { get; set; }
+        public DateTime? ResolvedAt { get; set; }
+        public UserSummaryDto? ResolvedBy { get; set; }
+    }
+
+    /// <summary>Every revision item on a document chain, with the per-reviewer tally.</summary>
+    public class DocumentRevisionItemsDto
+    {
+        public int Total { get; set; }
+        public int Resolved { get; set; }
+        public List<DocumentCommentResponseDto> Items { get; set; } = [];
+        public List<ReviewerRevisionTallyDto> ByReviewer { get; set; } = [];
+    }
+
+    public class ReviewerRevisionTallyDto
+    {
+        public string ReviewerId { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+        public string Color { get; set; } = string.Empty;
+        public int Total { get; set; }
+        public int Resolved { get; set; }
     }
 }

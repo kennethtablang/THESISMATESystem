@@ -39,6 +39,12 @@ namespace THESISMATESystem.Server.Helpers
         public static DefensePhase RubricPhase(DefensePhase phase, DefensePhase? reDefenseOf)
             => phase == DefensePhase.ReDefense ? reDefenseOf ?? DefensePhase.FinalDefense : phase;
 
+        // Proposal, Pre-Final and Final defenses close with a compliance matrix of the panel's
+        // recommendations; a re-defense follows the defense it re-takes.
+        public static bool HasComplianceMatrix(DefensePhase phase, DefensePhase? reDefenseOf)
+            => RubricPhase(phase, reDefenseOf) is DefensePhase.ProposalDefense
+                or DefensePhase.PreFinalDefense or DefensePhase.FinalDefense;
+
         /// <summary>Throws when a Re-Defense names no regular phase, or a regular defense names one.</summary>
         public static DefensePhase? ValidateReDefenseOf(DefensePhase phase, DefensePhase? reDefenseOf)
         {

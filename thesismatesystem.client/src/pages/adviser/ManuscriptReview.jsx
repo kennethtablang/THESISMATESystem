@@ -15,7 +15,9 @@ import { documentService, groupService } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
 import DocumentCompare from '../student/DocumentCompare'
 import ReviewerDecisions from '../../components/ui/ReviewerDecisions'
+import { RevisedPill } from '../../components/ui/RevisionChecklist'
 
+import { roleLabel } from '../../utils/roles'
 // ── Section definitions (matches student's DOCUMENT_SECTIONS) ─────────────────
 const DOCUMENT_SECTIONS = [
   { key: 1,  label: 'Title Page',        enumKey: 'TitlePage'       },
@@ -232,7 +234,7 @@ function CommentThread({ docId }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                   <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{c.author?.fullName}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>{c.authorRole}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium" style={{ background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>{roleLabel(c.authorRole)}</span>
                   <span className="text-[10px] ml-auto shrink-0" style={{ color: 'var(--text-muted)' }}>{formatDateTime(c.createdAt)}</span>
                 </div>
                 <div
@@ -653,6 +655,9 @@ export default function ManuscriptReview() {
                                 )}
                               </div>
                               <ReviewerDecisions reviews={doc.reviews} align="start" className="mt-2" />
+                              {doc.revisionItemsTotal > 0 && (
+                                <div className="mt-1.5"><RevisedPill resolved={doc.revisionItemsResolved} total={doc.revisionItemsTotal} /></div>
+                              )}
                             </>
                           ) : (
                             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Not yet uploaded by the group.</p>

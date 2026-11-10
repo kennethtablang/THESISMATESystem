@@ -55,13 +55,17 @@ namespace THESISMATESystem.Server.Services
             var sectionId = memberSection ?? handled[0];
             if (!handled.Contains(sectionId))
                 throw new InvalidOperationException("You can only form groups from the students of your own block.");
-            await EnsureIsFacultyAsync([dto.AdviserId], "The adviser must be a Faculty member.");
-            var panel = await BuildPanelAsync(dto.PanelistIds, dto.PanelChairId, dto.AdviserId);
+            var adviserId = string.IsNullOrWhiteSpace(dto.AdviserId) ? null : dto.AdviserId;
+            if (adviserId is not null)
+                await EnsureIsFacultyAsync([adviserId], "The adviser must be a Faculty member.");
+            var panel = dto.PanelistIds.Any(id => !string.IsNullOrWhiteSpace(id))
+                ? await BuildPanelAsync(dto.PanelistIds, dto.PanelChairId, adviserId)
+                : [];
 
             var group = new CapstoneGroup
             {
                 GroupName = dto.GroupName.Trim(),
-                AdviserId = dto.AdviserId,
+                AdviserId = adviserId,
                 AcademicYear = dto.AcademicYear.Trim(),
                 SectionId = sectionId,
             };
@@ -71,22 +75,27 @@ namespace THESISMATESystem.Server.Services
             _db.CapstoneGroups.Add(group);
             await _db.SaveChangesAsync();
 
-            await NotifyPanelAsync(group, panel.Select(p => p.PanelistId));
+            if (panel.Count > 0)
+                await NotifyPanelAsync(group, panel.Select(p => p.PanelistId));
 
             return await GetGroupByIdAsync(group.Id)
                 ?? throw new InvalidOperationException("Failed to load created group.");
         }
 
+        private const int MaxPanelMembers = 3;
+
         /// <summary>
         /// Validates a panel and returns it as unsaved rows. Panelists must be Faculty, distinct,
         /// and must not include the group's own adviser. The chair defaults to the first panelist.
         /// </summary>
-        private async Task<List<GroupPanelMember>> BuildPanelAsync(IEnumerable<string> panelistIds, string? chairId, string adviserId)
+        private async Task<List<GroupPanelMember>> BuildPanelAsync(IEnumerable<string> panelistIds, string? chairId, string? adviserId)
         {
             var ids = panelistIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
             if (ids.Count == 0)
                 throw new InvalidOperationException("Select at least one panel member.");
-            if (ids.Contains(adviserId))
+            if (ids.Count > MaxPanelMembers)
+                throw new InvalidOperationException($"A group's panel has at most {MaxPanelMembers} members.");
+            if (adviserId is not null && ids.Contains(adviserId))
                 throw new InvalidOperationException("The group's adviser cannot also sit on its panel.");
 
             await EnsureIsFacultyAsync(ids, "Panel members must be Faculty.");
@@ -168,9 +177,7 @@ namespace THESISMATESystem.Server.Services
 
             if (group is null) return null;
 
-            var dto = _mapper.Map<CapstoneGroupResponseDto>(group);
-            dto.MilestoneProgress = ComputeMilestone(group);
-            dto.SystemLogoUrl = group.SystemLogoPath != null ? $"/api/groups/{group.Id}/logo" : null;
+            var dto = (await ToDtosAsync([group]))[0];
             return dto;
         }
 
@@ -182,13 +189,7 @@ namespace THESISMATESystem.Server.Services
                 query = query.Where(g => g.Status == status.Value);
 
             var groups = await query.OrderByDescending(g => g.CreatedAt).ToListAsync();
-            return groups.Select(g =>
-            {
-                var dto = _mapper.Map<CapstoneGroupResponseDto>(g);
-                dto.MilestoneProgress = ComputeMilestone(g);
-                dto.SystemLogoUrl = g.SystemLogoPath != null ? $"/api/groups/{g.Id}/logo" : null;
-                return dto;
-            });
+            return await ToDtosAsync(groups);
         }
 
         public async Task<IEnumerable<CapstoneGroupResponseDto>> GetGroupsByAdviserAsync(string adviserId)
@@ -198,13 +199,7 @@ namespace THESISMATESystem.Server.Services
                 .OrderByDescending(g => g.CreatedAt)
                 .ToListAsync();
 
-            return groups.Select(g =>
-            {
-                var dto = _mapper.Map<CapstoneGroupResponseDto>(g);
-                dto.MilestoneProgress = ComputeMilestone(g);
-                dto.SystemLogoUrl = g.SystemLogoPath != null ? $"/api/groups/{g.Id}/logo" : null;
-                return dto;
-            });
+            return await ToDtosAsync(groups);
         }
 
         public async Task<CapstoneGroupResponseDto?> GetGroupByStudentAsync(string studentId)
@@ -221,10 +216,7 @@ namespace THESISMATESystem.Server.Services
 
             if (membership is null) return null;
 
-            var dto = _mapper.Map<CapstoneGroupResponseDto>(membership.CapstoneGroup);
-            dto.MilestoneProgress = ComputeMilestone(membership.CapstoneGroup);
-            dto.SystemLogoUrl = membership.CapstoneGroup.SystemLogoPath != null
-                ? $"/api/groups/{membership.CapstoneGroup.Id}/logo" : null;
+            var dto = (await ToDtosAsync([membership.CapstoneGroup]))[0];
             return dto;
         }
 
@@ -669,13 +661,7 @@ namespace THESISMATESystem.Server.Services
                 .OrderByDescending(g => g.CreatedAt)
                 .ToListAsync();
 
-            return groups.Select(g =>
-            {
-                var dto = _mapper.Map<CapstoneGroupResponseDto>(g);
-                dto.MilestoneProgress = ComputeMilestone(g);
-                dto.SystemLogoUrl = g.SystemLogoPath != null ? $"/api/groups/{g.Id}/logo" : null;
-                return dto;
-            });
+            return await ToDtosAsync(groups);
         }
 
         public async Task<CapstoneGroupResponseDto> SetDefenseOutcomeAsync(int groupId, SetGroupDefenseOutcomeRequestDto dto)
@@ -690,9 +676,7 @@ namespace THESISMATESystem.Server.Services
 
             await _db.SaveChangesAsync();
 
-            var result = _mapper.Map<CapstoneGroupResponseDto>(group);
-            result.MilestoneProgress = ComputeMilestone(group);
-            result.SystemLogoUrl = group.SystemLogoPath != null ? $"/api/groups/{group.Id}/logo" : null;
+            var result = (await ToDtosAsync([group]))[0];
             return result;
         }
 
@@ -702,11 +686,21 @@ namespace THESISMATESystem.Server.Services
             catch (Exception ex) { _logger.LogError(ex, "Failed to send deadline email to {To}", to); }
         }
 
-        private static MilestoneProgressDto ComputeMilestone(CapstoneGroup group)
+        private async Task<List<CapstoneGroupResponseDto>> ToDtosAsync(IReadOnlyList<CapstoneGroup> groups)
         {
-            var approvedChapters = group.ChapterSubmissions
-                .GroupBy(cs => cs.ChapterNumber)
-                .Count(g => g.Any(cs => cs.Status == ChapterStatus.Approved));
+            var chapters = await ChapterProgress.LatestByGroupAsync(_db, groups.Select(g => g.Id).ToList());
+            return groups.Select(g =>
+            {
+                var dto = _mapper.Map<CapstoneGroupResponseDto>(g);
+                dto.MilestoneProgress = ComputeMilestone(g, chapters[g.Id]);
+                dto.SystemLogoUrl = g.SystemLogoPath != null ? $"/api/groups/{g.Id}/logo" : null;
+                return dto;
+            }).ToList();
+        }
+
+        private static MilestoneProgressDto ComputeMilestone(CapstoneGroup group, IEnumerable<ChapterProgressEntry> chapters)
+        {
+            var approvedChapters = ChapterProgress.ApprovedCount(chapters);
 
             var defenseCompleted = group.DefenseSchedules
                 .Any(ds => ds.Status == DefenseStatus.Completed);

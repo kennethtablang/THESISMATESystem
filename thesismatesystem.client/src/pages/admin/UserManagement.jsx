@@ -12,6 +12,7 @@ import { useSort, SortIcon } from '../../hooks/useSort.jsx'
 import { useAuth } from '../../contexts/AuthContext'
 import CreateAccountModal from './CreateAccountModal'
 
+import { roleLabel } from '../../utils/roles'
 const roleColors = {
   SuperAdmin: { bg: 'rgba(239,68,68,0.1)',   text: '#dc2626' },
   Admin:      { bg: 'rgba(249,115,22,0.1)',   text: '#ea580c' },
@@ -19,10 +20,6 @@ const roleColors = {
   Student:    { bg: 'rgba(14,165,233,0.1)',   text: '#0284c7' },
 }
 
-const ROLE_LABELS = {
-  SuperAdmin: 'Super Admin',
-}
-const roleLabel = (r) => ROLE_LABELS[r] ?? r
 
 const VALID_ROLES = new Set(['SuperAdmin', 'Admin', 'Faculty', 'Student'])
 
